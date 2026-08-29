@@ -48,7 +48,7 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   doc.text(COMPANY.abn, left, infoY, { width: 200 }); infoY += 11;
   doc.text(COMPANY.phone, left, infoY, { width: 200 });
 
-  const boxW = 220;
+   const boxW = 220;
   const boxX = left + pageWidth - boxW;
   const valueW = boxW - 110;
   const metaRows = [
@@ -60,16 +60,22 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   ];
   // Row heights are computed per-row (not fixed) so a long value — like a full vehicle
   // description — wraps onto a second line instead of overflowing past the box border.
-  const metaRowHeights = metaRows.map(([, value]) => Math.max(20, doc.heightOfString(value, { width: valueW }) + 10));
+  // Extra bottom padding (14 instead of 10) so a wrapped second line doesn't crowd the border.
+  const metaRowHeights = metaRows.map(([, value]) => Math.max(20, doc.heightOfString(value, { width: valueW }) + 14));
   const boxTotalH = metaRowHeights.reduce((a, b) => a + b, 0);
 
   doc.roundedRect(boxX, y, boxW, boxTotalH, 4).stroke(TEAL);
   let metaRowY = y;
   metaRows.forEach(([label, value], i) => {
+    const rowH = metaRowHeights[i];
     if (i > 0) doc.moveTo(boxX, metaRowY).lineTo(boxX + boxW, metaRowY).strokeColor(LINE).stroke();
-    doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text(label, boxX + 10, metaRowY + 6, { width: 100 });
-    doc.font('Helvetica').fillColor('#111').text(value, boxX + 100, metaRowY + 6, { width: valueW });
-    metaRowY += metaRowHeights[i];
+    // The label is vertically centered in the row — otherwise a short label looks stuck
+    // to the top of a taller row whenever the value wraps onto a second line.
+    doc.fontSize(8.5).font('Helvetica-Bold');
+    const labelH = doc.heightOfString(label, { width: 100 });
+    doc.fillColor('#333').text(label, boxX + 10, metaRowY + (rowH - labelH) / 2, { width: 100 });
+    doc.font('Helvetica').fillColor('#111').text(value, boxX + 100, metaRowY + 7, { width: valueW });
+    metaRowY += rowH;
   });
 
   y = Math.max(infoY + 20, y + boxTotalH + 20);
