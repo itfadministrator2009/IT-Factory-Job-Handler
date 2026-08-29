@@ -28,7 +28,6 @@ export default function JobDetail() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [showSignaturePad, setShowSignaturePad] = useState(false);
-  const [pendingAfterSign, setPendingAfterSign] = useState(null); // 'pdf' | 'email' | null
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [emailingPdf, setEmailingPdf] = useState(false);
   const [emailSentMsg, setEmailSentMsg] = useState('');
@@ -73,9 +72,6 @@ export default function JobDetail() {
     const { data } = await api.post(`/jobs/${id}/signature`, { name, dataUrl });
     setJob(data.job);
     setShowSignaturePad(false);
-    if (pendingAfterSign === 'pdf') doDownloadPdf();
-    if (pendingAfterSign === 'email') doEmailPdf();
-    setPendingAfterSign(null);
   }
 
   async function handleClearSignature() {
@@ -84,7 +80,7 @@ export default function JobDetail() {
     setJob(data.job);
   }
 
-  async function doDownloadPdf() {
+  async function handleDownloadPdf() {
     setGeneratingPdf(true);
     try {
       await openJobPdf(api, id);
@@ -93,7 +89,7 @@ export default function JobDetail() {
     }
   }
 
-  async function doEmailPdf() {
+  async function handleEmailPdf() {
     setEmailingPdf(true);
     setEmailSentMsg('');
     try {
@@ -104,33 +100,6 @@ export default function JobDetail() {
     } finally {
       setEmailingPdf(false);
     }
-  }
-
-  // Both entry points check for a signature first — if there isn't one yet, prompt
-  // for it right then rather than generating a job sheet with blank sign-off fields.
-  function handleDownloadPdf() {
-    if (!job.signature_data) {
-      setPendingAfterSign('pdf');
-      setShowSignaturePad(true);
-      return;
-    }
-    doDownloadPdf();
-  }
-
-  function handleEmailPdf() {
-    if (!job.signature_data) {
-      setPendingAfterSign('email');
-      setShowSignaturePad(true);
-      return;
-    }
-    doEmailPdf();
-  }
-
-  function handleSkipSign() {
-    setShowSignaturePad(false);
-    if (pendingAfterSign === 'pdf') doDownloadPdf();
-    if (pendingAfterSign === 'email') doEmailPdf();
-    setPendingAfterSign(null);
   }
 
   if (error) return <Layout><div className="empty-state"><h3>{error}</h3></div></Layout>;
@@ -330,10 +299,7 @@ export default function JobDetail() {
         <SignaturePad
           defaultName={job.signature_name || job.contact_name}
           onSave={handleSaveSignature}
-          onClose={() => { setShowSignaturePad(false); setPendingAfterSign(null); }}
-          onSkip={pendingAfterSign ? handleSkipSign : undefined}
-          skipLabel={pendingAfterSign === 'email' ? 'Send without signature' : 'Download without signature'}
-          title={pendingAfterSign ? 'Sign before generating the job sheet' : undefined}
+          onClose={() => setShowSignaturePad(false)}
         />
       )}
     </Layout>
