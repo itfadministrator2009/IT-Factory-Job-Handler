@@ -1,5 +1,6 @@
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const { PDFDocument: PDFLibDocument } = require('pdf-lib');
 const { db } = require('./db');
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'logo.jpg');
@@ -21,10 +22,20 @@ function fmtDate(s) {
   return d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-function drawJobSheet(doc, job, items, owner, attachments) {
+// Draws the job sheet. If the job hasn't been signed in-app yet, the sign-off boxes
+// are left blank and their exact coordinates are recorded in `fieldPositions` so the
+// caller can turn them into real fillable PDF form fields afterward.
+function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const left = doc.page.margins.left;
   let y = doc.page.margins.top;
+  let pageIndex = 0;
+
+  function addPage() {
+    doc.addPage();
+    pageIndex += 1;
+    return doc.page.margins.top;
+  }
 
   try {
     doc.image(LOGO_PATH, left, y, { width: 130 });
@@ -139,53 +150,65 @@ function drawJobSheet(doc, job, items, owner, attachments) {
     y += noteH + 20;
   }
 
+  const isSigned = !!job.signature_data;
   const sigRowH = 24;
-  const neededHeight = sigRowH * 2 + 70;
+  const sigBoxH = 60;
+  const neededHeight = sigRowH * 2 + sigBoxH + 20;
   if (y + neededHeight > doc.page.height - doc.page.margins.bottom) {
-    doc.addPage();
-    y = doc.page.margins.top;
+    y = addPage();
   }
 
+  // CUSTOMER NAME row
   doc.rect(left, y, 90, sigRowH).fill('#f4f3ef');
   doc.rect(left, y, pageWidth, sigRowH).strokeColor(LINE).stroke();
   doc.moveTo(left + 90, y).lineTo(left + 90, y + sigRowH).strokeColor(LINE).stroke();
   doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text('CUSTOMER NAME:', left + 8, y + 8, { width: 80 });
-  doc.font('Helvetica').fillColor('#111').text(job.signature_name || '—', left + 98, y + 8);
+  if (isSigned) {
+    doc.font('Helvetica').fillColor('#111').text(job.signature_name || '—', left + 98, y + 8);
+  } else if (fieldPositions) {
+    fieldPositions.customerName = { pageIndex, x: left + 96, y: y + 3, width: pageWidth - 106, height: sigRowH - 6 };
+  }
   y += sigRowH;
 
-  const sigBoxH = 60;
+  // CUSTOMER SIGNATURE box
   doc.rect(left, y, 90, sigBoxH).fill('#f4f3ef');
   doc.rect(left, y, pageWidth, sigBoxH).strokeColor(LINE).stroke();
   doc.moveTo(left + 90, y).lineTo(left + 90, y + sigBoxH).strokeColor(LINE).stroke();
   doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text('CUSTOMER SIGNATURE:', left + 8, y + 8, { width: 80 });
-  if (job.signature_data) {
+  if (isSigned && job.signature_data) {
     try {
       const base64 = job.signature_data.replace(/^data:image\/\w+;base64,/, '');
       const imgBuffer = Buffer.from(base64, 'base64');
       doc.image(imgBuffer, left + 100, y + 5, { fit: [pageWidth - 120, sigBoxH - 10] });
     } catch (e) { /* corrupt signature data — leave the box blank */ }
+  } else if (fieldPositions) {
+    fieldPositions.customerSignature = { pageIndex, x: left + 96, y: y + 5, width: pageWidth - 106, height: sigBoxH - 10 };
   }
   y += sigBoxH;
 
+  // DATE row
   doc.rect(left, y, 90, sigRowH).fill('#f4f3ef');
   doc.rect(left, y, pageWidth, sigRowH).strokeColor(LINE).stroke();
   doc.moveTo(left + 90, y).lineTo(left + 90, y + sigRowH).strokeColor(LINE).stroke();
   doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text('DATE:', left + 8, y + 8, { width: 80 });
-  doc.font('Helvetica').fillColor('#111').text(job.signature_at ? fmtDate(job.signature_at) : '—', left + 98, y + 8);
+  if (isSigned) {
+    doc.font('Helvetica').fillColor('#111').text(job.signature_at ? fmtDate(job.signature_at) : '—', left + 98, y + 8);
+  } else if (fieldPositions) {
+    fieldPositions.date = { pageIndex, x: left + 96, y: y + 3, width: pageWidth - 106, height: sigRowH - 6 };
+  }
   y += sigRowH;
+
+  if (fieldPositions) fieldPositions.pageHeight = doc.page.height;
 
   // ---- Attachments ----
   if (attachments && attachments.length > 0) {
     const imageAttachments = attachments.filter((a) => a.mime_type && a.mime_type.startsWith('image/'));
     const otherAttachments = attachments.filter((a) => !(a.mime_type && a.mime_type.startsWith('image/')));
 
-    // Non-image files (docs, PDFs, etc.) can't be rendered as images — list them by name
-    // so nothing gets silently dropped from the job sheet.
     if (otherAttachments.length > 0) {
       y += 16;
       if (y + 60 > doc.page.height - doc.page.margins.bottom) {
-        doc.addPage();
-        y = doc.page.margins.top;
+        y = addPage();
       }
       doc.fontSize(9).fillColor('#111').font('Helvetica-Bold').text('OTHER ATTACHMENTS', left, y);
       y += 16;
@@ -195,10 +218,8 @@ function drawJobSheet(doc, job, items, owner, attachments) {
       });
     }
 
-    // Image attachments (photos, screenshots) each get their own full page so they're
-    // legible when printed — a thumbnail on the main page wouldn't show useful detail.
     imageAttachments.forEach((att) => {
-      doc.addPage();
+      addPage();
       const pw = doc.page.width - doc.page.margins.left - doc.page.margins.right;
       const pl = doc.page.margins.left;
       let py = doc.page.margins.top;
@@ -222,30 +243,66 @@ function loadJobData(jobId) {
   return { job, owner, items, attachments };
 }
 
-function streamJobSheet(jobId, res) {
+// Draws the base PDF with pdfkit, then — only if the job hasn't been signed in-app —
+// overlays real fillable AcroForm fields (Customer Name, Signature, Date) on top of
+// the blank sign-off boxes using pdf-lib, so the customer can type/sign directly in
+// any standard PDF reader (Adobe, Preview, Chrome, etc).
+async function renderJobSheet(jobId) {
   const data = loadJobData(jobId);
-  if (!data) return false;
-  const doc = new PDFDocument({ size: 'A4', margin: 40 });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="Job-${data.job.job_number}.pdf"`);
-  doc.pipe(res);
-  drawJobSheet(doc, data.job, data.items, data.owner, data.attachments);
-  doc.end();
-  return true;
-}
+  if (!data) return null;
 
-function buildJobSheetBuffer(jobId) {
-  return new Promise((resolve, reject) => {
-    const data = loadJobData(jobId);
-    if (!data) return reject(new Error('Job not found'));
+  const fieldPositions = {};
+  const baseBuffer = await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks = [];
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
-    drawJobSheet(doc, data.job, data.items, data.owner, data.attachments);
+    drawJobSheet(doc, data.job, data.items, data.owner, data.attachments, fieldPositions);
     doc.end();
   });
+
+  if (data.job.signature_data) {
+    // Already signed in-app — nothing to make fillable, ship the static PDF as-is.
+    return { buffer: baseBuffer, jobNumber: data.job.job_number };
+  }
+
+  const pdfDoc = await PDFLibDocument.load(baseBuffer);
+  const form = pdfDoc.getForm();
+  const pages = pdfDoc.getPages();
+
+  function addField(name, pos) {
+    if (!pos) return;
+    const page = pages[pos.pageIndex];
+    const pdfY = fieldPositions.pageHeight - pos.y - pos.height;
+    const field = form.createTextField(name);
+    field.addToPage(page, { x: pos.x, y: pdfY, width: pos.width, height: pos.height, borderWidth: 0 });
+    field.setFontSize(10);
+  }
+
+  addField('customer_name', fieldPositions.customerName);
+  addField('customer_signature', fieldPositions.customerSignature);
+  addField('date', fieldPositions.date);
+
+  try { form.updateFieldAppearances(); } catch (e) { /* non-fatal — fields still fillable without pre-rendered appearances */ }
+
+  const filledBytes = await pdfDoc.save();
+  return { buffer: Buffer.from(filledBytes), jobNumber: data.job.job_number };
+}
+
+async function streamJobSheet(jobId, res) {
+  const result = await renderJobSheet(jobId);
+  if (!result) return false;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="Job-${result.jobNumber}.pdf"`);
+  res.send(result.buffer);
+  return true;
+}
+
+async function buildJobSheetBuffer(jobId) {
+  const result = await renderJobSheet(jobId);
+  if (!result) throw new Error('Job not found');
+  return result.buffer;
 }
 
 module.exports = { streamJobSheet, buildJobSheetBuffer, loadJobData };
