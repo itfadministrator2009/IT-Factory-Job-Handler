@@ -4,6 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { StatusPill, PriorityPill } from '../components/Pill';
+import { formatDMY } from '../utils/date';
 
 const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
@@ -162,9 +163,9 @@ export default function JobList() {
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><StatusPill status={j.status} /></td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><PriorityPill priority={j.priority} /></td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>
-                    {j.overdue
-                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {j.due_date}</span>
-                      : (j.due_date || <span style={{ color: 'var(--muted)' }}>—</span>)}
+                      {j.overdue
+                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMY(j.due_date)}</span>
+                      : (j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>)}
                   </td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ color: 'var(--muted)' }}>{formatDate(j.updated_at)}</td>
                 </tr>
