@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   signature_data TEXT,
   signature_at TEXT,
   resolved_at TEXT,
+  ms_event_id TEXT,
   created_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
