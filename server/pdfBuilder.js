@@ -30,6 +30,7 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   const left = doc.page.margins.left;
   let y = doc.page.margins.top;
   let pageIndex = 0;
+  const isSigned = !!job.signature_data;
 
   function addPage() {
     doc.addPage();
@@ -140,6 +141,19 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
     y += descH + 16;
   }
 
+  // COMMENTS — a free-text box below Job Description, made fillable the same way as
+  // the sign-off fields (only while the job hasn't been signed off in-app yet).
+  {
+    const commentsH = 50;
+    doc.fontSize(9).fillColor('#111').font('Helvetica-Bold').text('COMMENTS', left, y);
+    y += 14;
+    doc.rect(left, y, pageWidth, commentsH).strokeColor(LINE).stroke();
+    if (!isSigned && fieldPositions) {
+      fieldPositions.comments = { pageIndex, x: left + 6, y: y + 4, width: pageWidth - 12, height: commentsH - 8 };
+    }
+    y += commentsH + 16;
+  }
+
   if (job.customer_reference) {
     const noteH = 26;
     doc.rect(left, y, pageWidth, noteH).strokeColor(LINE).stroke();
@@ -150,7 +164,6 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
     y += noteH + 20;
   }
 
-  const isSigned = !!job.signature_data;
   const sigRowH = 24;
   const sigBoxH = 60;
   const neededHeight = sigRowH * 2 + sigBoxH + 20;
@@ -244,9 +257,9 @@ function loadJobData(jobId) {
 }
 
 // Draws the base PDF with pdfkit, then — only if the job hasn't been signed in-app —
-// overlays real fillable AcroForm fields (Customer Name, Signature, Date) on top of
-// the blank sign-off boxes using pdf-lib, so the customer can type/sign directly in
-// any standard PDF reader (Adobe, Preview, Chrome, etc).
+// overlays real fillable AcroForm fields (Customer Name, Signature, Date, Comments) on
+// top of the blank boxes using pdf-lib, so the customer can type/sign directly in any
+// standard PDF reader (Adobe, Preview, Chrome, etc).
 async function renderJobSheet(jobId) {
   const data = loadJobData(jobId);
   if (!data) return null;
@@ -271,18 +284,20 @@ async function renderJobSheet(jobId) {
   const form = pdfDoc.getForm();
   const pages = pdfDoc.getPages();
 
-  function addField(name, pos) {
+  function addField(name, pos, options = {}) {
     if (!pos) return;
     const page = pages[pos.pageIndex];
     const pdfY = fieldPositions.pageHeight - pos.y - pos.height;
     const field = form.createTextField(name);
     field.addToPage(page, { x: pos.x, y: pdfY, width: pos.width, height: pos.height, borderWidth: 0 });
     field.setFontSize(10);
+    if (options.multiline) field.enableMultiline();
   }
 
   addField('customer_name', fieldPositions.customerName);
   addField('customer_signature', fieldPositions.customerSignature);
   addField('date', fieldPositions.date);
+  addField('comments', fieldPositions.comments, { multiline: true });
 
   try { form.updateFieldAppearances(); } catch (e) { /* non-fatal — fields still fillable without pre-rendered appearances */ }
 
