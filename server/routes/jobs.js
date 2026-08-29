@@ -1,0 +1,300 @@
+const express = require('express');
+const { v4: uuid } = require('uuid');
+const { db, nextJobNumber, peekNextJobNumber } = require('../db');
+const { authRequired } = require('../auth');
+const { notifyNewReply, notifyStatusChange, notifyTicketCreated } = require('../email');
+
+const router = express.Router();
+router.use(authRequired);
+
+const FIELDS = [
+  'contact_name', 'account_name', 'email', 'phone', 'subject', 'description',
+  'status', 'owner_id', 'product_name', 'due_date', 'scheduled_time', 'language', 'priority',
+  'channel', 'classifications', 'site_address', 'access_notes', 'customer_reference',
+];
+
+const OPEN_STATUSES = ['Open', 'In Progress', 'On Hold'];
+const CLOSED_STATUSES = ['Resolved', 'Closed'];
+
+function withNames(job) {
+  const owner = job.owner_id ? db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(job.owner_id) : null;
+  const creator = job.created_by ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(job.created_by) : null;
+  const attachmentCount = db.prepare('SELECT COUNT(*) as c FROM attachments WHERE job_id = ?').get(job.id).c;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = !!(job.due_date && job.due_date < today && OPEN_STATUSES.includes(job.status));
+  return { ...job, owner, creator, attachmentCount, overdue };
+}
+
+function userName(userId) {
+  if (!userId) return null;
+  return db.prepare('SELECT name FROM users WHERE id = ?').get(userId)?.name || null;
+}
+
+function logAudit(jobId, field, oldValue, newValue, userId) {
+  db.prepare('INSERT INTO job_audit (id, job_id, field, old_value, new_value, changed_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(uuid(), jobId, field, oldValue ?? null, newValue ?? null, userId);
+}
+
+// List jobs — everyone sees all jobs
+router.get('/', (req, res) => {
+  const { status, priority, owner_id, q, overdue } = req.query;
+  let sql = 'SELECT * FROM jobs WHERE 1=1';
+  const params = [];
+
+  if (status) { sql += ' AND status = ?'; params.push(status); }
+  if (priority) { sql += ' AND priority = ?'; params.push(priority); }
+  if (owner_id) { sql += ' AND owner_id = ?'; params.push(owner_id); }
+  if (q) {
+    sql += ' AND (subject LIKE ? OR contact_name LIKE ? OR account_name LIKE ? OR description LIKE ?)';
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  if (overdue === '1') {
+    const today = new Date().toISOString().slice(0, 10);
+    sql += ` AND due_date IS NOT NULL AND due_date < ? AND status IN (${OPEN_STATUSES.map(() => '?').join(',')})`;
+    params.push(today, ...OPEN_STATUSES);
+  }
+  sql += ' ORDER BY created_at DESC';
+
+  const jobs = db.prepare(sql).all(...params).map(withNames);
+  res.json({ jobs });
+});
+
+router.get('/stats/summary', (req, res) => {
+  const rows = db.prepare('SELECT status, COUNT(*) as count FROM jobs GROUP BY status').all();
+  const byStatus = { Open: 0, 'In Progress': 0, 'On Hold': 0, Resolved: 0, Closed: 0 };
+  rows.forEach((r) => { byStatus[r.status] = r.count; });
+  const unassigned = db.prepare('SELECT COUNT(*) as c FROM jobs WHERE owner_id IS NULL').get().c;
+  const total = db.prepare('SELECT COUNT(*) as c FROM jobs').get().c;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = db.prepare(`
+    SELECT COUNT(*) as c FROM jobs
+    WHERE due_date IS NOT NULL AND due_date < ? AND status IN (${OPEN_STATUSES.map(() => '?').join(',')})
+  `).get(today, ...OPEN_STATUSES).c;
+  res.json({ byStatus, unassigned, total, overdue });
+});
+
+router.get('/next-number', (req, res) => {
+  res.json({ next: peekNextJobNumber() });
+});
+
+router.patch('/bulk', (req, res) => {
+  const { ids, status, owner_id } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
+  if (status === undefined && owner_id === undefined) return res.status(400).json({ error: 'status or owner_id is required' });
+
+  let updated = 0;
+  ids.forEach((jobId) => {
+    const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+    if (!job) return;
+
+    const updates = [];
+    const params = [];
+    if (status !== undefined && status !== job.status) {
+      updates.push('status = ?');
+      params.push(status);
+      logAudit(jobId, 'status', job.status, status, req.user.id);
+      if (CLOSED_STATUSES.includes(status) && !CLOSED_STATUSES.includes(job.status)) {
+        updates.push("resolved_at = datetime('now')");
+      } else if (!CLOSED_STATUSES.includes(status)) {
+        updates.push('resolved_at = NULL');
+      }
+    }
+    if (owner_id !== undefined && owner_id !== job.owner_id) {
+      updates.push('owner_id = ?');
+      params.push(owner_id || null);
+      logAudit(jobId, 'owner_id', userName(job.owner_id), userName(owner_id), req.user.id);
+    }
+    if (updates.length === 0) return;
+
+    updates.push("updated_at = datetime('now')");
+    params.push(jobId);
+    db.prepare(`UPDATE jobs SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    updated += 1;
+
+    const fresh = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+    if (status !== undefined && status !== job.status && fresh.email) {
+      notifyStatusChange({ toEmail: fresh.email, ticketNumber: fresh.job_number, subject: fresh.subject, status: fresh.status });
+    }
+  });
+
+  res.json({ ok: true, updated });
+});
+
+router.get('/:id', (req, res) => {
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  const notes = db.prepare('SELECT * FROM job_notes WHERE job_id = ? ORDER BY created_at ASC').all(req.params.id)
+    .map((n) => ({ ...n, author: db.prepare('SELECT id, name FROM users WHERE id = ?').get(n.author_id) }));
+
+  const attachments = db.prepare('SELECT id, original_name, mime_type, size, created_at, uploaded_by FROM attachments WHERE job_id = ? ORDER BY created_at DESC').all(req.params.id)
+    .map((a) => ({ ...a, uploader: db.prepare('SELECT id, name FROM users WHERE id = ?').get(a.uploaded_by) }));
+
+  const items = db.prepare('SELECT * FROM job_items WHERE job_id = ? ORDER BY sort_order ASC').all(req.params.id);
+
+  const audit = db.prepare('SELECT * FROM job_audit WHERE job_id = ? ORDER BY changed_at DESC').all(req.params.id)
+    .map((a) => ({ ...a, user: a.changed_by ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(a.changed_by) : null }));
+
+  res.json({ job: withNames(job), notes, attachments, items, audit });
+});
+
+router.post('/', (req, res) => {
+  const { contact_name, subject } = req.body;
+  if (!contact_name || !subject) {
+    return res.status(400).json({ error: 'contact_name and subject are required' });
+  }
+
+  const id = uuid();
+  const jobNumber = nextJobNumber();
+  const cols = ['id', 'job_number', 'created_by'];
+  const vals = [id, jobNumber, req.user.id];
+
+  FIELDS.forEach((f) => {
+    if (req.body[f] !== undefined && req.body[f] !== '') {
+      cols.push(f);
+      vals.push(req.body[f]);
+    }
+  });
+
+  db.prepare(`INSERT INTO jobs (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals);
+
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+  if (job.email) {
+    notifyTicketCreated({ toEmail: job.email, ticketNumber: jobNumber, subject: job.subject });
+  }
+  res.status(201).json({ job: withNames(job) });
+});
+
+router.patch('/:id', (req, res) => {
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  const updates = [];
+  const params = [];
+  FIELDS.forEach((f) => {
+    if (req.body[f] !== undefined) {
+      const newVal = req.body[f] === '' ? null : req.body[f];
+      if ((f === 'status' || f === 'owner_id') && newVal !== job[f]) {
+        if (f === 'owner_id') {
+          logAudit(req.params.id, f, userName(job[f]), userName(newVal), req.user.id);
+        } else {
+          logAudit(req.params.id, f, job[f], newVal, req.user.id);
+        }
+      }
+      updates.push(`${f} = ?`);
+      params.push(newVal);
+    }
+  });
+  if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+  if (req.body.status !== undefined && req.body.status !== job.status) {
+    if (CLOSED_STATUSES.includes(req.body.status) && !CLOSED_STATUSES.includes(job.status)) {
+      updates.push("resolved_at = datetime('now')");
+    } else if (!CLOSED_STATUSES.includes(req.body.status)) {
+      updates.push('resolved_at = NULL');
+    }
+  }
+
+  updates.push("updated_at = datetime('now')");
+  params.push(req.params.id);
+  db.prepare(`UPDATE jobs SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+  const updated = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  if (req.body.status && req.body.status !== job.status && updated.email) {
+    notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
+  }
+  res.json({ job: withNames(updated) });
+});
+
+router.delete('/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Job not found' });
+  res.json({ ok: true });
+});
+
+router.post('/:id/notes', (req, res) => {
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  const { body, notify_contact } = req.body;
+  if (!body) return res.status(400).json({ error: 'body is required' });
+
+  const id = uuid();
+  db.prepare('INSERT INTO job_notes (id, job_id, author_id, body) VALUES (?, ?, ?, ?)').run(id, req.params.id, req.user.id, body);
+
+  if (job.status === 'Open') {
+    logAudit(req.params.id, 'status', 'Open', 'In Progress', req.user.id);
+    db.prepare("UPDATE jobs SET status = 'In Progress', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  } else {
+    db.prepare("UPDATE jobs SET updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  }
+
+  if (notify_contact && job.email) {
+    notifyNewReply({ toEmail: job.email, ticketNumber: job.job_number, subject: job.subject, authorName: req.user.name, body, isAgentReply: true });
+  }
+
+  const note = db.prepare('SELECT * FROM job_notes WHERE id = ?').get(id);
+  const freshJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  res.status(201).json({
+    note: { ...note, author: { id: req.user.id, name: req.user.name } },
+    job: withNames(freshJob),
+  });
+});
+
+router.post('/:id/items', (req, res) => {
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  const { description, qty, reference } = req.body;
+  if (!description) return res.status(400).json({ error: 'description is required' });
+
+  const maxOrder = db.prepare('SELECT MAX(sort_order) as m FROM job_items WHERE job_id = ?').get(req.params.id).m;
+  const id = uuid();
+  db.prepare('INSERT INTO job_items (id, job_id, description, qty, reference, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, req.params.id, description, qty || 1, reference || null, (maxOrder ?? -1) + 1);
+
+  const item = db.prepare('SELECT * FROM job_items WHERE id = ?').get(id);
+  res.status(201).json({ item });
+});
+
+router.patch('/:id/items/:itemId', (req, res) => {
+  const item = db.prepare('SELECT * FROM job_items WHERE id = ? AND job_id = ?').get(req.params.itemId, req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  const { description, qty, reference } = req.body;
+  db.prepare('UPDATE job_items SET description = ?, qty = ?, reference = ? WHERE id = ?')
+    .run(description ?? item.description, qty ?? item.qty, reference !== undefined ? reference : item.reference, req.params.itemId);
+
+  res.json({ item: db.prepare('SELECT * FROM job_items WHERE id = ?').get(req.params.itemId) });
+});
+
+router.delete('/:id/items/:itemId', (req, res) => {
+  const result = db.prepare('DELETE FROM job_items WHERE id = ? AND job_id = ?').run(req.params.itemId, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Item not found' });
+  res.json({ ok: true });
+});
+
+router.post('/:id/signature', (req, res) => {
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  const { name, dataUrl } = req.body;
+  if (!name || !dataUrl) return res.status(400).json({ error: 'name and dataUrl are required' });
+
+  db.prepare(`
+    UPDATE jobs SET signature_name = ?, signature_data = ?, signature_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?
+  `).run(name, dataUrl, req.params.id);
+
+  res.json({ job: withNames(db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id)) });
+});
+
+router.delete('/:id/signature', (req, res) => {
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  db.prepare("UPDATE jobs SET signature_name = NULL, signature_data = NULL, signature_at = NULL, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  res.json({ job: withNames(db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id)) });
+});
+
+module.exports = router;
