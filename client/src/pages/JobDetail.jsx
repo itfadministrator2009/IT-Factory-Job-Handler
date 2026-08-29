@@ -274,7 +274,7 @@ export default function JobDetail() {
               {job.product_name && <div className="side-row"><label>Product</label><span>{job.product_name}</span></div>}
               {job.due_date && <div className="side-row"><label>Due date</label><span>{job.due_date}</span></div>}
               {job.scheduled_time && <div className="side-row"><label>Time</label><span>{job.scheduled_time}</span></div>}
-              {job.language && <div className="side-row"><label>Language</label><span>{job.language}</span></div>}
+              {job.language && <div className="side-row"><label>Vehicle</label><span>{job.language}</span></div>}
               {job.classifications && <div className="side-row"><label>Classification</label><span>{job.classifications}</span></div>}
               {job.customer_reference && <div className="side-row"><label>Reference</label><span>{job.customer_reference}</span></div>}
             </div>
