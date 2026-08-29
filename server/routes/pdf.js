@@ -6,9 +6,10 @@ const { sendJobSheetEmail } = require('../email');
 const router = express.Router();
 router.use(authRequired);
 
-router.get('/:id/pdf', (req, res) => {
-  const ok = streamJobSheet(req.params.id, res);
+router.get('/:id/pdf', async (req, res) => {
+  const ok = await streamJobSheet(req.params.id, res);
   if (!ok) res.status(404).json({ error: 'Job not found' });
+});
 });
 
 router.post('/:id/email-pdf', async (req, res) => {
