@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, KeyRound, X } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +18,12 @@ export default function Settings() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('user');
   const [saving, setSaving] = useState(false);
+
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetDoneFor, setResetDoneFor] = useState(null);
 
   function load() {
     setLoading(true);
@@ -66,6 +72,28 @@ export default function Settings() {
     }
   }
 
+  function openReset(u) {
+    setResetTarget(u);
+    setResetPassword('');
+    setResetError('');
+    setResetDoneFor(null);
+  }
+
+  async function handleResetPassword(e) {
+    e.preventDefault();
+    setResetSaving(true);
+    setResetError('');
+    try {
+      await api.post(`/users/admin/${resetTarget.id}/reset-password`, { password: resetPassword });
+      setResetDoneFor(resetTarget.name);
+      setResetTarget(null);
+    } catch (err) {
+      setResetError(err.response?.data?.error || 'Could not reset password');
+    } finally {
+      setResetSaving(false);
+    }
+  }
+
   if (!isAdmin) {
     return (
       <Layout>
@@ -102,6 +130,12 @@ export default function Settings() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {resetDoneFor && (
+        <div className="success-banner">
+          <span>Password reset for {resetDoneFor}. Let them know their new password directly.</span>
+          <button type="button" onClick={() => setResetDoneFor(null)}><X size={15} /></button>
+        </div>
+      )}
 
       {showForm && (
         <div className="panel" style={{ padding: 24, marginBottom: 20, maxWidth: 480 }}>
@@ -163,15 +197,25 @@ export default function Settings() {
                     </select>
                   </td>
                   <td>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => handleDelete(u)}
-                      disabled={u.id === currentUser.id}
-                      title={u.id === currentUser.id ? "You can't remove your own account" : 'Remove user'}
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => openReset(u)}
+                        title="Reset password"
+                      >
+                        <KeyRound size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleDelete(u)}
+                        disabled={u.id === currentUser.id}
+                        title={u.id === currentUser.id ? "You can't remove your own account" : 'Remove user'}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -183,6 +227,38 @@ export default function Settings() {
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
         <ShieldCheck size={13} /> Admins can manage users and roles here. Everyone — Admin or User — has the same access to jobs, reports, templates, and the knowledge base.
       </p>
+
+      {resetTarget && (
+        <div className="modal-overlay" onClick={() => setResetTarget(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reset password for {resetTarget.name}</h3>
+              <button type="button" onClick={() => setResetTarget(null)}><X size={18} /></button>
+            </div>
+            {resetError && <div className="error-banner">{resetError}</div>}
+            <form onSubmit={handleResetPassword}>
+              <div className="field">
+                <label htmlFor="reset-pass">New password</label>
+                <input
+                  id="reset-pass"
+                  type="password"
+                  minLength={6}
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+                This takes effect immediately. You'll need to tell {resetTarget.name.split(' ')[0]} their new password directly — it isn't emailed to them.
+              </p>
+              <button className="btn btn-accent" type="submit" disabled={resetSaving} style={{ width: '100%', justifyContent: 'center' }}>
+                {resetSaving ? 'Resetting…' : 'Reset password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
