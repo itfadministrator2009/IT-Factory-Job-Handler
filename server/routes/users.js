@@ -94,4 +94,22 @@ router.delete('/admin/:id', adminRequired, (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin sets a new password for someone directly — for when they're locked out and
+// email isn't set up, or just faster than waiting on a reset email.
+router.post('/admin/:id/reset-password', adminRequired, (req, res) => {
+  const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  const password_hash = bcrypt.hashSync(password, 10);
+  db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?')
+    .run(password_hash, req.params.id);
+
+  res.json({ ok: true });
+});
+
 module.exports = router;
