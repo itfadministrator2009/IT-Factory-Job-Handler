@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import SignaturePadLib from 'signature_pad';
 import { X } from 'lucide-react';
 
-export default function SignaturePad({ defaultName, onSave, onClose }) {
+export default function SignaturePad({ defaultName, onSave, onClose, onSkip, skipLabel, title }) {
   const canvasRef = useRef(null);
   const padRef = useRef(null);
   const [name, setName] = useState(defaultName || '');
@@ -43,7 +43,7 @@ export default function SignaturePad({ defaultName, onSave, onClose }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Capture signature</h3>
+          <h3>{title || 'Capture signature'}</h3>
           <button type="button" onClick={onClose}><X size={18} /></button>
         </div>
 
@@ -58,9 +58,14 @@ export default function SignaturePad({ defaultName, onSave, onClose }) {
         </div>
         <div className="signature-actions">
           <button type="button" className="btn btn-ghost btn-sm" onClick={clear}>Clear</button>
-          <button type="button" className="btn btn-accent btn-sm" onClick={handleSave} disabled={saving || !name.trim()}>
-            {saving ? 'Saving…' : 'Save signature'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onSkip && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onSkip}>{skipLabel || 'Skip for now'}</button>
+            )}
+            <button type="button" className="btn btn-accent btn-sm" onClick={handleSave} disabled={saving || !name.trim()}>
+              {saving ? 'Saving…' : 'Save signature'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
