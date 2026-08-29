@@ -96,13 +96,11 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
-.brand-logo-badge {
-  background: white;
-  border-radius: 9px;
-  padding: 7px 14px;
-  display: inline-flex;
-  align-items: center;
+.brand-logo {
+  height: 44px;
+  display: block;
   flex-shrink: 0;
+}
 }
 .brand-logo-badge img {
   height: 44px;
