@@ -792,3 +792,20 @@ input, select, textarea {
   .signature-canvas-wrap { flex: 1; margin-bottom: 16px; }
   .signature-canvas { height: 100%; min-height: 260px; }
 }
+/* ---------- Settings tabs ---------- */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.settings-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.settings-tab.active {
+  color: var(--teal);
+  border-bottom-color: var(--teal);
+}
