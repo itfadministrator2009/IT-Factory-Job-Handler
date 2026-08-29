@@ -3,7 +3,7 @@ const PDFDocument = require('pdfkit');
 const { db } = require('./db');
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'logo.jpg');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
 const COMPANY = {
   addressLines: (process.env.COMPANY_ADDRESS || '3 Allen Place|Wetherill Park, Sydney, NSW, 2164').split('|'),
   abn: process.env.COMPANY_ABN || 'ABN:14 137 802 272',
