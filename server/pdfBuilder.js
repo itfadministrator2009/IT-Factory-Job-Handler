@@ -3,6 +3,7 @@ const PDFDocument = require('pdfkit');
 const { db } = require('./db');
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'logo.jpg');
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const COMPANY = {
   addressLines: (process.env.COMPANY_ADDRESS || '3 Allen Place|Wetherill Park, Sydney, NSW, 2164').split('|'),
   abn: process.env.COMPANY_ABN || 'ABN:14 137 802 272',
@@ -20,7 +21,7 @@ function fmtDate(s) {
   return d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-function drawJobSheet(doc, job, items, owner) {
+function drawJobSheet(doc, job, items, owner, attachments) {
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const left = doc.page.margins.left;
   let y = doc.page.margins.top;
@@ -171,6 +172,45 @@ function drawJobSheet(doc, job, items, owner) {
   doc.moveTo(left + 90, y).lineTo(left + 90, y + sigRowH).strokeColor(LINE).stroke();
   doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text('DATE:', left + 8, y + 8, { width: 80 });
   doc.font('Helvetica').fillColor('#111').text(job.signature_at ? fmtDate(job.signature_at) : '—', left + 98, y + 8);
+  y += sigRowH;
+
+  // ---- Attachments ----
+  if (attachments && attachments.length > 0) {
+    const imageAttachments = attachments.filter((a) => a.mime_type && a.mime_type.startsWith('image/'));
+    const otherAttachments = attachments.filter((a) => !(a.mime_type && a.mime_type.startsWith('image/')));
+
+    // Non-image files (docs, PDFs, etc.) can't be rendered as images — list them by name
+    // so nothing gets silently dropped from the job sheet.
+    if (otherAttachments.length > 0) {
+      y += 16;
+      if (y + 60 > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        y = doc.page.margins.top;
+      }
+      doc.fontSize(9).fillColor('#111').font('Helvetica-Bold').text('OTHER ATTACHMENTS', left, y);
+      y += 16;
+      otherAttachments.forEach((a) => {
+        doc.fontSize(8.5).font('Helvetica').fillColor('#333').text(`• ${a.original_name}`, left, y, { width: pageWidth });
+        y += 14;
+      });
+    }
+
+    // Image attachments (photos, screenshots) each get their own full page so they're
+    // legible when printed — a thumbnail on the main page wouldn't show useful detail.
+    imageAttachments.forEach((att) => {
+      doc.addPage();
+      const pw = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const pl = doc.page.margins.left;
+      let py = doc.page.margins.top;
+      doc.fontSize(9).fillColor('#111').font('Helvetica-Bold').text(`Attachment: ${att.original_name}`, pl, py, { width: pw });
+      py += 18;
+      const availableHeight = doc.page.height - py - doc.page.margins.bottom;
+      try {
+        const filePath = path.join(UPLOAD_DIR, att.stored_name);
+        doc.image(filePath, pl, py, { fit: [pw, availableHeight] });
+      } catch (e) { /* unreadable or unsupported image — skip rather than fail the whole PDF */ }
+    });
+  }
 }
 
 function loadJobData(jobId) {
@@ -178,7 +218,8 @@ function loadJobData(jobId) {
   if (!job) return null;
   const owner = job.owner_id ? db.prepare('SELECT name FROM users WHERE id = ?').get(job.owner_id) : null;
   const items = db.prepare('SELECT * FROM job_items WHERE job_id = ? ORDER BY sort_order ASC').all(jobId);
-  return { job, owner, items };
+  const attachments = db.prepare('SELECT * FROM attachments WHERE job_id = ? ORDER BY created_at ASC').all(jobId);
+  return { job, owner, items, attachments };
 }
 
 function streamJobSheet(jobId, res) {
@@ -188,7 +229,7 @@ function streamJobSheet(jobId, res) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="Job-${data.job.job_number}.pdf"`);
   doc.pipe(res);
-  drawJobSheet(doc, data.job, data.items, data.owner);
+  drawJobSheet(doc, data.job, data.items, data.owner, data.attachments);
   doc.end();
   return true;
 }
@@ -202,7 +243,7 @@ function buildJobSheetBuffer(jobId) {
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
-    drawJobSheet(doc, data.job, data.items, data.owner);
+    drawJobSheet(doc, data.job, data.items, data.owner, data.attachments);
     doc.end();
   });
 }
