@@ -13,6 +13,7 @@ import ArticleView from './pages/ArticleView';
 import ArticleForm from './pages/ArticleForm';
 import Reports from './pages/Reports';
 import Templates from './pages/Templates';
+import Settings from './pages/Settings';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -41,6 +42,7 @@ function AppRoutes() {
 
       <Route path="/reports" element={<RequireAuth><Reports /></RequireAuth>} />
       <Route path="/templates" element={<RequireAuth><Templates /></RequireAuth>} />
+      <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
