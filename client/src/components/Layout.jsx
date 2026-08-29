@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack } from 'lucide-react';
+import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'agent';
 
   return (
     <div className="app-shell">
@@ -31,6 +32,11 @@ export default function Layout({ children }) {
           <NavLink to="/kb" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
             <BookOpen size={16} /> Knowledge Base
           </NavLink>
+          {isAdmin && (
+            <NavLink to="/settings" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+              <Settings size={16} /> Settings
+            </NavLink>
+          )}
         </nav>
         <div className="sidebar-footer">
           <div>{user?.name}</div>
