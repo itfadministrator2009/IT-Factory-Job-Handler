@@ -3,6 +3,7 @@ const { v4: uuid } = require('uuid');
 const { db, nextJobNumber, peekNextJobNumber } = require('../db');
 const { authRequired } = require('../auth');
 const { notifyNewReply, notifyStatusChange, notifyTicketCreated } = require('../email');
+const { createCalendarEvent } = require('../calendar');
 
 const router = express.Router();
 router.use(authRequired);
@@ -158,10 +159,15 @@ router.post('/', (req, res) => {
 
   db.prepare(`INSERT INTO jobs (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals);
 
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+    const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
   if (job.email) {
     notifyTicketCreated({ toEmail: job.email, ticketNumber: jobNumber, subject: job.subject });
   }
+
+  createCalendarEvent(job).then((eventId) => {
+    if (eventId) db.prepare('UPDATE jobs SET ms_event_id = ? WHERE id = ?').run(eventId, id);
+  });
+
   res.status(201).json({ job: withNames(job) });
 });
 
