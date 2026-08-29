@@ -50,22 +50,29 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
 
   const boxW = 220;
   const boxX = left + pageWidth - boxW;
-  const boxRowH = 20;
+  const valueW = boxW - 110;
   const metaRows = [
     ['DATE:', fmtDate(job.due_date) || fmtDate(job.created_at)],
     ['TIME:', job.scheduled_time || '—'],
     ['JOB REFERENCE:', `#${job.job_number}`],
     ['TECHNICIAN:', owner?.name || '—'],
+    ['VEHICLE:', job.language || '—'],
   ];
-  doc.roundedRect(boxX, y, boxW, boxRowH * metaRows.length, 4).stroke(TEAL);
+  // Row heights are computed per-row (not fixed) so a long value — like a full vehicle
+  // description — wraps onto a second line instead of overflowing past the box border.
+  const metaRowHeights = metaRows.map(([, value]) => Math.max(20, doc.heightOfString(value, { width: valueW }) + 10));
+  const boxTotalH = metaRowHeights.reduce((a, b) => a + b, 0);
+
+  doc.roundedRect(boxX, y, boxW, boxTotalH, 4).stroke(TEAL);
+  let metaRowY = y;
   metaRows.forEach(([label, value], i) => {
-    const rowY = y + i * boxRowH;
-    if (i > 0) doc.moveTo(boxX, rowY).lineTo(boxX + boxW, rowY).strokeColor(LINE).stroke();
-    doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text(label, boxX + 10, rowY + 6, { width: 100 });
-    doc.font('Helvetica').fillColor('#111').text(value, boxX + 100, rowY + 6, { width: boxW - 110 });
+    if (i > 0) doc.moveTo(boxX, metaRowY).lineTo(boxX + boxW, metaRowY).strokeColor(LINE).stroke();
+    doc.fontSize(8.5).fillColor('#333').font('Helvetica-Bold').text(label, boxX + 10, metaRowY + 6, { width: 100 });
+    doc.font('Helvetica').fillColor('#111').text(value, boxX + 100, metaRowY + 6, { width: valueW });
+    metaRowY += metaRowHeights[i];
   });
 
-  y = Math.max(infoY + 20, y + boxRowH * metaRows.length + 20);
+  y = Math.max(infoY + 20, y + boxTotalH + 20);
 
   doc.rect(left, y, pageWidth, 22).fill(TEAL);
   doc.fontSize(11).fillColor('white').font('Helvetica-Bold').text('JOB SHEET', left, y + 6, { width: pageWidth, align: 'center' });
