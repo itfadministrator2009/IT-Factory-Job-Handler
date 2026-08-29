@@ -7,6 +7,7 @@ import AttachmentManager from '../components/AttachmentManager';
 import ItemsManager from '../components/ItemsManager';
 import SignaturePad from '../components/SignaturePad';
 import { openJobPdf } from '../utils/pdf';
+import { formatDMY } from '../utils/date';
 import { StatusPill, PriorityPill } from '../components/Pill';
 
 const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
@@ -272,7 +273,7 @@ export default function JobDetail() {
             <div className="panel side-block">
               <h4>Additional info</h4>
               {job.product_name && <div className="side-row"><label>Product</label><span>{job.product_name}</span></div>}
-              {job.due_date && <div className="side-row"><label>Due date</label><span>{job.due_date}</span></div>}
+              {job.due_date && <div className="side-row"><label>Due date</label><span>{formatDMY(job.due_date)}</span></div>}
               {job.scheduled_time && <div className="side-row"><label>Time</label><span>{job.scheduled_time}</span></div>}
               {job.language && <div className="side-row"><label>Vehicle</label><span>{job.language}</span></div>}
               {job.classifications && <div className="side-row"><label>Classification</label><span>{job.classifications}</span></div>}
