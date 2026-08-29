@@ -52,27 +52,78 @@ function brandedEmail({ title, bodyHtml, footerNote }) {
 </div>`;
 }
 
+// A little colored status pill used in the "status changed" email — mirrors the
+// pills in the app itself so it's instantly familiar.
+function statusPillColor(status) {
+  const colors = {
+    Open: '#3a63ad', 'In Progress': '#c98a1f', 'On Hold': '#6b7570',
+    Resolved: '#3f7d4f', Closed: '#777777',
+  };
+  return colors[status] || '#3a63ad';
+}
+
 function notifyNewReply({ toEmail, ticketNumber, subject, authorName, body, isAgentReply }) {
+  const html = brandedEmail({
+    title: `New reply on #${ticketNumber}`,
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 6px;">
+        <strong>${authorName}</strong> replied on <strong>${subject}</strong>:
+      </p>
+      <div style="background:#f6f5f1; border-left:3px solid #1e4d4b; border-radius:6px; padding:14px 16px; margin:14px 0 20px; font-size:14px; color:#333; line-height:1.6; white-space:pre-wrap;">${body}</div>
+      <p style="font-size:13px; color:#555; margin:0;">
+        ${isAgentReply ? 'Reply to this email or log in to continue the conversation.' : 'Log in to your helpdesk to continue the conversation.'}
+      </p>
+    `,
+  });
+
   return sendMail({
     to: toEmail,
     subject: `[Ticket #${ticketNumber}] New reply: ${subject}`,
     text: `${authorName} replied:\n\n${body}\n\n${isAgentReply ? 'Reply to this email or log in to continue the conversation.' : 'Log in to your helpdesk to continue the conversation.'}`,
+    html,
   });
 }
 
 function notifyStatusChange({ toEmail, ticketNumber, subject, status }) {
+  const html = brandedEmail({
+    title: `Status updated — #${ticketNumber}`,
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        Your request <strong>"${subject}"</strong> is now:
+      </p>
+      <div style="text-align:center; margin:0 0 6px;">
+        <span style="display:inline-block; background:${statusPillColor(status)}1a; color:${statusPillColor(status)}; font-weight:700; font-size:13px; padding:6px 18px; border-radius:999px;">${status}</span>
+      </div>
+    `,
+  });
+
   return sendMail({
     to: toEmail,
     subject: `[Ticket #${ticketNumber}] Status updated: ${status}`,
     text: `Your ticket "${subject}" is now marked as ${status}.`,
+    html,
   });
 }
 
 function notifyTicketCreated({ toEmail, ticketNumber, subject }) {
+  const html = brandedEmail({
+    title: 'We received your request',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        Thanks for reaching out. We've opened <strong>ticket #${ticketNumber}</strong>:
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 20px; font-size:14px; color:#333; font-weight:600;">
+        ${subject}
+      </div>
+      <p style="font-size:13px; color:#555; margin:0;">An agent will follow up soon.</p>
+    `,
+  });
+
   return sendMail({
     to: toEmail,
     subject: `[Ticket #${ticketNumber}] We received your request`,
     text: `Thanks for reaching out. We've opened ticket #${ticketNumber}: "${subject}" and an agent will follow up soon.`,
+    html,
   });
 }
 
@@ -105,10 +156,23 @@ function sendPasswordReset({ toEmail, resetUrl }) {
 }
 
 function sendJobSheetEmail({ toEmail, jobNumber, subject, pdfBuffer }) {
+  const html = brandedEmail({
+    title: `Job Sheet — #${jobNumber}`,
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        Please find attached the job sheet for:
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 8px; font-size:14px; color:#333; font-weight:600;">
+        ${subject}
+      </div>
+    `,
+  });
+
   return sendMail({
     to: toEmail,
     subject: `Job Sheet - #${jobNumber} - ${subject}`,
     text: `Please find attached the job sheet for job #${jobNumber}: "${subject}".`,
+    html,
     attachments: [{ filename: `Job-${jobNumber}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
   });
 }
