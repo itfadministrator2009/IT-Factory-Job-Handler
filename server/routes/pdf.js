@@ -10,7 +10,6 @@ router.get('/:id/pdf', async (req, res) => {
   const ok = await streamJobSheet(req.params.id, res);
   if (!ok) res.status(404).json({ error: 'Job not found' });
 });
-});
 
 router.post('/:id/email-pdf', async (req, res) => {
   const data = loadJobData(req.params.id);
