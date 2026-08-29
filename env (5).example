@@ -1,0 +1,22 @@
+PORT=4000
+JWT_SECRET=change-this-to-a-long-random-string
+
+# Your deployed frontend URL — locks down CORS and is used to build password-reset links.
+# Leave unset for local dev (CORS stays open, links point at localhost:5173).
+FRONTEND_URL=
+
+# SMTP — leave unset to just log emails to the console (fine for local dev/testing)
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+FROM_EMAIL=jobs@yourdomain.com
+
+# Inbound email-to-job webhook shared secret
+INBOUND_WEBHOOK_TOKEN=change-this-to-a-long-random-string
+
+# Job Sheet PDF letterhead details (defaults match the IT Factory template if unset)
+COMPANY_NAME=IT FACTORY PTY LTD
+COMPANY_ADDRESS=3 Allen Place|Wetherill Park, Sydney, NSW, 2164
+COMPANY_ABN=ABN:14 137 802 272
+COMPANY_PHONE=Phone:1300 589 579

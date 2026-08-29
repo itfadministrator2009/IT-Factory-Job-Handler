@@ -1,0 +1,5 @@
+node_modules
+helpdesk.db
+helpdesk.db-*
+uploads/
+.env
