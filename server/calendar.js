@@ -59,6 +59,34 @@ function parseTime(text) {
   return { hour, minute };
 }
 
+// Maps a detected Australian state/territory to the matching Outlook category —
+// these category names must already exist in the target mailbox (Categorize menu);
+// this doesn't create them, just assigns the matching one by name.
+const STATE_CATEGORIES = {
+  NSW: 'NSW Collections / Projects',
+  VIC: 'VIC Collections / Projects',
+  QLD: 'QLD Collections / Projects',
+  WA: 'WA Collections / Projects',
+  SA: 'SA Collections / Projects',
+  TAS: 'TAS Collections / Projects',
+  NT: 'NT Collections / Projects',
+  ACT: 'ACT Collections / Projects',
+};
+
+// Order matters: longer/more-specific codes first so e.g. "NSW" isn't ever partially
+// matched by a shorter code. All matched as whole words only (word boundaries), so
+// "SA" won't match inside "Tasmania" and "ACT" won't match inside ordinary text.
+const STATE_MATCH_ORDER = ['NSW', 'VIC', 'QLD', 'TAS', 'ACT', 'WA', 'SA', 'NT'];
+
+function detectStateCategory(address) {
+  if (!address) return null;
+  for (const code of STATE_MATCH_ORDER) {
+    const re = new RegExp(`\\b${code}\\b`, 'i');
+    if (re.test(address)) return STATE_CATEGORIES[code];
+  }
+  return null;
+}
+
 function pad(n) {
   return String(n).padStart(2, '0');
 }
@@ -71,6 +99,7 @@ function formatLocalDateTime(d) {
 function buildEventPayload(job) {
   const time = parseTime(job.scheduled_time);
   const subject = `Job #${job.job_number} - ${job.subject}`;
+  const category = detectStateCategory(job.site_address);
 
   const bodyLines = [
     job.contact_name ? `Contact: ${job.contact_name}` : null,
@@ -82,6 +111,7 @@ function buildEventPayload(job) {
   ].filter(Boolean).join('\n');
 
   const location = job.site_address ? { displayName: job.site_address } : undefined;
+  const categories = category ? [category] : undefined;
 
   if (time) {
     const start = new Date(`${job.due_date}T00:00:00`);
@@ -93,6 +123,7 @@ function buildEventPayload(job) {
       start: { dateTime: formatLocalDateTime(start), timeZone: TIMEZONE },
       end: { dateTime: formatLocalDateTime(end), timeZone: TIMEZONE },
       location,
+      categories,
     };
   }
 
@@ -104,6 +135,7 @@ function buildEventPayload(job) {
     end: { dateTime: `${job.due_date}T00:00:00`, timeZone: TIMEZONE },
     isAllDay: true,
     location,
+    categories,
   };
 }
 
@@ -136,4 +168,4 @@ async function createCalendarEvent(job) {
   }
 }
 
-module.exports = { createCalendarEvent, buildEventPayload, parseTime, configured };
+module.exports = { createCalendarEvent, buildEventPayload, parseTime, detectStateCategory, configured };
