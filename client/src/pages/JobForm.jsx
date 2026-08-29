@@ -9,6 +9,14 @@ import ItemsManager from '../components/ItemsManager';
 const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const CHANNELS = ['Phone', 'Email', 'Web', 'Walk-in', 'Chat'];
+const VEHICLES = [
+  'Hino 2013 NSW Truck CT04CR',
+  'HINO 2021 NSW Truck FNZ16E',
+  'Hino 2015 VIC Truck 1SD2PS',
+  'LDV 2023 NSW Van DL71BI',
+  'Renault 2017 NSW Van DPH73M',
+];
+const CUSTOM_VEHICLE = '__custom__';
 
 const EMPTY = {
   contact_name: '', account_name: '', email: '', phone: '',
@@ -35,6 +43,7 @@ export default function JobForm() {
   const [templates, setTemplates] = useState([]);
   const [templateItems, setTemplateItems] = useState([]);
   const [templateKey, setTemplateKey] = useState('none');
+  const [isCustomVehicle, setIsCustomVehicle] = useState(false);
 
   useEffect(() => {
     if (!isEdit) {
@@ -81,6 +90,7 @@ export default function JobForm() {
       setExistingAttachments(res.data.attachments || []);
       setExistingItems(res.data.items || []);
       setJobNumber(j.job_number);
+      setIsCustomVehicle(!!j.language && !VEHICLES.includes(j.language));
       setLoading(false);
     });
   }, [id, isEdit]);
@@ -216,8 +226,33 @@ export default function JobForm() {
               </div>
 
               <div className="field">
-                <label htmlFor="language">Language</label>
-                <input id="language" value={form.language} onChange={(e) => set('language', e.target.value)} placeholder="e.g. English" />
+                <label htmlFor="vehicle">Vehicle</label>
+                <select
+                  id="vehicle"
+                  value={isCustomVehicle ? CUSTOM_VEHICLE : form.language}
+                  onChange={(e) => {
+                    if (e.target.value === CUSTOM_VEHICLE) {
+                      setIsCustomVehicle(true);
+                      set('language', '');
+                    } else {
+                      setIsCustomVehicle(false);
+                      set('language', e.target.value);
+                    }
+                  }}
+                >
+                  <option value="">-None-</option>
+                  {VEHICLES.map((v) => <option key={v} value={v}>{v}</option>)}
+                  <option value={CUSTOM_VEHICLE}>Custom (enter manually)…</option>
+                </select>
+                {isCustomVehicle && (
+                  <input
+                    style={{ marginTop: 8 }}
+                    value={form.language}
+                    onChange={(e) => set('language', e.target.value)}
+                    placeholder="Enter vehicle details"
+                    autoFocus
+                  />
+                )}
               </div>
               <div className="field">
                 <label htmlFor="priority">Priority</label>
