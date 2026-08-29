@@ -29,7 +29,7 @@ export default function Register() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="brand-logo-badge"><img src="/logo.jpg" alt="IT Factory" /></span>
+          <img src="/logo.png" alt="IT Factory" className="brand-logo" />
           <strong style={{ fontFamily: 'var(--font-display)', fontSize: 18 }}>Work Desk</strong>
         </div>
         <h1>Create an account</h1>
