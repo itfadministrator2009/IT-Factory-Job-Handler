@@ -13,18 +13,43 @@ if (hasSmtp) {
 }
 
 const FROM = process.env.FROM_EMAIL || 'helpdesk@example.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const LOGO_URL = `${FRONTEND_URL}/logo.jpg`;
 
-async function sendMail({ to, subject, text, attachments }) {
+async function sendMail({ to, subject, text, html, attachments }) {
   if (!to) return;
   if (!transporter) {
     console.log(`[email:dev-mode] To: ${to} | Subject: ${subject}\n${text}\n${attachments ? `(${attachments.length} attachment(s))` : ''}`);
     return;
   }
   try {
-    await transporter.sendMail({ from: FROM, to, subject, text, attachments });
+    await transporter.sendMail({ from: FROM, to, subject, text, html, attachments });
   } catch (err) {
     console.error('Email send failed:', err.message);
   }
+}
+
+// Shared wrapper so every branded email looks consistent — logo up top, a title,
+// a block of body content, and a muted footer note.
+function brandedEmail({ title, bodyHtml, footerNote }) {
+  return `
+<div style="background:#f6f5f1; padding:32px 16px; font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e2e0d8;">
+    <div style="background:#1e4d4b; padding:24px; text-align:center;">
+      <div style="display:inline-block; background:#ffffff; border-radius:9px; padding:8px 16px;">
+        <img src="${LOGO_URL}" alt="IT Factory" height="36" style="display:block; height:36px;" />
+      </div>
+      <div style="color:#ffffff; font-size:14px; font-weight:700; letter-spacing:0.02em; margin-top:10px;">WORK DESK</div>
+    </div>
+    <div style="padding:28px 28px 8px;">
+      <h1 style="font-size:18px; color:#16241f; margin:0 0 16px;">${title}</h1>
+      ${bodyHtml}
+    </div>
+    <div style="padding:16px 28px 24px; color:#6b7570; font-size:12px; line-height:1.5;">
+      ${footerNote || ''}
+    </div>
+  </div>
+</div>`;
 }
 
 function notifyNewReply({ toEmail, ticketNumber, subject, authorName, body, isAgentReply }) {
@@ -52,10 +77,30 @@ function notifyTicketCreated({ toEmail, ticketNumber, subject }) {
 }
 
 function sendPasswordReset({ toEmail, resetUrl }) {
+  const html = brandedEmail({
+    title: 'Reset your password',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 22px;">
+        We received a request to reset your password. Click the button below to choose a new one — this link expires in 1 hour.
+      </p>
+      <div style="text-align:center; margin:0 0 22px;">
+        <a href="${resetUrl}" style="background:#e8734a; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px; padding:12px 28px; border-radius:8px; display:inline-block;">
+          Reset Password
+        </a>
+      </div>
+      <p style="font-size:12px; color:#888; word-break:break-all; margin:0 0 4px;">
+        Or paste this link into your browser:<br/>
+        <a href="${resetUrl}" style="color:#1e4d4b;">${resetUrl}</a>
+      </p>
+    `,
+    footerNote: "If you didn't request this, you can safely ignore this email — your password won't change.",
+  });
+
   return sendMail({
     to: toEmail,
     subject: 'Reset your Work Desk password',
     text: `We received a request to reset your password.\n\nClick the link below to choose a new one (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
+    html,
   });
 }
 
