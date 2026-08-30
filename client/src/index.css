@@ -829,7 +829,7 @@ input, select, textarea {
     flex-direction: column;
     padding: 16px;
   }
-    .signature-canvas-wrap { margin-bottom: 16px; }
+  .signature-canvas-wrap { margin-bottom: 16px; }
   .signature-canvas { height: 220px; }
 
   /* Dashboard's "Recent jobs" is a quick-glance summary, not the full Jobs list —
@@ -841,5 +841,4 @@ input, select, textarea {
   .dashboard-recent-table th:nth-child(8), .dashboard-recent-table td:nth-child(8) {
     display: none;
   }
-}
 }
