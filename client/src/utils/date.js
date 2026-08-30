@@ -8,3 +8,11 @@ export function formatDMY(s) {
   if (!year || !month || !day) return s;
   return `${day}/${month}/${year}`;
 }
+
+// Combines a due date with its scheduled time for compact display, e.g.
+// "02/09/2026 · 9am". Omits the time entirely if none was set.
+export function formatDMYWithTime(dateStr, timeStr) {
+  const date = formatDMY(dateStr);
+  if (!date) return '';
+  return timeStr ? `${date} · ${timeStr}` : date;
+}
