@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { StatusPill, PriorityPill } from '../components/Pill';
-import { formatDMY } from '../utils/date';
+import { formatDMY, formatDMYWithTime } from '../utils/date';
 import { downloadJobsCsv } from '../utils/pdf';
 import { useAuth } from '../context/AuthContext';
 
@@ -218,8 +218,8 @@ export default function JobList() {
                   <td className="ticket-num" onClick={() => navigate(`/jobs/${j.id}`)}>#{j.job_number}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>
                     {j.overdue
-                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMY(j.due_date)}</span>
-                      : (j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>)}
+                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMYWithTime(j.due_date, j.scheduled_time)}</span>
+                      : (j.due_date ? formatDMYWithTime(j.due_date, j.scheduled_time) : <span style={{ color: 'var(--muted)' }}>—</span>)}
                   </td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.subject}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.contact_name}</td>
