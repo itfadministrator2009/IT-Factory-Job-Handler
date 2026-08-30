@@ -5,7 +5,7 @@ import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { StatusPill, PriorityPill } from '../components/Pill';
-import { formatDMY } from '../utils/date';
+import { formatDMY, formatDMYWithTime } from '../utils/date';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -111,7 +111,7 @@ export default function Dashboard() {
               {recent.map((j) => (
                 <tr key={j.id} className="clickable" onClick={() => navigate(`/jobs/${j.id}`)}>
                   <td className="ticket-num">#{j.job_number}</td>
-                  <td>{j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                  <td>{j.due_date ? formatDMYWithTime(j.due_date, j.scheduled_time) : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                   <td>{j.subject}</td>
                   <td>{j.contact_name}</td>
                   <td>{j.account_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
