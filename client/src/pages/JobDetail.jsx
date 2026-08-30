@@ -10,7 +10,7 @@ import { openJobPdf } from '../utils/pdf';
 import { formatDMY } from '../utils/date';
 import { StatusPill, PriorityPill } from '../components/Pill';
 
-const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
+const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 
 export default function JobDetail() {
