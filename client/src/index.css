@@ -859,8 +859,8 @@ input, select, textarea {
   .signature-canvas-wrap { margin-bottom: 16px; }
   .signature-canvas { height: 220px; }
 
-  /* Dashboard's "Recent jobs" is a quick-glance summary, not the full Jobs list —
-     on a phone, trim it to the essentials (#, Subject, Contact, Status) instead of
+    /* Dashboard's "Recent jobs" is a quick-glance summary, not the full Jobs list —
+     on a phone, trim it to the essentials (#, Date, Subject, Status) instead of
      squeezing all 8 columns or relying on an undiscoverable horizontal scroll. */
   .dashboard-recent-table th:nth-child(4), .dashboard-recent-table td:nth-child(4),
   .dashboard-recent-table th:nth-child(5), .dashboard-recent-table td:nth-child(5),
