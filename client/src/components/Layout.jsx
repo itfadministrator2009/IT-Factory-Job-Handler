@@ -14,21 +14,29 @@ export default function Layout({ children }) {
           <span>Work Desk</span>
         </div>
         <nav className="sidebar-nav">
-          <NavLink to="/dashboard" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
-            <LayoutDashboard size={16} /> Dashboard
-          </NavLink>
+          {isAdmin && (
+            <NavLink to="/dashboard" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+              <LayoutDashboard size={16} /> Dashboard
+            </NavLink>
+          )}
           <NavLink to="/jobs" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
             <Briefcase size={16} /> Jobs
           </NavLink>
-          <NavLink to="/jobs/new" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
-            <PlusCircle size={16} /> New Job
-          </NavLink>
-          <NavLink to="/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
-            <BarChart3 size={16} /> Reports
-          </NavLink>
-          <NavLink to="/templates" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
-            <FileStack size={16} /> Templates
-          </NavLink>
+          {isAdmin && (
+            <NavLink to="/jobs/new" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+              <PlusCircle size={16} /> New Job
+            </NavLink>
+          )}
+          {isAdmin && (
+            <NavLink to="/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+              <BarChart3 size={16} /> Reports
+            </NavLink>
+          )}
+          {isAdmin && (
+            <NavLink to="/templates" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+              <FileStack size={16} /> Templates
+            </NavLink>
+          )}
           <NavLink to="/kb" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
             <BookOpen size={16} /> Knowledge Base
           </NavLink>
