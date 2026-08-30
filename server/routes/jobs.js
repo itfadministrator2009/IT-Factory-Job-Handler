@@ -2,7 +2,7 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const { db, nextJobNumber, peekNextJobNumber } = require('../db');
 const { authRequired } = require('../auth');
-const { notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete } = require('../email');
+const { notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed } = require('../email');
 const { createCalendarEvent, syncCalendarEvent, deleteCalendarEvent } = require('../calendar');
 const { canAccessJob, isAdminRole, currentRole } = require('../permissions');
 const { buildJobSheetBuffer } = require('../pdfBuilder');
@@ -17,7 +17,12 @@ const FIELDS = [
 ];
 
 const OPEN_STATUSES = ['Open', 'In Progress', 'On Hold'];
-const CLOSED_STATUSES = ['Resolved', 'Closed'];
+// "Complete" and "Collected" both mean the job is done and the client should be
+// told — "Closed" is a separate final/archival state that's staff-only (no client
+// email). All three count as "closed" for overdue and resolution-time purposes.
+const COMPLETION_STATUSES = ['Complete', 'Collected'];
+const CLOSED_STATUSES = [...COMPLETION_STATUSES, 'Closed'];
+const COLLECTIONS_EMAIL = process.env.COLLECTIONS_EMAIL || 'collections@itfactory.com.au';
 
 function withNames(job) {
   const owner = job.owner_id ? db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(job.owner_id) : null;
@@ -36,6 +41,42 @@ function userName(userId) {
 function logAudit(jobId, field, oldValue, newValue, userId) {
   db.prepare('INSERT INTO job_audit (id, job_id, field, old_value, new_value, changed_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(uuid(), jobId, field, oldValue ?? null, newValue ?? null, userId);
+}
+
+// Sends the right email(s) for a status transition. Complete/Collected go to the
+// client (if one's on file) AND to the collections inbox, with the signed job sheet
+// attached when available. Closed goes to collections only — clients never see a
+// "Closed" transition, since it's an internal archival state. Anything else falls
+// back to the plain "status updated" notice, same as before. Always fire-and-forget.
+function sendStatusTransitionEmails(oldStatus, updated) {
+  const newStatus = updated.status;
+  if (newStatus === oldStatus) return;
+
+  if (COMPLETION_STATUSES.includes(newStatus) && !COMPLETION_STATUSES.includes(oldStatus)) {
+    (async () => {
+      try {
+        const pdfBuffer = updated.signature_data ? await buildJobSheetBuffer(updated.id) : null;
+        if (updated.email) {
+          await notifyJobComplete({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, pdfBuffer });
+        }
+        await notifyJobComplete({ toEmail: COLLECTIONS_EMAIL, ticketNumber: updated.job_number, subject: updated.subject, pdfBuffer });
+      } catch (err) {
+        console.error('[jobs] Could not send job-complete email:', err.message);
+      }
+    })();
+    return;
+  }
+
+  if (newStatus === 'Closed' && oldStatus !== 'Closed') {
+    notifyJobClosed({ toEmail: COLLECTIONS_EMAIL, ticketNumber: updated.job_number, subject: updated.subject }).catch((err) => {
+      console.error('[jobs] Could not send job-closed email:', err.message);
+    });
+    return;
+  }
+
+  if (updated.email) {
+    notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
+  }
 }
 
 // Applied to every route that operates on a specific job. Fetches it once, and 404s
@@ -100,6 +141,9 @@ function csvEscape(value) {
 }
 
 router.get('/export.csv', (req, res) => {
+  if (!isAdminRole(currentRole(req.user.id))) {
+    return res.status(403).json({ error: 'Only admins can export jobs to CSV' });
+  }
   const { sql, params } = buildJobQuery(req.query, req.user);
   const jobs = db.prepare(sql).all(...params).map(withNames);
 
@@ -134,7 +178,7 @@ router.get('/stats/summary', (req, res) => {
   const ownerParam = scoped ? [req.user.id] : [];
 
   const rows = db.prepare(`SELECT status, COUNT(*) as count FROM jobs WHERE 1=1 ${ownerFilter} GROUP BY status`).all(...ownerParam);
-  const byStatus = { Open: 0, 'In Progress': 0, 'On Hold': 0, Resolved: 0, Closed: 0 };
+  const byStatus = { Open: 0, 'In Progress': 0, 'On Hold': 0, Complete: 0, Collected: 0, Closed: 0 };
   rows.forEach((r) => { byStatus[r.status] = r.count; });
   const unassigned = scoped ? 0 : db.prepare('SELECT COUNT(*) as c FROM jobs WHERE owner_id IS NULL').get().c;
   const total = db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE 1=1 ${ownerFilter}`).get(...ownerParam).c;
@@ -188,19 +232,8 @@ router.patch('/bulk', (req, res) => {
     updated += 1;
 
     const fresh = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
-    if (status !== undefined && status !== job.status && fresh.email) {
-      if (CLOSED_STATUSES.includes(status) && !CLOSED_STATUSES.includes(job.status)) {
-        (async () => {
-          try {
-            const pdfBuffer = fresh.signature_data ? await buildJobSheetBuffer(fresh.id) : null;
-            await notifyJobComplete({ toEmail: fresh.email, ticketNumber: fresh.job_number, subject: fresh.subject, pdfBuffer });
-          } catch (err) {
-            console.error('[jobs] Could not send job-complete email (bulk):', err.message);
-          }
-        })();
-      } else {
-        notifyStatusChange({ toEmail: fresh.email, ticketNumber: fresh.job_number, subject: fresh.subject, status: fresh.status });
-      }
+    if (status !== undefined && status !== job.status) {
+      sendStatusTransitionEmails(job.status, fresh);
     }
   });
 
@@ -224,7 +257,11 @@ router.get('/:id', loadJobAndCheckAccess, (req, res) => {
   res.json({ job: withNames(job), notes, attachments, items, audit });
 });
 
+// Only Admins log new jobs — Users (techs) work the jobs they're assigned, not create them.
 router.post('/', (req, res) => {
+  if (!isAdminRole(currentRole(req.user.id))) {
+    return res.status(403).json({ error: 'Only admins can create new jobs' });
+  }
   const { contact_name, subject } = req.body;
   if (!contact_name || !subject) {
     return res.status(400).json({ error: 'contact_name and subject are required' });
@@ -284,11 +321,9 @@ router.patch('/:id', loadJobAndCheckAccess, (req, res) => {
   });
   if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
 
-  let justCompleted = false;
   if (req.body.status !== undefined && req.body.status !== job.status) {
     if (CLOSED_STATUSES.includes(req.body.status) && !CLOSED_STATUSES.includes(job.status)) {
       updates.push("resolved_at = datetime('now')");
-      justCompleted = true;
     } else if (!CLOSED_STATUSES.includes(req.body.status)) {
       updates.push('resolved_at = NULL');
     }
@@ -299,22 +334,8 @@ router.patch('/:id', loadJobAndCheckAccess, (req, res) => {
   db.prepare(`UPDATE jobs SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   const updated = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
-  if (req.body.status && req.body.status !== job.status && updated.email) {
-    if (justCompleted) {
-      // Dedicated "job complete" email rather than the generic status-change one —
-      // includes the signed job sheet as an attachment when one exists. Fire-and-forget
-      // (PDF generation is async) so it never delays the response.
-      (async () => {
-        try {
-          const pdfBuffer = updated.signature_data ? await buildJobSheetBuffer(updated.id) : null;
-          await notifyJobComplete({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, pdfBuffer });
-        } catch (err) {
-          console.error('[jobs] Could not send job-complete email:', err.message);
-        }
-      })();
-    } else {
-      notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
-    }
+  if (req.body.status && req.body.status !== job.status) {
+    sendStatusTransitionEmails(job.status, updated);
   }
 
   // Keep the Microsoft 365 calendar in sync with whatever just changed — creates an
@@ -397,13 +418,13 @@ router.delete('/:id/items/:itemId', loadJobAndCheckAccess, (req, res) => {
 });
 
 router.post('/:id/signature', loadJobAndCheckAccess, (req, res) => {
-  const { name, dataUrl } = req.body;
+  const { name, dataUrl, comments } = req.body;
   if (!name || !dataUrl) return res.status(400).json({ error: 'name and dataUrl are required' });
 
   db.prepare(`
-    UPDATE jobs SET signature_name = ?, signature_data = ?, signature_at = datetime('now'), updated_at = datetime('now')
+    UPDATE jobs SET signature_name = ?, signature_data = ?, signature_at = datetime('now'), comments = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(name, dataUrl, req.params.id);
+  `).run(name, dataUrl, comments || null, req.params.id);
 
   res.json({ job: withNames(db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id)) });
 });
