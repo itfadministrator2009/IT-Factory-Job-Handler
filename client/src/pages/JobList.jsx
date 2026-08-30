@@ -8,7 +8,7 @@ import { formatDMY } from '../utils/date';
 import { downloadJobsCsv } from '../utils/pdf';
 import { useAuth } from '../context/AuthContext';
 
-cconst STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
+const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 
 export default function JobList() {
   const navigate = useNavigate();
