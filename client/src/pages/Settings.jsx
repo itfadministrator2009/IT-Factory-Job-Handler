@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldCheck, KeyRound, X } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +18,9 @@ export default function Settings() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('user');
   const [saving, setSaving] = useState(false);
+
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupMsg, setBackupMsg] = useState('');
 
   const [resetTarget, setResetTarget] = useState(null);
   const [resetPassword, setResetPassword] = useState('');
@@ -69,6 +72,19 @@ export default function Settings() {
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not remove user');
+    }
+  }
+
+  async function handleBackupNow() {
+    setBackupRunning(true);
+    setBackupMsg('');
+    try {
+      const { data } = await api.post('/backup/now');
+      setBackupMsg(`Backup uploaded to OneDrive (${data.folder}/${data.filename})`);
+    } catch (err) {
+      setBackupMsg(err.response?.data?.error || 'Could not run backup');
+    } finally {
+      setBackupRunning(false);
     }
   }
 
@@ -227,6 +243,23 @@ export default function Settings() {
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
         <ShieldCheck size={13} /> Admins can manage users and roles here. Everyone — Admin or User — has the same access to jobs, reports, templates, and the knowledge base.
       </p>
+
+      <div className="panel" style={{ padding: 24, marginTop: 24, maxWidth: 480 }}>
+        <h3 style={{ fontSize: 16, marginBottom: 6 }}>
+          <DatabaseBackup size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Backups
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
+          A backup of the database uploads to OneDrive automatically every night at 2am (Sydney time). You can also trigger one right now.
+        </p>
+        {backupMsg && (
+          <div className={backupMsg.startsWith('Backup uploaded') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 12 }}>
+            {backupMsg}
+          </div>
+        )}
+        <button className="btn btn-ghost btn-sm" onClick={handleBackupNow} disabled={backupRunning}>
+          {backupRunning ? 'Sending…' : 'Back up now'}
+        </button>
+      </div>
 
       {resetTarget && (
         <div className="modal-overlay" onClick={() => setResetTarget(null)}>

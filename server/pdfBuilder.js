@@ -48,7 +48,7 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   doc.text(COMPANY.abn, left, infoY, { width: 200 }); infoY += 11;
   doc.text(COMPANY.phone, left, infoY, { width: 200 });
 
-   const boxW = 220;
+  const boxW = 220;
   const boxX = left + pageWidth - boxW;
   const valueW = boxW - 110;
   const metaRows = [
@@ -270,9 +270,9 @@ function loadJobData(jobId) {
 }
 
 // Draws the base PDF with pdfkit, then — only if the job hasn't been signed in-app —
-// overlays real fillable AcroForm fields (Customer Name, Signature, Date, Comments) on
-// top of the blank boxes using pdf-lib, so the customer can type/sign directly in any
-// standard PDF reader (Adobe, Preview, Chrome, etc).
+// overlays real fillable AcroForm fields (Customer Name, Signature, Date) on top of
+// the blank sign-off boxes using pdf-lib, so the customer can type/sign directly in
+// any standard PDF reader (Adobe, Preview, Chrome, etc).
 async function renderJobSheet(jobId) {
   const data = loadJobData(jobId);
   if (!data) return null;

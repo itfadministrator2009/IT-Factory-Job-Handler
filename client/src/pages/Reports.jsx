@@ -76,7 +76,43 @@ export default function Reports() {
           </table>
         )}
       </div>
+
+      {data.byState && data.byState.length > 0 && (
+        <BreakdownPanel title="Jobs by state" rows={data.byState} labelKey="state" />
+      )}
+
+      {data.byVehicle && data.byVehicle.length > 0 && (
+        <BreakdownPanel title="Jobs by vehicle" rows={data.byVehicle} labelKey="vehicle" />
+      )}
+
+      {data.byAccount && data.byAccount.length > 0 && (
+        <BreakdownPanel title="Jobs by account" rows={data.byAccount} labelKey="account" />
+      )}
     </Layout>
+  );
+}
+
+// A simple horizontal bar list — used for both the state and vehicle breakdowns so
+// they read consistently with each other.
+function BreakdownPanel({ title, rows, labelKey }) {
+  const max = Math.max(1, ...rows.map((r) => r.count));
+  return (
+    <div className="panel" style={{ padding: 20, marginTop: 20 }}>
+      <h3 style={{ marginBottom: 14 }}>{title}</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {rows.map((r) => (
+          <div key={r[labelKey]} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 160, fontSize: 13, color: 'var(--ink)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r[labelKey]}>
+              {r[labelKey]}
+            </div>
+            <div style={{ flex: 1, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ width: `${(r.count / max) * 100}%`, background: 'var(--teal)', height: 18, borderRadius: 4 }} />
+            </div>
+            <div style={{ width: 28, fontSize: 13, fontWeight: 600, textAlign: 'right', flexShrink: 0 }}>{r.count}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

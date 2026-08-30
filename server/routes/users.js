@@ -43,6 +43,9 @@ router.post('/admin', adminRequired, (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'name, email, and password are required' });
   }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return res.status(409).json({ error: 'Email already registered' });
 
@@ -101,8 +104,8 @@ router.post('/admin/:id/reset-password', adminRequired, (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
 
   const { password } = req.body;
-  if (!password || password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
   const password_hash = bcrypt.hashSync(password, 10);

@@ -11,6 +11,8 @@ const attachmentRoutes = require('./routes/attachments');
 const pdfRoutes = require('./routes/pdf');
 const templateRoutes = require('./routes/templates');
 const reportRoutes = require('./routes/reports');
+const backupRoutes = require('./routes/backup');
+const { startBackupScheduler } = require('./backup');
 
 const app = express();
 
@@ -29,9 +31,11 @@ app.use('/api', attachmentRoutes);
 app.use('/api/jobs', pdfRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/backup', backupRoutes);
 
 const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {
   console.warn('WARNING: JWT_SECRET is not set — using an insecure default. Set it in .env before deploying.');
 }
+startBackupScheduler();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));

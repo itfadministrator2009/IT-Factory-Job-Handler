@@ -78,13 +78,20 @@ const STATE_CATEGORIES = {
 // "SA" won't match inside "Tasmania" and "ACT" won't match inside ordinary text.
 const STATE_MATCH_ORDER = ['NSW', 'VIC', 'QLD', 'TAS', 'ACT', 'WA', 'SA', 'NT'];
 
-function detectStateCategory(address) {
+// Returns just the plain state code (e.g. "NSW"), or null. Shared with reports.js
+// for the state breakdown, so the detection logic lives in exactly one place.
+function detectState(address) {
   if (!address) return null;
   for (const code of STATE_MATCH_ORDER) {
     const re = new RegExp(`\\b${code}\\b`, 'i');
-    if (re.test(address)) return STATE_CATEGORIES[code];
+    if (re.test(address)) return code;
   }
   return null;
+}
+
+function detectStateCategory(address) {
+  const code = detectState(address);
+  return code ? STATE_CATEGORIES[code] : null;
 }
 
 function pad(n) {
@@ -168,4 +175,83 @@ async function createCalendarEvent(job) {
   }
 }
 
-module.exports = { createCalendarEvent, buildEventPayload, parseTime, detectStateCategory, configured };
+async function updateCalendarEvent(eventId, job) {
+  if (!configured) return false;
+  try {
+    const token = await getAccessToken();
+    const payload = buildEventPayload(job);
+    const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(CALENDAR_USER)}/events/${eventId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[calendar] Event update failed:', res.status, text);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[calendar] Sync error:', err.message);
+    return false;
+  }
+}
+
+async function deleteCalendarEvent(eventId) {
+  if (!configured) return false;
+  try {
+    const token = await getAccessToken();
+    const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(CALENDAR_USER)}/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    // 404 just means it's already gone (e.g. someone deleted it directly in Outlook) — treat as success.
+    if (!res.ok && res.status !== 404) {
+      const text = await res.text();
+      console.error('[calendar] Event delete failed:', res.status, text);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[calendar] Sync error:', err.message);
+    return false;
+  }
+}
+
+// Call this after any job edit. Decides create/update/delete based on current state:
+//  - has a due date, no existing event  -> create one
+//  - has a due date, already has an event -> update it in place
+//  - due date was removed, had an event  -> delete it (nothing left to schedule)
+//  - due date was removed, no event      -> nothing to do
+// Returns the event id that should be stored on the job (null if there is none).
+async function syncCalendarEvent(job) {
+  if (!configured) return job.ms_event_id || null;
+
+  if (job.due_date) {
+    if (job.ms_event_id) {
+      const ok = await updateCalendarEvent(job.ms_event_id, job);
+      return ok ? job.ms_event_id : job.ms_event_id; // keep the id even if this update failed — try again next edit
+    }
+    return await createCalendarEvent(job);
+  }
+
+  if (job.ms_event_id) {
+    await deleteCalendarEvent(job.ms_event_id);
+    return null;
+  }
+
+  return null;
+}
+
+module.exports = {
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  syncCalendarEvent,
+  buildEventPayload,
+  parseTime,
+  detectState,
+  detectStateCategory,
+  getAccessToken,
+  configured,
+};

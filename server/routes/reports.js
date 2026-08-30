@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
+const { detectState } = require('../calendar');
 
 const router = express.Router();
 router.use(authRequired);
@@ -55,7 +56,44 @@ router.get('/summary', (req, res) => {
 
   const unassignedCount = db.prepare("SELECT COUNT(*) as c FROM jobs WHERE owner_id IS NULL").get().c;
 
-  res.json({ completedPerWeek, avgResolutionHours, perTechnician: perTech, unassignedCount });
+  // State breakdown — reuses the same address-parsing logic as the calendar sync,
+  // so a job counted as "NSW" here is the same job that got the NSW calendar category.
+  const addresses = db.prepare('SELECT site_address FROM jobs').all();
+  const stateCounts = {};
+  addresses.forEach(({ site_address }) => {
+    const state = detectState(site_address) || 'Unknown';
+    stateCounts[state] = (stateCounts[state] || 0) + 1;
+  });
+  const byState = Object.entries(stateCounts)
+    .map(([state, count]) => ({ state, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Vehicle breakdown — grouped by the exact stored value (the dropdown's presets,
+  // or whatever was typed into "Custom").
+  const vehicles = db.prepare('SELECT language FROM jobs').all();
+  const vehicleCounts = {};
+  vehicles.forEach(({ language }) => {
+    const key = language && language.trim() ? language.trim() : 'Not set';
+    vehicleCounts[key] = (vehicleCounts[key] || 0) + 1;
+  });
+  const byVehicle = Object.entries(vehicleCounts)
+    .map(([vehicle, count]) => ({ vehicle, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Account breakdown — capped to the top 15 so one very active customer's history
+  // doesn't turn this into an endless scroll.
+  const accounts = db.prepare('SELECT account_name FROM jobs').all();
+  const accountCounts = {};
+  accounts.forEach(({ account_name }) => {
+    const key = account_name && account_name.trim() ? account_name.trim() : 'No account';
+    accountCounts[key] = (accountCounts[key] || 0) + 1;
+  });
+  const byAccount = Object.entries(accountCounts)
+    .map(([account, count]) => ({ account, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  res.json({ completedPerWeek, avgResolutionHours, perTechnician: perTech, unassignedCount, byState, byVehicle, byAccount });
 });
 
 module.exports = router;
