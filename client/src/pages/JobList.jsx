@@ -106,10 +106,12 @@ export default function JobList() {
           <div className="subtitle">{isAdmin ? 'Every job logged by the team.' : 'Jobs assigned to you.'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={handleExportCsv} disabled={exporting}>
-            {exporting ? 'Exporting…' : 'Export CSV'}
-          </button>
-          <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>
+          {isAdmin && (
+            <button className="btn btn-ghost" onClick={handleExportCsv} disabled={exporting}>
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          )}
+          {isAdmin && <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>}
         </div>
       </div>
 
