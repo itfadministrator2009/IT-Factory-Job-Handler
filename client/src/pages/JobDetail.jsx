@@ -183,6 +183,34 @@ export default function JobDetail() {
             <AttachmentManager jobId={id} initialAttachments={attachments} />
           </div>
 
+          <div className="thread">
+            {notes.map((n) => (
+              <div key={n.id} className="comment">
+                <div className="comment-meta">
+                  <strong style={{ color: 'var(--ink)' }}>{n.author?.name}</strong>
+                  <span>{formatDateTime(n.created_at)}</span>
+                </div>
+                <div className="comment-body">{n.body}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="panel reply-box" style={{ padding: 18, marginTop: 18 }}>
+            <form onSubmit={handleNote}>
+              <textarea
+                placeholder="Log an update on this job…"
+                value={noteBody}
+                onChange={(e) => setNoteBody(e.target.value)}
+              />
+              <div className="reply-actions">
+                <span />
+                <button className="btn btn-primary btn-sm" type="submit" disabled={sending || !noteBody.trim()}>
+                  {sending ? 'Saving…' : 'Add note'}
+                </button>
+              </div>
+            </form>
+          </div>
+
           <div className="panel" style={{ padding: 18, marginTop: 18 }}>
             <div className="comment-meta">
               <strong style={{ color: 'var(--ink)' }}><PenLine size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Sign-off</strong>
@@ -210,34 +238,6 @@ export default function JobDetail() {
                 Fill out job sheet
               </button>
             )}
-          </div>
-
-          <div className="thread">
-            {notes.map((n) => (
-              <div key={n.id} className="comment">
-                <div className="comment-meta">
-                  <strong style={{ color: 'var(--ink)' }}>{n.author?.name}</strong>
-                  <span>{formatDateTime(n.created_at)}</span>
-                </div>
-                <div className="comment-body">{n.body}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="panel reply-box" style={{ padding: 18, marginTop: 18 }}>
-            <form onSubmit={handleNote}>
-              <textarea
-                placeholder="Log an update on this job…"
-                value={noteBody}
-                onChange={(e) => setNoteBody(e.target.value)}
-              />
-              <div className="reply-actions">
-                <span />
-                <button className="btn btn-primary btn-sm" type="submit" disabled={sending || !noteBody.trim()}>
-                  {sending ? 'Saving…' : 'Add note'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
 
