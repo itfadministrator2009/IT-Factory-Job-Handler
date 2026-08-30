@@ -98,10 +98,10 @@ export default function Dashboard() {
             <thead>
               <tr>
                 <th>#</th>
+                <th>Date</th>
                 <th>Subject</th>
                 <th>Contact</th>
                 <th>Account Name</th>
-                <th>Date</th>
                 <th>Ticket Owner</th>
                 <th>Status</th>
                 <th>Priority</th>
@@ -111,10 +111,10 @@ export default function Dashboard() {
               {recent.map((j) => (
                 <tr key={j.id} className="clickable" onClick={() => navigate(`/jobs/${j.id}`)}>
                   <td className="ticket-num">#{j.job_number}</td>
+                  <td>{j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                   <td>{j.subject}</td>
                   <td>{j.contact_name}</td>
                   <td>{j.account_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                  <td>{j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                   <td>{j.owner?.name || <span style={{ color: 'var(--muted)' }}>Unassigned</span>}</td>
                   <td><StatusPill status={j.status} /></td>
                   <td><PriorityPill priority={j.priority} /></td>
