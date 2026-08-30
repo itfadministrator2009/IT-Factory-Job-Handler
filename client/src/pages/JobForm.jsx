@@ -217,7 +217,7 @@ export default function JobForm() {
             <h3>Additional Information</h3>
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="due_date">Due Date</label>
+                <label htmlFor="due_date">Date</label>
                 <input id="due_date" type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} />
               </div>
               <div className="field">
