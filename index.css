@@ -96,17 +96,10 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
-.brand-logo-badge {
-  background: white;
-  border-radius: 9px;
-  padding: 7px 14px;
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.brand-logo-badge img {
+.brand-logo {
   height: 44px;
   display: block;
+  flex-shrink: 0;
 }
 
 .sidebar-nav {
@@ -162,6 +155,7 @@ input, select, textarea {
   justify-content: space-between;
   margin-bottom: 24px;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .page-header h1 { font-size: 24px; }
@@ -237,6 +231,16 @@ input, select, textarea {
 .ticket-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+/* A wide table (Job List, Dashboard, Settings → Users) scrolls horizontally within its
+   own panel on a narrow screen, instead of forcing the whole page to scroll sideways or
+   squeezing every column illegibly. */
+.panel:has(.ticket-table) {
+  overflow-x: auto;
+}
+@media (max-width: 700px) {
+  .ticket-table { min-width: 640px; }
 }
 
 .ticket-table th {

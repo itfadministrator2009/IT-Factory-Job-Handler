@@ -5,6 +5,7 @@ import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { StatusPill, PriorityPill } from '../components/Pill';
+import { formatDMY } from '../utils/date';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -101,7 +102,7 @@ export default function Dashboard() {
                   <td>{j.subject}</td>
                   <td>{j.contact_name}</td>
                   <td>{j.account_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                  <td>{j.due_date || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                  <td>{j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                   <td>{j.owner?.name || <span style={{ color: 'var(--muted)' }}>Unassigned</span>}</td>
                   <td><StatusPill status={j.status} /></td>
                   <td><PriorityPill priority={j.priority} /></td>

@@ -4,23 +4,44 @@ import { AlertTriangle } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { StatusPill, PriorityPill } from '../components/Pill';
+import { formatDMY } from '../utils/date';
+import { downloadJobsCsv } from '../utils/pdf';
+import { useAuth } from '../context/AuthContext';
 
 const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 
 export default function JobList() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
   const [priority, setPriority] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'mine'
   const [q, setQ] = useState(searchParams.get('q') || '');
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
   const [bulkOwner, setBulkOwner] = useState('');
   const [applying, setApplying] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExportCsv() {
+    setExporting(true);
+    try {
+      const params = {};
+      if (status) params.status = status;
+      if (priority) params.priority = priority;
+      if (q) params.q = q;
+      if (overdueOnly) params.overdue = '1';
+      if (viewMode === 'mine' && user) params.owner_id = user.id;
+      await downloadJobsCsv(api, params);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -29,11 +50,12 @@ export default function JobList() {
     if (priority) params.priority = priority;
     if (q) params.q = q;
     if (overdueOnly) params.overdue = '1';
+    if (viewMode === 'mine' && user) params.owner_id = user.id;
     api.get('/jobs', { params }).then((res) => {
       setJobs(res.data.jobs);
       setLoading(false);
     });
-  }, [status, priority, q, overdueOnly]);
+  }, [status, priority, q, overdueOnly, viewMode, user]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get('/users').then((res) => setUsers(res.data.users)); }, []);
@@ -76,7 +98,29 @@ export default function JobList() {
           <h1>Jobs</h1>
           <div className="subtitle">Every job logged by the team.</div>
         </div>
-        <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={handleExportCsv} disabled={exporting}>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>
+        </div>
+      </div>
+
+      <div className="settings-tabs" style={{ marginBottom: 16 }}>
+        <span
+          className={'settings-tab' + (viewMode === 'all' ? ' active' : '')}
+          style={{ cursor: 'pointer' }}
+          onClick={() => setViewMode('all')}
+        >
+          All Jobs
+        </span>
+        <span
+          className={'settings-tab' + (viewMode === 'mine' ? ' active' : '')}
+          style={{ cursor: 'pointer' }}
+          onClick={() => setViewMode('mine')}
+        >
+          My Jobs
+        </span>
       </div>
 
       <div className="ticket-filters">
@@ -128,7 +172,7 @@ export default function JobList() {
         ) : jobs.length === 0 ? (
           <div className="empty-state">
             <h3>No jobs found</h3>
-            <p>Try adjusting your filters, or log a new job.</p>
+            <p>{viewMode === 'mine' ? "No jobs are assigned to you right now." : 'Try adjusting your filters, or log a new job.'}</p>
           </div>
         ) : (
           <table className="ticket-table">
@@ -163,8 +207,8 @@ export default function JobList() {
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><PriorityPill priority={j.priority} /></td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>
                     {j.overdue
-                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {j.due_date}</span>
-                      : (j.due_date || <span style={{ color: 'var(--muted)' }}>—</span>)}
+                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMY(j.due_date)}</span>
+                      : (j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>)}
                   </td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ color: 'var(--muted)' }}>{formatDate(j.updated_at)}</td>
                 </tr>

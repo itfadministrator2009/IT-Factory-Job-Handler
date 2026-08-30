@@ -10,7 +10,7 @@ export default function Layout({ children }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-logo-badge"><img src="/logo.jpg" alt="IT Factory" /></span>
+          <img src="/logo-sidebar.png" alt="IT Factory" className="brand-logo" />
           <span>Work Desk</span>
         </div>
         <nav className="sidebar-nav">

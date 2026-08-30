@@ -3,6 +3,7 @@ const { v4: uuid } = require('uuid');
 const { db, nextJobNumber, peekNextJobNumber } = require('../db');
 const { authRequired } = require('../auth');
 const { notifyNewReply, notifyStatusChange, notifyTicketCreated } = require('../email');
+const { createCalendarEvent, syncCalendarEvent, deleteCalendarEvent } = require('../calendar');
 
 const router = express.Router();
 router.use(authRequired);
@@ -37,7 +38,15 @@ function logAudit(jobId, field, oldValue, newValue, userId) {
 
 // List jobs — everyone sees all jobs
 router.get('/', (req, res) => {
-  const { status, priority, owner_id, q, overdue } = req.query;
+  const { sql, params } = buildJobQuery(req.query);
+  const jobs = db.prepare(sql).all(...params).map(withNames);
+  res.json({ jobs });
+});
+
+// Shared by the JSON list endpoint and the CSV export below, so the two never drift
+// out of sync on what "matches the current filters" means.
+function buildJobQuery(query) {
+  const { status, priority, owner_id, q, overdue } = query;
   let sql = 'SELECT * FROM jobs WHERE 1=1';
   const params = [];
 
@@ -54,9 +63,43 @@ router.get('/', (req, res) => {
     params.push(today, ...OPEN_STATUSES);
   }
   sql += ' ORDER BY created_at DESC';
+  return { sql, params };
+}
 
+function csvEscape(value) {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  // Quote any field containing a comma, quote, or newline — and double up internal quotes.
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+router.get('/export.csv', (req, res) => {
+  const { sql, params } = buildJobQuery(req.query);
   const jobs = db.prepare(sql).all(...params).map(withNames);
-  res.json({ jobs });
+
+  const columns = [
+    ['job_number', 'Job #'], ['subject', 'Subject'], ['contact_name', 'Contact'],
+    ['account_name', 'Account'], ['email', 'Email'], ['phone', 'Phone'],
+    ['status', 'Status'], ['priority', 'Priority'], ['due_date', 'Due Date'],
+    ['scheduled_time', 'Time'], ['language', 'Vehicle'], ['classifications', 'Classification'],
+    ['site_address', 'Site Address'], ['customer_reference', 'Reference'],
+    ['created_at', 'Created'],
+  ];
+
+  const header = columns.map(([, label]) => label);
+  header.push('Owner');
+  const csvLines = [header.map(csvEscape).join(',')];
+  jobs.forEach((j) => {
+    const row = columns.map(([key]) => j[key]);
+    row.push(j.owner?.name || 'Unassigned');
+    csvLines.push(row.map(csvEscape).join(','));
+  });
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="jobs-export-${dateStr}.csv"`);
+  res.send(csvLines.join('\r\n'));
 });
 
 router.get('/stats/summary', (req, res) => {
@@ -162,6 +205,13 @@ router.post('/', (req, res) => {
   if (job.email) {
     notifyTicketCreated({ toEmail: job.email, ticketNumber: jobNumber, subject: job.subject });
   }
+
+  // Fire-and-forget: sync to the Microsoft 365 calendar if configured. Never blocks or
+  // fails the job-creation response — a calendar hiccup shouldn't stop a job being logged.
+  createCalendarEvent(job).then((eventId) => {
+    if (eventId) db.prepare('UPDATE jobs SET ms_event_id = ? WHERE id = ?').run(eventId, id);
+  });
+
   res.status(201).json({ job: withNames(job) });
 });
 
@@ -203,12 +253,24 @@ router.patch('/:id', (req, res) => {
   if (req.body.status && req.body.status !== job.status && updated.email) {
     notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
   }
+
+  // Keep the Microsoft 365 calendar in sync with whatever just changed — creates an
+  // event if the job just got a due date, updates it if one already exists, or removes
+  // it if the due date was cleared. Fire-and-forget, never blocks the response.
+  syncCalendarEvent(updated).then((eventId) => {
+    if (eventId !== updated.ms_event_id) {
+      db.prepare('UPDATE jobs SET ms_event_id = ? WHERE id = ?').run(eventId, req.params.id);
+    }
+  });
+
   res.json({ job: withNames(updated) });
 });
 
 router.delete('/:id', (req, res) => {
+  const job = db.prepare('SELECT ms_event_id FROM jobs WHERE id = ?').get(req.params.id);
   const result = db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Job not found' });
+  if (job?.ms_event_id) deleteCalendarEvent(job.ms_event_id);
   res.json({ ok: true });
 });
 

@@ -1,7 +1,8 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, 'helpdesk.db'));
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   signature_data TEXT,
   signature_at TEXT,
   resolved_at TEXT,
+  ms_event_id TEXT,
   created_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
