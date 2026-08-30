@@ -34,7 +34,11 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <h1>Good to see you, {user?.name?.split(' ')[0]}</h1>
-          <div className="subtitle">Here's what's happening across the job log today.</div>
+          <div className="subtitle">
+            {(user?.role === 'admin' || user?.role === 'agent')
+              ? "Here's what's happening across the job log today."
+              : "Here's what's on your plate today."}
+          </div>
         </div>
         <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>
       </div>

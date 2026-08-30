@@ -13,6 +13,7 @@ const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
 export default function JobList() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +103,7 @@ export default function JobList() {
       <div className="page-header">
         <div>
           <h1>Jobs</h1>
-          <div className="subtitle">Every job logged by the team.</div>
+          <div className="subtitle">{isAdmin ? 'Every job logged by the team.' : 'Jobs assigned to you.'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" onClick={handleExportCsv} disabled={exporting}>
@@ -112,22 +113,24 @@ export default function JobList() {
         </div>
       </div>
 
-      <div className="settings-tabs" style={{ marginBottom: 16 }}>
-        <span
-          className={'settings-tab' + (viewMode === 'all' ? ' active' : '')}
-          style={{ cursor: 'pointer' }}
-          onClick={() => setViewMode('all')}
-        >
-          All Jobs
-        </span>
-        <span
-          className={'settings-tab' + (viewMode === 'mine' ? ' active' : '')}
-          style={{ cursor: 'pointer' }}
-          onClick={() => setViewMode('mine')}
-        >
-          My Jobs
-        </span>
-      </div>
+      {isAdmin && (
+        <div className="settings-tabs" style={{ marginBottom: 16 }}>
+          <span
+            className={'settings-tab' + (viewMode === 'all' ? ' active' : '')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setViewMode('all')}
+          >
+            All Jobs
+          </span>
+          <span
+            className={'settings-tab' + (viewMode === 'mine' ? ' active' : '')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setViewMode('mine')}
+          >
+            My Jobs
+          </span>
+        </div>
+      )}
 
       <div className="ticket-filters">
         <input
@@ -184,7 +187,7 @@ export default function JobList() {
         ) : jobs.length === 0 ? (
           <div className="empty-state">
             <h3>No jobs found</h3>
-            <p>{viewMode === 'mine' ? "No jobs are assigned to you right now." : 'Try adjusting your filters, or log a new job.'}</p>
+            <p>{(viewMode === 'mine' || !isAdmin) ? "No jobs are assigned to you right now." : 'Try adjusting your filters, or log a new job.'}</p>
           </div>
         ) : (
           <table className="ticket-table">

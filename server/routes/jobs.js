@@ -2,8 +2,10 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const { db, nextJobNumber, peekNextJobNumber } = require('../db');
 const { authRequired } = require('../auth');
-const { notifyNewReply, notifyStatusChange, notifyTicketCreated } = require('../email');
+const { notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete } = require('../email');
 const { createCalendarEvent, syncCalendarEvent, deleteCalendarEvent } = require('../calendar');
+const { canAccessJob, isAdminRole, currentRole } = require('../permissions');
+const { buildJobSheetBuffer } = require('../pdfBuilder');
 
 const router = express.Router();
 router.use(authRequired);
@@ -36,23 +38,46 @@ function logAudit(jobId, field, oldValue, newValue, userId) {
     .run(uuid(), jobId, field, oldValue ?? null, newValue ?? null, userId);
 }
 
-// List jobs — everyone sees all jobs
+// Applied to every route that operates on a specific job. Fetches it once, and 404s
+// (not 403) if the requester can't access it — a non-admin User shouldn't even learn
+// that a job they're not assigned to exists. Attaches the row to req.job so handlers
+// don't need to re-fetch it.
+function loadJobAndCheckAccess(req, res, next) {
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job || !canAccessJob(req.user, job)) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  req.job = job;
+  next();
+}
+
+// List jobs — Users only ever see jobs assigned to them; Admins see everything.
 router.get('/', (req, res) => {
-  const { sql, params } = buildJobQuery(req.query);
+  const { sql, params } = buildJobQuery(req.query, req.user);
   const jobs = db.prepare(sql).all(...params).map(withNames);
   res.json({ jobs });
 });
 
 // Shared by the JSON list endpoint and the CSV export below, so the two never drift
 // out of sync on what "matches the current filters" means.
-function buildJobQuery(query) {
+function buildJobQuery(query, requestingUser) {
   const { status, priority, owner_id, q, overdue } = query;
   let sql = 'SELECT * FROM jobs WHERE 1=1';
   const params = [];
 
+  // A non-admin's own id always wins here — even if they pass a different owner_id
+  // in the query string, they can only ever see their own jobs. This is the same
+  // rule enforced on every single-job route via loadJobAndCheckAccess.
+  if (requestingUser && !isAdminRole(currentRole(requestingUser.id))) {
+    sql += ' AND owner_id = ?';
+    params.push(requestingUser.id);
+  } else if (owner_id) {
+    sql += ' AND owner_id = ?';
+    params.push(owner_id);
+  }
+
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (priority) { sql += ' AND priority = ?'; params.push(priority); }
-  if (owner_id) { sql += ' AND owner_id = ?'; params.push(owner_id); }
   if (q) {
     sql += ' AND (subject LIKE ? OR contact_name LIKE ? OR account_name LIKE ? OR description LIKE ?)';
     params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
@@ -75,7 +100,7 @@ function csvEscape(value) {
 }
 
 router.get('/export.csv', (req, res) => {
-  const { sql, params } = buildJobQuery(req.query);
+  const { sql, params } = buildJobQuery(req.query, req.user);
   const jobs = db.prepare(sql).all(...params).map(withNames);
 
   const columns = [
@@ -103,16 +128,21 @@ router.get('/export.csv', (req, res) => {
 });
 
 router.get('/stats/summary', (req, res) => {
-  const rows = db.prepare('SELECT status, COUNT(*) as count FROM jobs GROUP BY status').all();
+  // Same scoping rule as the list: a non-admin's stats only ever reflect their own jobs.
+  const scoped = !isAdminRole(currentRole(req.user.id));
+  const ownerFilter = scoped ? 'AND owner_id = ?' : '';
+  const ownerParam = scoped ? [req.user.id] : [];
+
+  const rows = db.prepare(`SELECT status, COUNT(*) as count FROM jobs WHERE 1=1 ${ownerFilter} GROUP BY status`).all(...ownerParam);
   const byStatus = { Open: 0, 'In Progress': 0, 'On Hold': 0, Resolved: 0, Closed: 0 };
   rows.forEach((r) => { byStatus[r.status] = r.count; });
-  const unassigned = db.prepare('SELECT COUNT(*) as c FROM jobs WHERE owner_id IS NULL').get().c;
-  const total = db.prepare('SELECT COUNT(*) as c FROM jobs').get().c;
+  const unassigned = scoped ? 0 : db.prepare('SELECT COUNT(*) as c FROM jobs WHERE owner_id IS NULL').get().c;
+  const total = db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE 1=1 ${ownerFilter}`).get(...ownerParam).c;
   const today = new Date().toISOString().slice(0, 10);
   const overdue = db.prepare(`
     SELECT COUNT(*) as c FROM jobs
-    WHERE due_date IS NOT NULL AND due_date < ? AND status IN (${OPEN_STATUSES.map(() => '?').join(',')})
-  `).get(today, ...OPEN_STATUSES).c;
+    WHERE due_date IS NOT NULL AND due_date < ? AND status IN (${OPEN_STATUSES.map(() => '?').join(',')}) ${ownerFilter}
+  `).get(today, ...OPEN_STATUSES, ...ownerParam).c;
   res.json({ byStatus, unassigned, total, overdue });
 });
 
@@ -125,10 +155,13 @@ router.patch('/bulk', (req, res) => {
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
   if (status === undefined && owner_id === undefined) return res.status(400).json({ error: 'status or owner_id is required' });
 
+  const isAdmin = isAdminRole(currentRole(req.user.id));
+
   let updated = 0;
   ids.forEach((jobId) => {
     const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
     if (!job) return;
+    if (!isAdmin && job.owner_id !== req.user.id) return; // silently skip jobs this user can't touch
 
     const updates = [];
     const params = [];
@@ -156,16 +189,26 @@ router.patch('/bulk', (req, res) => {
 
     const fresh = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
     if (status !== undefined && status !== job.status && fresh.email) {
-      notifyStatusChange({ toEmail: fresh.email, ticketNumber: fresh.job_number, subject: fresh.subject, status: fresh.status });
+      if (CLOSED_STATUSES.includes(status) && !CLOSED_STATUSES.includes(job.status)) {
+        (async () => {
+          try {
+            const pdfBuffer = fresh.signature_data ? await buildJobSheetBuffer(fresh.id) : null;
+            await notifyJobComplete({ toEmail: fresh.email, ticketNumber: fresh.job_number, subject: fresh.subject, pdfBuffer });
+          } catch (err) {
+            console.error('[jobs] Could not send job-complete email (bulk):', err.message);
+          }
+        })();
+      } else {
+        notifyStatusChange({ toEmail: fresh.email, ticketNumber: fresh.job_number, subject: fresh.subject, status: fresh.status });
+      }
     }
   });
 
   res.json({ ok: true, updated });
 });
 
-router.get('/:id', (req, res) => {
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
+router.get('/:id', loadJobAndCheckAccess, (req, res) => {
+  const job = req.job;
 
   const notes = db.prepare('SELECT * FROM job_notes WHERE job_id = ? ORDER BY created_at ASC').all(req.params.id)
     .map((n) => ({ ...n, author: db.prepare('SELECT id, name FROM users WHERE id = ?').get(n.author_id) }));
@@ -220,9 +263,8 @@ router.post('/', (req, res) => {
   res.status(201).json({ job: withNames(job) });
 });
 
-router.patch('/:id', (req, res) => {
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
+router.patch('/:id', loadJobAndCheckAccess, (req, res) => {
+  const job = req.job;
 
   const updates = [];
   const params = [];
@@ -242,9 +284,11 @@ router.patch('/:id', (req, res) => {
   });
   if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
 
+  let justCompleted = false;
   if (req.body.status !== undefined && req.body.status !== job.status) {
     if (CLOSED_STATUSES.includes(req.body.status) && !CLOSED_STATUSES.includes(job.status)) {
       updates.push("resolved_at = datetime('now')");
+      justCompleted = true;
     } else if (!CLOSED_STATUSES.includes(req.body.status)) {
       updates.push('resolved_at = NULL');
     }
@@ -256,7 +300,21 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
   if (req.body.status && req.body.status !== job.status && updated.email) {
-    notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
+    if (justCompleted) {
+      // Dedicated "job complete" email rather than the generic status-change one —
+      // includes the signed job sheet as an attachment when one exists. Fire-and-forget
+      // (PDF generation is async) so it never delays the response.
+      (async () => {
+        try {
+          const pdfBuffer = updated.signature_data ? await buildJobSheetBuffer(updated.id) : null;
+          await notifyJobComplete({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, pdfBuffer });
+        } catch (err) {
+          console.error('[jobs] Could not send job-complete email:', err.message);
+        }
+      })();
+    } else {
+      notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
+    }
   }
 
   // Keep the Microsoft 365 calendar in sync with whatever just changed — creates an
@@ -273,17 +331,15 @@ router.patch('/:id', (req, res) => {
   res.json({ job: withNames(updated) });
 });
 
-router.delete('/:id', (req, res) => {
-  const job = db.prepare('SELECT ms_event_id FROM jobs WHERE id = ?').get(req.params.id);
-  const result = db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'Job not found' });
+router.delete('/:id', loadJobAndCheckAccess, (req, res) => {
+  const job = req.job;
+  db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
   if (job?.ms_event_id) deleteCalendarEvent(job.ms_event_id);
   res.json({ ok: true });
 });
 
-router.post('/:id/notes', (req, res) => {
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
+router.post('/:id/notes', loadJobAndCheckAccess, (req, res) => {
+  const job = req.job;
 
   const { body, notify_contact } = req.body;
   if (!body) return res.status(400).json({ error: 'body is required' });
@@ -310,10 +366,7 @@ router.post('/:id/notes', (req, res) => {
   });
 });
 
-router.post('/:id/items', (req, res) => {
-  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-
+router.post('/:id/items', loadJobAndCheckAccess, (req, res) => {
   const { description, qty, reference } = req.body;
   if (!description) return res.status(400).json({ error: 'description is required' });
 
@@ -326,7 +379,7 @@ router.post('/:id/items', (req, res) => {
   res.status(201).json({ item });
 });
 
-router.patch('/:id/items/:itemId', (req, res) => {
+router.patch('/:id/items/:itemId', loadJobAndCheckAccess, (req, res) => {
   const item = db.prepare('SELECT * FROM job_items WHERE id = ? AND job_id = ?').get(req.params.itemId, req.params.id);
   if (!item) return res.status(404).json({ error: 'Item not found' });
 
@@ -337,16 +390,13 @@ router.patch('/:id/items/:itemId', (req, res) => {
   res.json({ item: db.prepare('SELECT * FROM job_items WHERE id = ?').get(req.params.itemId) });
 });
 
-router.delete('/:id/items/:itemId', (req, res) => {
+router.delete('/:id/items/:itemId', loadJobAndCheckAccess, (req, res) => {
   const result = db.prepare('DELETE FROM job_items WHERE id = ? AND job_id = ?').run(req.params.itemId, req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Item not found' });
   res.json({ ok: true });
 });
 
-router.post('/:id/signature', (req, res) => {
-  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-
+router.post('/:id/signature', loadJobAndCheckAccess, (req, res) => {
   const { name, dataUrl } = req.body;
   if (!name || !dataUrl) return res.status(400).json({ error: 'name and dataUrl are required' });
 
@@ -358,10 +408,7 @@ router.post('/:id/signature', (req, res) => {
   res.json({ job: withNames(db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id)) });
 });
 
-router.delete('/:id/signature', (req, res) => {
-  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-
+router.delete('/:id/signature', loadJobAndCheckAccess, (req, res) => {
   db.prepare("UPDATE jobs SET signature_name = NULL, signature_data = NULL, signature_at = NULL, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
   res.json({ job: withNames(db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id)) });
 });
