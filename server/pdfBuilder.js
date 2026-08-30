@@ -155,13 +155,21 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   }
 
   // COMMENTS — a free-text box below Job Description, made fillable the same way as
-  // the sign-off fields (only while the job hasn't been signed off in-app yet).
+  // the sign-off fields (only while the job hasn't been signed off in-app yet). Once
+  // signed, whatever was captured (in-app or via the fillable PDF) shows as static text.
   {
-    const commentsH = 50;
+    const commentsText = job.comments || '';
+    const commentsH = isSigned
+      ? Math.max(50, doc.heightOfString(commentsText || ' ', { width: pageWidth - 12 }) + 16)
+      : 50;
     doc.fontSize(9).fillColor('#111').font('Helvetica-Bold').text('COMMENTS', left, y);
     y += 14;
     doc.rect(left, y, pageWidth, commentsH).strokeColor(LINE).stroke();
-    if (!isSigned && fieldPositions) {
+    if (isSigned) {
+      if (commentsText) {
+        doc.fontSize(9).font('Helvetica').fillColor('#111').text(commentsText, left + 6, y + 6, { width: pageWidth - 12 });
+      }
+    } else if (fieldPositions) {
       fieldPositions.comments = { pageIndex, x: left + 6, y: y + 4, width: pageWidth - 12, height: commentsH - 8 };
     }
     y += commentsH + 16;
