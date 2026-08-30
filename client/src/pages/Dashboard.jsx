@@ -90,7 +90,7 @@ export default function Dashboard() {
             <p>Click "Log new job" to add your first one.</p>
           </div>
         ) : (
-          <table className="ticket-table">
+           <table className="ticket-table dashboard-recent-table">
             <thead>
               <tr>
                 <th>#</th>
