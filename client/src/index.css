@@ -279,7 +279,8 @@ input, select, textarea {
 .pill-status-Open { background: #e6edf9; color: var(--blue); }
 .pill-status-InProgress { background: #fbf1dc; color: var(--amber); }
 .pill-status-OnHold { background: #f1ece3; color: var(--muted); }
-.pill-status-Resolved { background: #e6f2e8; color: var(--green); }
+.pill-status-Complete { background: #e6f2e8; color: var(--green); }
+.pill-status-Collected { background: #e6f2e8; color: var(--green); }
 .pill-status-Closed { background: #eee; color: #777; }
 
 .pill-priority-Low { background: #eef1ee; color: #5c6a60; }
@@ -650,6 +651,20 @@ input, select, textarea {
 .modal-header h3 { font-size: 16px; }
 .modal-header button { background: none; border: none; color: var(--muted); }
 
+/* The sign-off modal (Name + Comments + Signature) is taller than a typical modal —
+   pin the header and Save button in place, and let just the middle section scroll,
+   so Save is always reachable even with a mobile keyboard open. */
+.sign-off-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+}
+.sign-off-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
 .signature-canvas-wrap {
   border: 1.5px dashed var(--line);
   border-radius: var(--radius);
@@ -726,6 +741,18 @@ input, select, textarea {
   font-weight: 600;
   background: #fbe1db;
   color: #a23a1c;
+}
+
+.job-date-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e6edf9;
+  color: var(--blue);
+  vertical-align: middle;
 }
 
 /* ---------- Bulk action toolbar ---------- */
