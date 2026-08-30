@@ -120,7 +120,13 @@ export default function JobDetail() {
       <div className="page-header">
         <div>
           <h1>
-            #{job.job_number} &middot; {job.subject}
+            #{job.job_number}
+            {job.due_date && (
+              <span className="job-date-badge" style={{ marginLeft: 10 }}>
+                {formatDMY(job.due_date)}{job.scheduled_time ? ` · ${job.scheduled_time}` : ''}
+              </span>
+            )}
+            {' '}&middot; {job.subject}
             {job.overdue && <span className="overdue-badge" style={{ marginLeft: 10 }}><AlertTriangle size={11} /> Overdue</span>}
           </h1>
           <div className="subtitle">{job.contact_name}{job.account_name ? ` · ${job.account_name}` : ''} &middot; {job.channel}</div>
@@ -274,12 +280,10 @@ export default function JobDetail() {
             {job.phone && <div className="side-row"><label>Phone</label><span>{job.phone}</span></div>}
           </div>
 
-          {(job.product_name || job.due_date || job.scheduled_time || job.language || job.classifications || job.customer_reference) && (
+          {(job.product_name || job.language || job.classifications || job.customer_reference) && (
             <div className="panel side-block">
               <h4>Additional info</h4>
               {job.product_name && <div className="side-row"><label>Product</label><span>{job.product_name}</span></div>}
-              {job.due_date && <div className="side-row"><label>Due date</label><span>{formatDMY(job.due_date)}</span></div>}
-              {job.scheduled_time && <div className="side-row"><label>Time</label><span>{job.scheduled_time}</span></div>}
               {job.language && <div className="side-row"><label>Vehicle</label><span>{job.language}</span></div>}
               {job.classifications && <div className="side-row"><label>Classification</label><span>{job.classifications}</span></div>}
               {job.customer_reference && <div className="side-row"><label>Reference</label><span>{job.customer_reference}</span></div>}
