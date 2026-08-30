@@ -100,6 +100,13 @@ export default function JobList() {
 
   return (
     <Layout>
+      {!isAdmin && (
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ fontSize: 22 }}>Good to see you, {user?.name?.split(' ')[0]}</h1>
+          <div className="subtitle">Here's what's on your plate today.</div>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h1>Jobs</h1>
