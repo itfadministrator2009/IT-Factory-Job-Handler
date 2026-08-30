@@ -5,6 +5,7 @@ const fs = require('fs');
 const { v4: uuid } = require('uuid');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
+const { canAccessJob } = require('../permissions');
 
 const router = express.Router();
 router.use(authRequired);
@@ -20,8 +21,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 router.post('/jobs/:jobId/attachments', upload.array('files', 10), (req, res) => {
-  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.jobId);
+  if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Job not found' });
   if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
 
   const inserted = req.files.map((file) => {
@@ -39,6 +40,8 @@ router.post('/jobs/:jobId/attachments', upload.array('files', 10), (req, res) =>
 router.get('/attachments/:id/download', (req, res) => {
   const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'Attachment not found' });
+  const job = db.prepare('SELECT owner_id FROM jobs WHERE id = ?').get(att.job_id);
+  if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Attachment not found' });
 
   const filePath = path.join(UPLOAD_DIR, att.stored_name);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
@@ -49,6 +52,8 @@ router.get('/attachments/:id/download', (req, res) => {
 router.delete('/attachments/:id', (req, res) => {
   const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'Attachment not found' });
+  const job = db.prepare('SELECT owner_id FROM jobs WHERE id = ?').get(att.job_id);
+  if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Attachment not found' });
 
   const filePath = path.join(UPLOAD_DIR, att.stored_name);
   fs.unlink(filePath, () => {});

@@ -1,28 +1,37 @@
-// Opens a blank tab synchronously (before the async fetch) so browsers don't treat
-// the eventual window population as a blocked popup — the classic async-window.open fix.
-export async function openJobPdf(api, jobId) {
-  const newTab = window.open('', '_blank');
-  try {
-    const res = await api.get(`/jobs/${jobId}/pdf`, { responseType: 'blob' });
-    const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-    if (newTab) newTab.location = url;
-    else window.open(url, '_blank'); // popup was blocked outright — try once more directly
-  } catch (err) {
-    if (newTab) newTab.close();
-    throw err;
-  }
-}
+const express = require('express');
+const { db } = require('../db');
+const { authRequired } = require('../auth');
+const { streamJobSheet, buildJobSheetBuffer, loadJobData } = require('../pdfBuilder');
+const { sendJobSheetEmail } = require('../email');
+const { canAccessJob } = require('../permissions');
 
-// Downloads the CSV export with the caller's auth token attached (a plain <a href>
-// can't carry the Authorization header, so this fetches as a blob and saves it).
-export async function downloadJobsCsv(api, params) {
-  const res = await api.get('/jobs/export.csv', { params, responseType: 'blob' });
-  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `jobs-export-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
-}
+const router = express.Router();
+router.use(authRequired);
+
+router.get('/:id/pdf', async (req, res) => {
+  const job = db.prepare('SELECT owner_id FROM jobs WHERE id = ?').get(req.params.id);
+  if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Job not found' });
+  const ok = await streamJobSheet(req.params.id, res);
+  if (!ok) res.status(404).json({ error: 'Job not found' });
+});
+
+router.post('/:id/email-pdf', async (req, res) => {
+  const data = loadJobData(req.params.id);
+  if (!data || !canAccessJob(req.user, data.job)) return res.status(404).json({ error: 'Job not found' });
+  if (!data.job.email) return res.status(400).json({ error: 'This job has no contact email on file' });
+
+  try {
+    const pdfBuffer = await buildJobSheetBuffer(req.params.id);
+    await sendJobSheetEmail({
+      toEmail: data.job.email,
+      jobNumber: data.job.job_number,
+      subject: data.job.subject,
+      pdfBuffer,
+    });
+    res.json({ ok: true, sentTo: data.job.email });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not generate or send the job sheet' });
+  }
+});
+
+module.exports = router;

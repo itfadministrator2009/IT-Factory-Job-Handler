@@ -15,8 +15,12 @@ export default function Dashboard() {
   const [q, setQ] = useState('');
 
   useEffect(() => {
-    api.get('/jobs/stats/summary').then((res) => setStats(res.data));
-    api.get('/jobs').then((res) => setRecent(res.data.jobs.slice(0, 8)));
+    api.get('/jobs/stats/summary').then((res) => setStats(res.data)).catch((err) => {
+      console.error('Could not load dashboard stats:', err);
+    });
+    api.get('/jobs').then((res) => setRecent(res.data.jobs.slice(0, 8))).catch((err) => {
+      console.error('Could not load recent jobs:', err);
+    });
   }, []);
 
   function handleSearch(e) {
@@ -30,7 +34,11 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <h1>Good to see you, {user?.name?.split(' ')[0]}</h1>
-          <div className="subtitle">Here's what's happening across the job log today.</div>
+          <div className="subtitle">
+            {(user?.role === 'admin' || user?.role === 'agent')
+              ? "Here's what's happening across the job log today."
+              : "Here's what's on your plate today."}
+          </div>
         </div>
         <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>
       </div>
@@ -60,8 +68,12 @@ export default function Dashboard() {
             <div className="label">In progress</div>
           </div>
           <div className="stat-card">
-            <div className="num">{stats.byStatus.Resolved}</div>
-            <div className="label">Resolved</div>
+            <div className="num">{stats.byStatus.Complete}</div>
+            <div className="label">Complete</div>
+          </div>
+          <div className="stat-card">
+            <div className="num">{stats.byStatus.Collected}</div>
+            <div className="label">Collected</div>
           </div>
           <div className="stat-card">
             <div className="num">{stats.unassigned}</div>

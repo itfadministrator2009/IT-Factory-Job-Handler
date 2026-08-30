@@ -10,7 +10,7 @@ import { openJobPdf } from '../utils/pdf';
 import { formatDMY } from '../utils/date';
 import { StatusPill, PriorityPill } from '../components/Pill';
 
-const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
+const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 
 export default function JobDetail() {
@@ -69,8 +69,8 @@ export default function JobDetail() {
     }
   }
 
-  async function handleSaveSignature(name, dataUrl) {
-    const { data } = await api.post(`/jobs/${id}/signature`, { name, dataUrl });
+  async function handleSaveSignature(name, dataUrl, comments) {
+    const { data } = await api.post(`/jobs/${id}/signature`, { name, dataUrl, comments });
     setJob(data.job);
     setShowSignaturePad(false);
   }
@@ -189,6 +189,11 @@ export default function JobDetail() {
             </div>
             {job.signature_data ? (
               <div>
+                {job.comments && (
+                  <div style={{ fontSize: 13, color: 'var(--ink)', background: 'var(--paper)', borderRadius: 8, padding: '8px 12px', marginBottom: 10, whiteSpace: 'pre-wrap' }}>
+                    {job.comments}
+                  </div>
+                )}
                 <div className="signature-preview">
                   <img src={job.signature_data} alt="Customer signature" />
                 </div>
@@ -202,7 +207,7 @@ export default function JobDetail() {
               </div>
             ) : (
               <button type="button" className="btn btn-accent btn-sm" onClick={() => setShowSignaturePad(true)}>
-                Capture customer signature
+                Fill out job sheet
               </button>
             )}
           </div>
@@ -299,6 +304,7 @@ export default function JobDetail() {
       {showSignaturePad && (
         <SignaturePad
           defaultName={job.signature_name || job.contact_name}
+          defaultComments={job.comments}
           onSave={handleSaveSignature}
           onClose={() => setShowSignaturePad(false)}
         />

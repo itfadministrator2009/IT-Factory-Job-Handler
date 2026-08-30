@@ -57,7 +57,7 @@ function brandedEmail({ title, bodyHtml, footerNote }) {
 function statusPillColor(status) {
   const colors = {
     Open: '#3a63ad', 'In Progress': '#c98a1f', 'On Hold': '#6b7570',
-    Resolved: '#3f7d4f', Closed: '#777777',
+    Complete: '#3f7d4f', Collected: '#3f7d4f', Closed: '#777777',
   };
   return colors[status] || '#3a63ad';
 }
@@ -177,4 +177,56 @@ function sendJobSheetEmail({ toEmail, jobNumber, subject, pdfBuffer }) {
   });
 }
 
-module.exports = { sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, sendPasswordReset, sendJobSheetEmail, hasSmtp };
+// Sent specifically when a job is marked Resolved/Closed — distinct from the generic
+// status-change email, with its own "job's done" framing and (when available) the
+// signed job sheet attached as proof of completion.
+function notifyJobComplete({ toEmail, ticketNumber, subject, pdfBuffer }) {
+  const html = brandedEmail({
+    title: 'Your job is complete',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        Good news — <strong>ticket #${ticketNumber}</strong> has been completed:
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 20px; font-size:14px; color:#333; font-weight:600;">
+        ${subject}
+      </div>
+      <p style="font-size:13px; color:#555; margin:0;">
+        ${pdfBuffer ? 'The completed job sheet, including sign-off, is attached.' : 'Thanks for choosing IT Factory.'}
+      </p>
+    `,
+  });
+
+  return sendMail({
+    to: toEmail,
+    subject: `[Ticket #${ticketNumber}] Job complete: ${subject}`,
+    text: `Ticket #${ticketNumber} ("${subject}") has been completed.${pdfBuffer ? ' The completed job sheet is attached.' : ''}`,
+    html,
+    attachments: pdfBuffer ? [{ filename: `Job-${ticketNumber}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }] : undefined,
+  });
+}
+
+// Staff-only notice sent when a job is marked Closed — never goes to the client,
+// only to the internal collections/dispatch address, since "Closed" is an internal
+// archival state rather than something a customer needs to be told about.
+function notifyJobClosed({ toEmail, ticketNumber, subject }) {
+  const html = brandedEmail({
+    title: `Job closed — #${ticketNumber}`,
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>Ticket #${ticketNumber}</strong> has been closed:
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0; font-size:14px; color:#333; font-weight:600;">
+        ${subject}
+      </div>
+    `,
+  });
+
+  return sendMail({
+    to: toEmail,
+    subject: `[Ticket #${ticketNumber}] Closed: ${subject}`,
+    text: `Ticket #${ticketNumber} ("${subject}") has been closed.`,
+    html,
+  });
+}
+
+module.exports = { sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed, sendPasswordReset, sendJobSheetEmail, hasSmtp };

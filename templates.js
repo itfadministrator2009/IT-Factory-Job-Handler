@@ -2,9 +2,14 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
+const { isAdminRole, currentRole } = require('../permissions');
 
 const router = express.Router();
 router.use(authRequired);
+router.use((req, res, next) => {
+  if (!isAdminRole(currentRole(req.user.id))) return res.status(403).json({ error: 'Admin access required' });
+  next();
+});
 
 function withParsed(t) {
   return { ...t, fields: JSON.parse(t.fields_json), items: JSON.parse(t.items_json) };

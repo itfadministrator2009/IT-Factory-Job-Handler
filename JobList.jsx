@@ -8,11 +8,12 @@ import { formatDMY } from '../utils/date';
 import { downloadJobsCsv } from '../utils/pdf';
 import { useAuth } from '../context/AuthContext';
 
-const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
+const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 
 export default function JobList() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,8 +44,11 @@ export default function JobList() {
     }
   }
 
+  const [error, setError] = useState('');
+
   const load = useCallback(() => {
     setLoading(true);
+    setError('');
     const params = {};
     if (status) params.status = status;
     if (priority) params.priority = priority;
@@ -53,6 +57,9 @@ export default function JobList() {
     if (viewMode === 'mine' && user) params.owner_id = user.id;
     api.get('/jobs', { params }).then((res) => {
       setJobs(res.data.jobs);
+      setLoading(false);
+    }).catch((err) => {
+      setError(err.response?.data?.error || 'Could not load jobs. Please try refreshing.');
       setLoading(false);
     });
   }, [status, priority, q, overdueOnly, viewMode, user]);
@@ -96,32 +103,34 @@ export default function JobList() {
       <div className="page-header">
         <div>
           <h1>Jobs</h1>
-          <div className="subtitle">Every job logged by the team.</div>
+          <div className="subtitle">{isAdmin ? 'Every job logged by the team.' : 'Jobs assigned to you.'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" onClick={handleExportCsv} disabled={exporting}>
             {exporting ? 'Exporting…' : 'Export CSV'}
           </button>
-          <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>
+          {isAdmin && <button className="btn btn-accent" onClick={() => navigate('/jobs/new')}>Log new job</button>}
         </div>
       </div>
 
-      <div className="settings-tabs" style={{ marginBottom: 16 }}>
-        <span
-          className={'settings-tab' + (viewMode === 'all' ? ' active' : '')}
-          style={{ cursor: 'pointer' }}
-          onClick={() => setViewMode('all')}
-        >
-          All Jobs
-        </span>
-        <span
-          className={'settings-tab' + (viewMode === 'mine' ? ' active' : '')}
-          style={{ cursor: 'pointer' }}
-          onClick={() => setViewMode('mine')}
-        >
-          My Jobs
-        </span>
-      </div>
+      {isAdmin && (
+        <div className="settings-tabs" style={{ marginBottom: 16 }}>
+          <span
+            className={'settings-tab' + (viewMode === 'all' ? ' active' : '')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setViewMode('all')}
+          >
+            All Jobs
+          </span>
+          <span
+            className={'settings-tab' + (viewMode === 'mine' ? ' active' : '')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setViewMode('mine')}
+          >
+            My Jobs
+          </span>
+        </div>
+      )}
 
       <div className="ticket-filters">
         <input
@@ -166,13 +175,19 @@ export default function JobList() {
         </div>
       )}
 
-      <div className="panel" style={{ padding: jobs.length ? 0 : 20 }}>
+      <div className="panel" style={{ padding: (jobs.length && !error) ? 0 : 20 }}>
         {loading ? (
           <div>{[...Array(5)].map((_, i) => <div key={i} className="skeleton-row" />)}</div>
+        ) : error ? (
+          <div className="empty-state">
+            <h3>Couldn't load jobs</h3>
+            <p>{error}</p>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={load}>Try again</button>
+          </div>
         ) : jobs.length === 0 ? (
           <div className="empty-state">
             <h3>No jobs found</h3>
-            <p>{viewMode === 'mine' ? "No jobs are assigned to you right now." : 'Try adjusting your filters, or log a new job.'}</p>
+            <p>{(viewMode === 'mine' || !isAdmin) ? "No jobs are assigned to you right now." : 'Try adjusting your filters, or log a new job.'}</p>
           </div>
         ) : (
           <table className="ticket-table">

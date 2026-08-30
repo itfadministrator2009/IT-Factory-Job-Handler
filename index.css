@@ -279,7 +279,8 @@ input, select, textarea {
 .pill-status-Open { background: #e6edf9; color: var(--blue); }
 .pill-status-InProgress { background: #fbf1dc; color: var(--amber); }
 .pill-status-OnHold { background: #f1ece3; color: var(--muted); }
-.pill-status-Resolved { background: #e6f2e8; color: var(--green); }
+.pill-status-Complete { background: #e6f2e8; color: var(--green); }
+.pill-status-Collected { background: #e6f2e8; color: var(--green); }
 .pill-status-Closed { background: #eee; color: #777; }
 
 .pill-priority-Low { background: #eef1ee; color: #5c6a60; }
@@ -326,6 +327,23 @@ input, select, textarea {
   background: white;
 }
 .field textarea { resize: vertical; min-height: 90px; }
+
+.password-field-wrap { position: relative; }
+.password-field-wrap input { padding-right: 40px; }
+.password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+.password-toggle:hover { color: var(--ink); }
 
 .error-banner {
   background: #fbe1db;
@@ -633,6 +651,20 @@ input, select, textarea {
 .modal-header h3 { font-size: 16px; }
 .modal-header button { background: none; border: none; color: var(--muted); }
 
+/* The sign-off modal (Name + Comments + Signature) is taller than a typical modal —
+   pin the header and Save button in place, and let just the middle section scroll,
+   so Save is always reachable even with a mobile keyboard open. */
+.sign-off-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+}
+.sign-off-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
 .signature-canvas-wrap {
   border: 1.5px dashed var(--line);
   border-radius: var(--radius);
@@ -811,6 +843,6 @@ input, select, textarea {
     flex-direction: column;
     padding: 16px;
   }
-  .signature-canvas-wrap { flex: 1; margin-bottom: 16px; }
-  .signature-canvas { height: 100%; min-height: 260px; }
+  .signature-canvas-wrap { margin-bottom: 16px; }
+  .signature-canvas { height: 220px; }
 }

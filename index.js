@@ -37,5 +37,15 @@ const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {
   console.warn('WARNING: JWT_SECRET is not set — using an insecure default. Set it in .env before deploying.');
 }
+
+// A last-resort safety net: an unhandled promise rejection anywhere in the app
+// (a background email, calendar sync, or backup that forgot a .catch) would otherwise
+// crash the entire server in modern Node. Logging and continuing is much safer for a
+// service that's meant to stay up — a single failed background task should never take
+// down every in-flight request.
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled promise rejection (server continues running):', err);
+});
+
 startBackupScheduler();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));

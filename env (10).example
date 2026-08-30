@@ -1,0 +1,4 @@
+# Local dev: point at your local backend (server/index.js).
+# On Render: set this as a build-time environment variable on the Static Site,
+# pointing at your Web Service's URL (e.g. https://your-backend.onrender.com/api).
+VITE_API_URL=http://localhost:4000/api

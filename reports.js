@@ -2,9 +2,14 @@ const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { detectState } = require('../calendar');
+const { isAdminRole, currentRole } = require('../permissions');
 
 const router = express.Router();
 router.use(authRequired);
+router.use((req, res, next) => {
+  if (!isAdminRole(currentRole(req.user.id))) return res.status(403).json({ error: 'Admin access required' });
+  next();
+});
 
 router.get('/summary', (req, res) => {
   const rows = db.prepare(`
@@ -47,7 +52,7 @@ router.get('/summary', (req, res) => {
 
   const perTech = db.prepare(`
     SELECT u.name as name, COUNT(j.id) as total,
-      SUM(CASE WHEN j.status IN ('Resolved','Closed') THEN 1 ELSE 0 END) as completed
+      SUM(CASE WHEN j.status IN ('Complete','Collected','Closed') THEN 1 ELSE 0 END) as completed
     FROM jobs j
     JOIN users u ON u.id = j.owner_id
     GROUP BY j.owner_id
