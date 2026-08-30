@@ -43,8 +43,11 @@ export default function JobList() {
     }
   }
 
+  const [error, setError] = useState('');
+
   const load = useCallback(() => {
     setLoading(true);
+    setError('');
     const params = {};
     if (status) params.status = status;
     if (priority) params.priority = priority;
@@ -53,6 +56,9 @@ export default function JobList() {
     if (viewMode === 'mine' && user) params.owner_id = user.id;
     api.get('/jobs', { params }).then((res) => {
       setJobs(res.data.jobs);
+      setLoading(false);
+    }).catch((err) => {
+      setError(err.response?.data?.error || 'Could not load jobs. Please try refreshing.');
       setLoading(false);
     });
   }, [status, priority, q, overdueOnly, viewMode, user]);
@@ -166,9 +172,15 @@ export default function JobList() {
         </div>
       )}
 
-      <div className="panel" style={{ padding: jobs.length ? 0 : 20 }}>
+      <div className="panel" style={{ padding: (jobs.length && !error) ? 0 : 20 }}>
         {loading ? (
           <div>{[...Array(5)].map((_, i) => <div key={i} className="skeleton-row" />)}</div>
+        ) : error ? (
+          <div className="empty-state">
+            <h3>Couldn't load jobs</h3>
+            <p>{error}</p>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={load}>Try again</button>
+          </div>
         ) : jobs.length === 0 ? (
           <div className="empty-state">
             <h3>No jobs found</h3>

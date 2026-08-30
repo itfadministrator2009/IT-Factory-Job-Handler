@@ -210,6 +210,11 @@ router.post('/', (req, res) => {
   // fails the job-creation response — a calendar hiccup shouldn't stop a job being logged.
   createCalendarEvent(job).then((eventId) => {
     if (eventId) db.prepare('UPDATE jobs SET ms_event_id = ? WHERE id = ?').run(eventId, id);
+  }).catch((err) => {
+    // Defensive: syncCalendarEvent/createCalendarEvent already catch their own errors
+    // and shouldn't reject, but an uncaught rejection here could crash the whole
+    // process in modern Node — this guarantees that can never happen.
+    console.error('[jobs] Unexpected error syncing new job to calendar:', err.message);
   });
 
   res.status(201).json({ job: withNames(job) });
@@ -261,6 +266,8 @@ router.patch('/:id', (req, res) => {
     if (eventId !== updated.ms_event_id) {
       db.prepare('UPDATE jobs SET ms_event_id = ? WHERE id = ?').run(eventId, req.params.id);
     }
+  }).catch((err) => {
+    console.error('[jobs] Unexpected error syncing job update to calendar:', err.message);
   });
 
   res.json({ job: withNames(updated) });

@@ -15,8 +15,12 @@ export default function Dashboard() {
   const [q, setQ] = useState('');
 
   useEffect(() => {
-    api.get('/jobs/stats/summary').then((res) => setStats(res.data));
-    api.get('/jobs').then((res) => setRecent(res.data.jobs.slice(0, 8)));
+    api.get('/jobs/stats/summary').then((res) => setStats(res.data)).catch((err) => {
+      console.error('Could not load dashboard stats:', err);
+    });
+    api.get('/jobs').then((res) => setRecent(res.data.jobs.slice(0, 8))).catch((err) => {
+      console.error('Could not load recent jobs:', err);
+    });
   }, []);
 
   function handleSearch(e) {
