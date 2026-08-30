@@ -6,7 +6,7 @@ import Layout from '../components/Layout';
 import AttachmentManager from '../components/AttachmentManager';
 import ItemsManager from '../components/ItemsManager';
 
-const STATUSES = ['Open', 'In Progress', 'On Hold', 'Resolved', 'Closed'];
+const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const CHANNELS = ['Phone', 'Email', 'Web', 'Walk-in', 'Chat'];
 const VEHICLES = [
