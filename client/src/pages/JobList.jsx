@@ -199,13 +199,13 @@ export default function JobList() {
                   <input type="checkbox" checked={selected.size === jobs.length} onChange={toggleSelectAll} />
                 </th>
                 <th>#</th>
+                <th>Date</th>
                 <th>Subject</th>
                 <th>Contact</th>
                 <th>Account</th>
                 <th>Owner</th>
                 <th>Status</th>
                 <th>Priority</th>
-                <th>Date</th>
                 <th>Updated</th>
               </tr>
             </thead>
@@ -216,17 +216,17 @@ export default function JobList() {
                     <input type="checkbox" checked={selected.has(j.id)} onChange={() => toggleSelect(j.id)} />
                   </td>
                   <td className="ticket-num" onClick={() => navigate(`/jobs/${j.id}`)}>#{j.job_number}</td>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)}>
+                    {j.overdue
+                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMY(j.due_date)}</span>
+                      : (j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>)}
+                  </td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.subject}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.contact_name}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.account_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.owner?.name || <span style={{ color: 'var(--muted)' }}>Unassigned</span>}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><StatusPill status={j.status} /></td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><PriorityPill priority={j.priority} /></td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)}>
-                    {j.overdue
-                      ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMY(j.due_date)}</span>
-                      : (j.due_date ? formatDMY(j.due_date) : <span style={{ color: 'var(--muted)' }}>—</span>)}
-                  </td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ color: 'var(--muted)' }}>{formatDate(j.updated_at)}</td>
                 </tr>
               ))}
