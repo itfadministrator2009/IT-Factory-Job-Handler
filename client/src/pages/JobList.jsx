@@ -205,7 +205,7 @@ export default function JobList() {
                 <th>Owner</th>
                 <th>Status</th>
                 <th>Priority</th>
-                <th>Due</th>
+                <th>Date</th>
                 <th>Updated</th>
               </tr>
             </thead>
