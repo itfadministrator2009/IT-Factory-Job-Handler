@@ -68,8 +68,12 @@ export default function Dashboard() {
             <div className="label">In progress</div>
           </div>
           <div className="stat-card">
-            <div className="num">{stats.byStatus.Resolved}</div>
-            <div className="label">Resolved</div>
+            <div className="num">{stats.byStatus.Complete}</div>
+            <div className="label">Complete</div>
+          </div>
+          <div className="stat-card">
+            <div className="num">{stats.byStatus.Collected}</div>
+            <div className="label">Collected</div>
           </div>
           <div className="stat-card">
             <div className="num">{stats.unassigned}</div>
@@ -90,14 +94,14 @@ export default function Dashboard() {
             <p>Click "Log new job" to add your first one.</p>
           </div>
         ) : (
-           <table className="ticket-table dashboard-recent-table">
+          <table className="ticket-table dashboard-recent-table">
             <thead>
               <tr>
                 <th>#</th>
                 <th>Subject</th>
                 <th>Contact</th>
                 <th>Account Name</th>
-                <th>Due Date</th>
+                <th>Date</th>
                 <th>Ticket Owner</th>
                 <th>Status</th>
                 <th>Priority</th>
