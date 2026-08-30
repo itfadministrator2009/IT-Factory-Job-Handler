@@ -80,8 +80,8 @@ export default function Dashboard() {
             <div className="label">Unassigned</div>
           </div>
           <div className="stat-card">
-            <div className="num" style={{ color: stats.overdue > 0 ? '#c23f1c' : undefined }}>{stats.overdue}</div>
-            <div className="label">Overdue</div>
+            <div className="num">{stats.byStatus.Closed}</div>
+            <div className="label">Closed</div>
           </div>
         </div>
       )}
