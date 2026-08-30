@@ -21,9 +21,19 @@ function RequireAuth({ children }) {
   return children;
 }
 
+function RequireAdmin({ children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  const isAdmin = user.role === 'admin' || user.role === 'agent';
+  if (!isAdmin) return <Navigate to="/jobs" replace />;
+  return children;
+}
+
 function HomeRedirect() {
   const { user } = useAuth();
-  return <Navigate to={user ? '/dashboard' : '/login'} replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  const isAdmin = user.role === 'admin' || user.role === 'agent';
+  return <Navigate to={isAdmin ? '/dashboard' : '/jobs'} replace />;
 }
 
 function AppRoutes() {
@@ -34,14 +44,14 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
-      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+      <Route path="/dashboard" element={<RequireAdmin><Dashboard /></RequireAdmin>} />
       <Route path="/jobs" element={<RequireAuth><JobList /></RequireAuth>} />
-      <Route path="/jobs/new" element={<RequireAuth><JobForm /></RequireAuth>} />
+      <Route path="/jobs/new" element={<RequireAdmin><JobForm /></RequireAdmin>} />
       <Route path="/jobs/:id/edit" element={<RequireAuth><JobForm /></RequireAuth>} />
       <Route path="/jobs/:id" element={<RequireAuth><JobDetail /></RequireAuth>} />
 
-      <Route path="/reports" element={<RequireAuth><Reports /></RequireAuth>} />
-      <Route path="/templates" element={<RequireAuth><Templates /></RequireAuth>} />
+      <Route path="/reports" element={<RequireAdmin><Reports /></RequireAdmin>} />
+      <Route path="/templates" element={<RequireAdmin><Templates /></RequireAdmin>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
