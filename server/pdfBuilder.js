@@ -58,9 +58,6 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
     ['TECHNICIAN:', owner?.name || '—'],
     ['VEHICLE:', job.language || '—'],
   ];
-  // Row heights are computed per-row (not fixed) so a long value — like a full vehicle
-  // description — wraps onto a second line instead of overflowing past the box border.
-  // Extra bottom padding (14 instead of 10) so a wrapped second line doesn't crowd the border.
   const metaRowHeights = metaRows.map(([, value]) => Math.max(20, doc.heightOfString(value, { width: valueW }) + 14));
   const boxTotalH = metaRowHeights.reduce((a, b) => a + b, 0);
 
@@ -69,8 +66,6 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
   metaRows.forEach(([label, value], i) => {
     const rowH = metaRowHeights[i];
     if (i > 0) doc.moveTo(boxX, metaRowY).lineTo(boxX + boxW, metaRowY).strokeColor(LINE).stroke();
-    // The label is vertically centered in the row — otherwise a short label looks stuck
-    // to the top of a taller row whenever the value wraps onto a second line.
     doc.fontSize(8.5).font('Helvetica-Bold');
     const labelH = doc.heightOfString(label, { width: 100 });
     doc.fillColor('#333').text(label, boxX + 10, metaRowY + (rowH - labelH) / 2, { width: 100 });
@@ -277,10 +272,6 @@ function loadJobData(jobId) {
   return { job, owner, items, attachments };
 }
 
-// Draws the base PDF with pdfkit, then — only if the job hasn't been signed in-app —
-// overlays real fillable AcroForm fields (Customer Name, Signature, Date) on top of
-// the blank sign-off boxes using pdf-lib, so the customer can type/sign directly in
-// any standard PDF reader (Adobe, Preview, Chrome, etc).
 async function renderJobSheet(jobId) {
   const data = loadJobData(jobId);
   if (!data) return null;
@@ -297,7 +288,6 @@ async function renderJobSheet(jobId) {
   });
 
   if (data.job.signature_data) {
-    // Already signed in-app — nothing to make fillable, ship the static PDF as-is.
     return { buffer: baseBuffer, jobNumber: data.job.job_number };
   }
 
