@@ -2,7 +2,7 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const { db, nextJobNumber, peekNextJobNumber } = require('../db');
 const { authRequired } = require('../auth');
-const { notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed } = require('../email');
+const { notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed, notifyJobAssigned } = require('../email');
 const { createCalendarEvent, syncCalendarEvent, deleteCalendarEvent } = require('../calendar');
 const { canAccessJob, isAdminRole, currentRole } = require('../permissions');
 const { buildJobSheetBuffer } = require('../pdfBuilder');
@@ -77,6 +77,23 @@ function sendStatusTransitionEmails(oldStatus, updated) {
   if (updated.email) {
     notifyStatusChange({ toEmail: updated.email, ticketNumber: updated.job_number, subject: updated.subject, status: updated.status });
   }
+}
+
+// Notifies a tech when a job is newly assigned or reassigned to them. Only fires when
+// there's an actual new owner (clearing to unassigned sends nothing). Fire-and-forget,
+// with its own .catch so a mail hiccup here can never affect the job update response.
+function notifyAssignment(newOwnerId, job) {
+  if (!newOwnerId) return;
+  const owner = db.prepare('SELECT email FROM users WHERE id = ?').get(newOwnerId);
+  if (!owner?.email) return;
+  notifyJobAssigned({
+    toEmail: owner.email,
+    ticketNumber: job.job_number,
+    subject: job.subject,
+    contactName: job.contact_name,
+  }).catch((err) => {
+    console.error('[jobs] Could not send job-assigned email:', err.message);
+  });
 }
 
 // Applied to every route that operates on a specific job. Fetches it once, and 404s
@@ -235,6 +252,9 @@ router.patch('/bulk', (req, res) => {
     if (status !== undefined && status !== job.status) {
       sendStatusTransitionEmails(job.status, fresh);
     }
+    if (owner_id !== undefined && owner_id !== job.owner_id) {
+      notifyAssignment(owner_id, fresh);
+    }
   });
 
   res.json({ ok: true, updated });
@@ -285,6 +305,7 @@ router.post('/', (req, res) => {
   if (job.email) {
     notifyTicketCreated({ toEmail: job.email, ticketNumber: jobNumber, subject: job.subject });
   }
+  notifyAssignment(job.owner_id, job);
 
   // Fire-and-forget: sync to the Microsoft 365 calendar if configured. Never blocks or
   // fails the job-creation response — a calendar hiccup shouldn't stop a job being logged.
@@ -336,6 +357,9 @@ router.patch('/:id', loadJobAndCheckAccess, (req, res) => {
   const updated = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
   if (req.body.status && req.body.status !== job.status) {
     sendStatusTransitionEmails(job.status, updated);
+  }
+  if (req.body.owner_id !== undefined && req.body.owner_id !== job.owner_id) {
+    notifyAssignment(req.body.owner_id, updated);
   }
 
   // Keep the Microsoft 365 calendar in sync with whatever just changed — creates an
