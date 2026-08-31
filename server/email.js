@@ -229,4 +229,28 @@ function notifyJobClosed({ toEmail, ticketNumber, subject }) {
   });
 }
 
-module.exports = { sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed, sendPasswordReset, sendJobSheetEmail, hasSmtp };
+// Sent to a tech when a job is newly assigned or reassigned to them, so they find out
+// without having to keep checking the Jobs list themselves.
+function notifyJobAssigned({ toEmail, ticketNumber, subject, contactName }) {
+  const html = brandedEmail({
+    title: 'A job has been assigned to you',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>Ticket #${ticketNumber}</strong> has been assigned to you:
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 8px; font-size:14px; color:#333; font-weight:600;">
+        ${subject}
+      </div>
+      ${contactName ? `<p style="font-size:13px; color:#555; margin:8px 0 0;">Contact: ${contactName}</p>` : ''}
+    `,
+  });
+
+  return sendMail({
+    to: toEmail,
+    subject: `[Ticket #${ticketNumber}] Assigned to you: ${subject}`,
+    text: `Ticket #${ticketNumber} ("${subject}") has been assigned to you.`,
+    html,
+  });
+}
+
+module.exports = { sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed, notifyJobAssigned, sendPasswordReset, sendJobSheetEmail, hasSmtp };
