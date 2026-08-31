@@ -16,6 +16,7 @@ export default function Reports() {
   const [data, setData] = useState(null);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [activePreset, setActivePreset] = useState('');
 
   function load(range) {
     const params = {};
@@ -29,13 +30,44 @@ export default function Reports() {
   useEffect(() => { load(); }, []);
 
   function applyRange() {
+    setActivePreset('');
     if (from && to) load({ from, to });
   }
 
   function clearRange() {
     setFrom('');
     setTo('');
+    setActivePreset('');
     load();
+  }
+
+  // YYYY-MM-DD using the browser's local date, not UTC — so "today" matches what the
+  // person actually sees on their own clock, same as picking it manually would.
+  function toLocalISODate(d) {
+    const offset = d.getTimezoneOffset();
+    return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
+  }
+
+  function applyPreset(preset) {
+    const today = new Date();
+    let start;
+    if (preset === 'week') {
+      start = new Date(today);
+      const day = start.getDay(); // 0 = Sunday
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diffToMonday);
+    } else if (preset === 'month') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (preset === 'last30') {
+      start = new Date(today);
+      start.setDate(start.getDate() - 29);
+    }
+    const newFrom = toLocalISODate(start);
+    const newTo = toLocalISODate(today);
+    setFrom(newFrom);
+    setTo(newTo);
+    setActivePreset(preset);
+    load({ from: newFrom, to: newTo });
   }
 
   if (!data) return <Layout><div className="empty-state">Loading…</div></Layout>;
@@ -55,11 +87,11 @@ export default function Reports() {
       <div className="panel" style={{ padding: 18, marginBottom: 20, display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <div className="field" style={{ marginBottom: 0 }}>
           <label htmlFor="report-from">From</label>
-          <input id="report-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input id="report-from" type="date" value={from} onChange={(e) => { setFrom(e.target.value); setActivePreset(''); }} />
         </div>
         <div className="field" style={{ marginBottom: 0 }}>
           <label htmlFor="report-to">To</label>
-          <input id="report-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <input id="report-to" type="date" value={to} onChange={(e) => { setTo(e.target.value); setActivePreset(''); }} />
         </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={applyRange} disabled={!from || !to}>
           Apply
@@ -69,6 +101,17 @@ export default function Reports() {
             Clear
           </button>
         )}
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+          <button type="button" className={'btn btn-sm ' + (activePreset === 'week' ? 'btn-primary' : 'btn-ghost')} onClick={() => applyPreset('week')}>
+            This week
+          </button>
+          <button type="button" className={'btn btn-sm ' + (activePreset === 'month' ? 'btn-primary' : 'btn-ghost')} onClick={() => applyPreset('month')}>
+            This month
+          </button>
+          <button type="button" className={'btn btn-sm ' + (activePreset === 'last30' ? 'btn-primary' : 'btn-ghost')} onClick={() => applyPreset('last30')}>
+            Last 30 days
+          </button>
+        </div>
       </div>
 
       <div className="panel" style={{ padding: 24, marginBottom: 20 }}>
