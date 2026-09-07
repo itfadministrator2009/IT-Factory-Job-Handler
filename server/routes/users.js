@@ -46,8 +46,6 @@ router.post('/admin', adminRequired, (req, res) => {
   if (password.length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-  if (existing) return res.status(409).json({ error: 'Email already registered' });
 
   const finalRole = role === 'admin' ? 'admin' : 'user';
   const id = uuid();
@@ -63,7 +61,7 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
-  const { role, name } = req.body;
+  const { role, name, email } = req.body;
 
   if (role !== undefined) {
     const finalRole = role === 'admin' ? 'admin' : 'user';
@@ -76,6 +74,12 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
 
   if (name !== undefined && name.trim()) {
     db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+  }
+
+  // Email is intentionally not required to be unique — multiple techs can share one
+  // inbox (see the login route, which checks every account with a given email).
+  if (email !== undefined && email.trim()) {
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), req.params.id);
   }
 
   const updated = db.prepare('SELECT id, name, email, role, created_at FROM users WHERE id = ?').get(req.params.id);
