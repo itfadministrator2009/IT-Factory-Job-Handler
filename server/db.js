@@ -10,7 +10,7 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'agent',
   reset_token TEXT,
@@ -204,6 +204,43 @@ function migrateJobsStatusConstraint() {
   console.log('[db] Migrated jobs table: removed the outdated status CHECK constraint.');
 }
 migrateJobsStatusConstraint();
+
+// One-time schema migration: the users table originally had a UNIQUE constraint on
+// email, which blocked multiple tech accounts sharing one inbox. Same rebuild
+// approach as the jobs status migration above — preserves every column and row,
+// just drops the constraint. Safe to run on every startup; it detects and skips
+// itself once already migrated.
+function migrateUsersEmailUnique() {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql;
+  if (!tableSql || !/email TEXT UNIQUE/i.test(tableSql)) return;
+
+  db.pragma('foreign_keys = OFF');
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE users_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'agent',
+        reset_token TEXT,
+        reset_token_expires TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    const oldCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+    const newCols = db.prepare('PRAGMA table_info(users_new)').all().map((c) => c.name);
+    const commonCols = newCols.filter((c) => oldCols.includes(c));
+    const colList = commonCols.join(', ');
+    db.exec(`INSERT INTO users_new (${colList}) SELECT ${colList} FROM users;`);
+    db.exec('DROP TABLE users;');
+    db.exec('ALTER TABLE users_new RENAME TO users;');
+  });
+  migrate();
+  db.pragma('foreign_keys = ON');
+  console.log('[db] Migrated users table: removed the UNIQUE constraint on email.');
+}
+migrateUsersEmailUnique();
 
 // One-time data fixup: the "Resolved" status was renamed to "Collected" — this
 // updates any jobs already sitting in that old status so they land in the new one
