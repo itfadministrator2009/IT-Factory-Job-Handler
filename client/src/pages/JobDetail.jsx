@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Paperclip, Pencil, CheckCircle2, X, FileText, Mail, PenLine, Wrench, MapPin, History, AlertTriangle } from 'lucide-react';
+import { Paperclip, Pencil, CheckCircle2, X, FileText, Mail, PenLine, Wrench, MapPin, History, AlertTriangle, Trash2 } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import AttachmentManager from '../components/AttachmentManager';
@@ -9,6 +9,7 @@ import SignaturePad from '../components/SignaturePad';
 import { openJobPdf } from '../utils/pdf';
 import { formatDMY } from '../utils/date';
 import { StatusPill, PriorityPill } from '../components/Pill';
+import { useAuth } from '../context/AuthContext';
 
 const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
@@ -17,6 +18,8 @@ export default function JobDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const [showCreated, setShowCreated] = useState(!!location.state?.justCreated);
 
   const [job, setJob] = useState(null);
@@ -32,6 +35,7 @@ export default function JobDetail() {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [emailingPdf, setEmailingPdf] = useState(false);
   const [emailSentMsg, setEmailSentMsg] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(() => {
     api.get(`/jobs/${id}`).then((res) => {
@@ -79,6 +83,18 @@ export default function JobDetail() {
     if (!confirm('Remove this signature?')) return;
     const { data } = await api.delete(`/jobs/${id}/signature`);
     setJob(data.job);
+  }
+
+  async function handleDeleteJob() {
+    if (!confirm(`Delete job #${job.job_number} — "${job.subject}"? This can't be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/jobs/${id}`);
+      navigate('/jobs');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not delete job');
+      setDeleting(false);
+    }
   }
 
   async function handleDownloadPdf() {
@@ -141,6 +157,11 @@ export default function JobDetail() {
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${id}/edit`)}>
             <Pencil size={14} /> Edit details
           </button>
+          {isAdmin && (
+            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={handleDeleteJob} disabled={deleting}>
+              <Trash2 size={14} /> {deleting ? 'Deleting…' : 'Delete job'}
+            </button>
+          )}
         </div>
       </div>
 
