@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +27,13 @@ export default function Settings() {
   const [resetSaving, setResetSaving] = useState(false);
   const [resetError, setResetError] = useState('');
   const [resetDoneFor, setResetDoneFor] = useState(null);
+
+  const [editTarget, setEditTarget] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRole, setEditRole] = useState('user');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   function load() {
     setLoading(true);
@@ -93,6 +100,38 @@ export default function Settings() {
     setResetPassword('');
     setResetError('');
     setResetDoneFor(null);
+  }
+
+  function openEdit(u) {
+    setEditTarget(u);
+    setEditName(u.name);
+    setEditEmail(u.email);
+    setEditRole(u.role === 'agent' ? 'admin' : u.role);
+    setEditError('');
+  }
+
+  async function handleEditUser(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    setEditError('');
+    try {
+      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole });
+      setEditTarget(null);
+      load();
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Could not update user');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  // A soft heads-up, not a block — shared emails are supported, but self-service
+  // "Forgot password" can only ever reach one of the accounts on a shared email, so
+  // it's worth knowing that going in.
+  function emailSharedWithSomeoneElse(email, excludingUserId) {
+    const target = (email || '').trim().toLowerCase();
+    if (!target) return false;
+    return users.some((u) => u.id !== excludingUserId && u.email.trim().toLowerCase() === target);
   }
 
   async function handleResetPassword(e) {
@@ -163,6 +202,11 @@ export default function Settings() {
             <div className="field">
               <label htmlFor="uemail">Email</label>
               <input id="uemail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              {emailSharedWithSomeoneElse(email, null) && (
+                <p style={{ fontSize: 12, color: 'var(--amber)', marginTop: 6 }}>
+                  Another user already has this email. Logging in still works fine (by password), but "Forgot password" can only reach one of the accounts — use "Reset password" here instead for the other one.
+                </p>
+              )}
             </div>
             <div className="field">
               <label htmlFor="upass">Password</label>
@@ -217,6 +261,14 @@ export default function Settings() {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
+                        onClick={() => openEdit(u)}
+                        title="Edit user"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
                         onClick={() => openReset(u)}
                         title="Reset password"
                       >
@@ -260,6 +312,43 @@ export default function Settings() {
           {backupRunning ? 'Sending…' : 'Back up now'}
         </button>
       </div>
+
+      {editTarget && (
+        <div className="modal-overlay" onClick={() => setEditTarget(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Edit {editTarget.name}</h3>
+              <button type="button" onClick={() => setEditTarget(null)}><X size={18} /></button>
+            </div>
+            {editError && <div className="error-banner">{editError}</div>}
+            <form onSubmit={handleEditUser}>
+              <div className="field">
+                <label htmlFor="edit-name">Full name</label>
+                <input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} required autoFocus />
+              </div>
+              <div className="field">
+                <label htmlFor="edit-email">Email</label>
+                <input id="edit-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required />
+                {emailSharedWithSomeoneElse(editEmail, editTarget.id) && (
+                  <p style={{ fontSize: 12, color: 'var(--amber)', marginTop: 6 }}>
+                    Another user already has this email. Logging in still works fine (by password), but "Forgot password" can only reach one of the accounts — use "Reset password" here instead for the other one.
+                  </p>
+                )}
+              </div>
+              <div className="field">
+                <label htmlFor="edit-role">Role</label>
+                <select id="edit-role" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button className="btn btn-accent" type="submit" disabled={editSaving} style={{ width: '100%', justifyContent: 'center' }}>
+                {editSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {resetTarget && (
         <div className="modal-overlay" onClick={() => setResetTarget(null)}>
