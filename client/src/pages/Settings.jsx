@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +18,7 @@ export default function Settings() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('user');
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupMsg, setBackupMsg] = useState('');
@@ -27,6 +28,7 @@ export default function Settings() {
   const [resetSaving, setResetSaving] = useState(false);
   const [resetError, setResetError] = useState('');
   const [resetDoneFor, setResetDoneFor] = useState(null);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   const [editTarget, setEditTarget] = useState(null);
   const [editName, setEditName] = useState('');
@@ -210,7 +212,25 @@ export default function Settings() {
             </div>
             <div className="field">
               <label htmlFor="upass">Password</label>
-              <input id="upass" type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <div className="password-field-wrap">
+                <input
+                  id="upass"
+                  type={showPassword ? 'text' : 'password'}
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
             <div className="field">
               <label htmlFor="urole">Role</label>
@@ -361,15 +381,26 @@ export default function Settings() {
             <form onSubmit={handleResetPassword}>
               <div className="field">
                 <label htmlFor="reset-pass">New password</label>
-                <input
-                  id="reset-pass"
-                  type="password"
-                  minLength={6}
-                  value={resetPassword}
-                  onChange={(e) => setResetPassword(e.target.value)}
-                  required
-                  autoFocus
-                />
+                <div className="password-field-wrap">
+                  <input
+                    id="reset-pass"
+                    type={showResetPassword ? 'text' : 'password'}
+                    minLength={8}
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowResetPassword((s) => !s)}
+                    aria-label={showResetPassword ? 'Hide password' : 'Show password'}
+                    tabIndex={-1}
+                  >
+                    {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
               <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 This takes effect immediately. You'll need to tell {resetTarget.name.split(' ')[0]} their new password directly — it isn't emailed to them.
