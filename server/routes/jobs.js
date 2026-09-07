@@ -376,7 +376,12 @@ router.patch('/:id', loadJobAndCheckAccess, (req, res) => {
   res.json({ job: withNames(updated) });
 });
 
+// Deleting a job is permanent and irreversible — restricted to Admins, unlike most
+// other actions on a job which a tech can do for their own assigned work.
 router.delete('/:id', loadJobAndCheckAccess, (req, res) => {
+  if (!isAdminRole(currentRole(req.user.id))) {
+    return res.status(403).json({ error: 'Only admins can delete jobs' });
+  }
   const job = req.job;
   db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
   if (job?.ms_event_id) deleteCalendarEvent(job.ms_event_id);
