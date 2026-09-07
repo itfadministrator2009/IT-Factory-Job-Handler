@@ -52,11 +52,6 @@ router.post('/register', registerLimiter, (req, res) => {
     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-  if (existing) {
-    return res.status(409).json({ error: 'Email already registered' });
-  }
-
   // The very first person to register becomes Admin automatically — there needs to be
   // at least one admin to manage everyone else. Everyone after that starts as a
   // regular User; an admin can promote them later from Settings → Users.
@@ -77,8 +72,11 @@ router.post('/login', loginLimiter, (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  // Email is no longer unique — multiple techs can share one inbox. Check every
+  // account with this email and log in as whichever one's password actually matches.
+  const candidates = db.prepare('SELECT * FROM users WHERE email = ?').all(email);
+  const user = candidates.find((u) => bcrypt.compareSync(password, u.password_hash));
+  if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   res.json({ token: signToken(user), user: { id: user.id, name: user.name, email: user.email, role: user.role } });
