@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { getAccessToken, configured: graphConfigured } = require('./calendar');
 
 const hasSmtp = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
@@ -16,8 +17,52 @@ const FROM = process.env.FROM_EMAIL || 'helpdesk@example.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const LOGO_URL = `${FRONTEND_URL}/logo.jpg`;
 
+// Sends via Microsoft Graph's sendMail API instead of SMTP — this sidesteps the
+// "basic authentication disabled" (535 5.7.139) error many Microsoft 365 tenants now
+// enforce by default, since Graph uses the same OAuth app-only token already used for
+// the calendar and OneDrive backups, not a mailbox username/password.
+async function sendViaGraph({ to, subject, text, html, attachments }) {
+  const token = await getAccessToken();
+  const message = {
+    subject,
+    body: { contentType: html ? 'HTML' : 'Text', content: html || text },
+    toRecipients: [{ emailAddress: { address: to } }],
+  };
+  if (attachments && attachments.length > 0) {
+    message.attachments = attachments.map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: a.filename,
+      contentType: a.contentType || 'application/octet-stream',
+      contentBytes: (Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content)).toString('base64'),
+    }));
+  }
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(FROM)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, saveToSentItems: true }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Graph sendMail failed (${res.status}): ${errText}`);
+  }
+}
+
 async function sendMail({ to, subject, text, html, attachments }) {
   if (!to) return;
+
+  // Prefer Graph when Microsoft 365 is configured — falls back to SMTP (if set up)
+  // or dev-mode logging if Graph fails, so one misconfigured path never blocks mail
+  // entirely once at least one method is working.
+  if (graphConfigured) {
+    try {
+      await sendViaGraph({ to, subject, text, html, attachments });
+      return;
+    } catch (err) {
+      console.error('[email] Graph send failed, falling back:', err.message);
+    }
+  }
+
   if (!transporter) {
     console.log(`[email:dev-mode] To: ${to} | Subject: ${subject}\n${text}\n${attachments ? `(${attachments.length} attachment(s))` : ''}`);
     return;
