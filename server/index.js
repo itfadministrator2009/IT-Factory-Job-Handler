@@ -15,6 +15,10 @@ const backupRoutes = require('./routes/backup');
 const { startBackupScheduler } = require('./backup');
 
 const app = express();
+// Render sits in front of the app as a reverse proxy, adding an X-Forwarded-For
+// header. Without this, express-rate-limit can't correctly identify individual
+// users by IP behind that proxy (and logs a validation warning on every request).
+app.set('trust proxy', 1);
 
 // Set FRONTEND_URL in production to lock this down to your actual frontend domain.
 const allowedOrigin = process.env.FRONTEND_URL;
