@@ -14,6 +14,9 @@ import ArticleForm from './pages/ArticleForm';
 import Reports from './pages/Reports';
 import Templates from './pages/Templates';
 import Settings from './pages/Settings';
+import Projects from './pages/Projects';
+import ProjectDetail from './pages/ProjectDetail';
+import ProjectEntryForm from './pages/ProjectEntryForm';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
