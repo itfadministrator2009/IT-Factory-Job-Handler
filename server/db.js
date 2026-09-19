@@ -152,11 +152,13 @@ CREATE TABLE IF NOT EXISTS project_entries (
   status TEXT NOT NULL DEFAULT 'Draft',
   answers_json TEXT NOT NULL DEFAULT '{}',
   created_by TEXT,
+  assigned_to TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   submitted_at TEXT,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (created_by) REFERENCES users(id)
+  FOREIGN KEY (created_by) REFERENCES users(id),
+  FOREIGN KEY (assigned_to) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS project_entry_photos (
@@ -182,6 +184,7 @@ function addColumnIfMissing(table, column, definition) {
 }
 addColumnIfMissing('jobs', 'ms_event_id', 'TEXT');
 addColumnIfMissing('jobs', 'comments', 'TEXT');
+addColumnIfMissing('project_entries', 'assigned_to', 'TEXT');
 
 function migrateJobsStatusConstraint() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").get()?.sql;
