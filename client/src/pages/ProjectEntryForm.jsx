@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import SignaturePadLib from 'signature_pad';
-import { CheckCircle2, Camera, Trash2, Plus } from 'lucide-react';
+import { CheckCircle2, Camera, Trash2, Plus, FileText, Mail } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +41,9 @@ export default function ProjectEntryForm() {
   const [submitting, setSubmitting] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [reassigning, setReassigning] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [emailingPdf, setEmailingPdf] = useState(false);
+  const [emailSentMsg, setEmailSentMsg] = useState('');
   const saveTimer = useRef(null);
 
   useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
@@ -141,6 +144,34 @@ export default function ProjectEntryForm() {
     }
   }
 
+  async function handleViewPdf() {
+    setGeneratingPdf(true);
+    const newTab = window.open('', '_blank');
+    try {
+      const res = await api.get(`/projects/${id}/entries/${entryId}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      if (newTab) newTab.location = url;
+      else window.open(url, '_blank');
+    } catch (err) {
+      if (newTab) newTab.close();
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
+  async function handleEmailPdf() {
+    setEmailingPdf(true);
+    setEmailSentMsg('');
+    try {
+      const { data } = await api.post(`/projects/${id}/entries/${entryId}/email-pdf`);
+      setEmailSentMsg(`Sent to ${data.sentTo.join(', ')}`);
+    } catch (err) {
+      setEmailSentMsg(err.response?.data?.error || 'Could not send email');
+    } finally {
+      setEmailingPdf(false);
+    }
+  }
+
   if (!project || !entry || !answers) return <Layout><div className="empty-state">Loading…</div></Layout>;
 
   const readOnly = entry.status === 'Submitted';
@@ -154,10 +185,16 @@ export default function ProjectEntryForm() {
           <h1>Entry #{entry.entry_number}</h1>
           <div className="subtitle">{project.name}{entry.site_name ? ` · ${entry.site_name}` : ''}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {!readOnly && saveState && (
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{saveState === 'saving' ? 'Saving…' : 'Saved'}</span>
           )}
+          <button className="btn btn-ghost btn-sm" onClick={handleViewPdf} disabled={generatingPdf}>
+            <FileText size={14} /> {generatingPdf ? 'Generating…' : 'View PDF'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={handleEmailPdf} disabled={emailingPdf}>
+            <Mail size={14} /> {emailingPdf ? 'Sending…' : 'Email PDF'}
+          </button>
           {readOnly ? (
             <span className="success-banner" style={{ margin: 0 }}><CheckCircle2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Submitted</span>
           ) : (
@@ -167,6 +204,12 @@ export default function ProjectEntryForm() {
           )}
         </div>
       </div>
+
+      {emailSentMsg && (
+        <div className={emailSentMsg.startsWith('Sent to') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 16 }}>
+          {emailSentMsg}
+        </div>
+      )}
 
       {!readOnly && (
         <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
