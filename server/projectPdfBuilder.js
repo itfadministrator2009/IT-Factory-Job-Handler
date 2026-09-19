@@ -64,6 +64,23 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       return photos.filter((p) => p.field_id === fieldId && (p.repeat_index ?? null) === key);
     }
 
+    // Draws an image scaled to fit within maxW x maxH — computed exactly from the
+    // image's real dimensions (via doc.openImage) rather than relying on pdfkit's
+    // `fit` option and then guessing how tall the result actually was. This is what
+    // was actually causing photos to overlap the text below them: the previous code
+    // assumed a fixed height after drawing, which didn't always match reality.
+    // Returns the exact height it used, so the caller can advance the cursor by
+    // precisely that amount — never too little (which caused the overlap) and never
+    // an unnecessarily large guess either.
+    function drawImageFitted(src, x, y, maxW, maxH) {
+      const img = doc.openImage(src);
+      const scale = Math.min(maxW / img.width, maxH / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      doc.image(img, x, y, { width: w, height: h });
+      return h;
+    }
+
     function renderField(field, instanceAnswers, repeatIndex) {
       if (field.type === 'instruction') return;
       if (!isFieldVisible(field, instanceAnswers)) return; // never shown to the tech — leave it out of the record too
@@ -78,11 +95,13 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
           doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('No photo attached');
         } else {
           fps.forEach((p) => {
-            ensureSpace(190);
+            const maxW = Math.min(pageWidth, 260);
+            const maxH = 170;
+            ensureSpace(maxH + 20);
             try {
-              doc.image(path.join(uploadDir, p.stored_name), left, doc.y, { fit: [Math.min(pageWidth, 260), 170] });
-              doc.y += 170;
-              doc.moveDown(0.2);
+              const actualHeight = drawImageFitted(path.join(uploadDir, p.stored_name), left, doc.y, maxW, maxH);
+              doc.y += actualHeight;
+              doc.moveDown(0.4);
             } catch (e) {
               doc.fontSize(9).fillColor('#a23a1c').text('(could not load image)');
             }
@@ -93,9 +112,11 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
           try {
             const base64 = value.replace(/^data:image\/\w+;base64,/, '');
             const buf = Buffer.from(base64, 'base64');
-            ensureSpace(90);
-            doc.image(buf, left, doc.y, { fit: [200, 80] });
-            doc.y += 80;
+            const maxW = 200, maxH = 80;
+            ensureSpace(maxH + 20);
+            const actualHeight = drawImageFitted(buf, left, doc.y, maxW, maxH);
+            doc.y += actualHeight;
+            doc.moveDown(0.2);
           } catch (e) {
             doc.fontSize(9).fillColor('#a23a1c').text('(signature could not be rendered)');
           }
