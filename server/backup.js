@@ -63,14 +63,14 @@ async function uploadBackupToOneDrive(buffer, filename) {
 }
 
 // Used by both the nightly scheduler and the admin "Back up now" button.
-async function runBackup() {
+async function runBackup(filenameOverride) {
   if (!configured) return { ok: false, reason: 'not_configured' };
   if (!fs.existsSync(DB_PATH)) return { ok: false, reason: 'db_not_found' };
 
   try {
     const buffer = fs.readFileSync(DB_PATH);
     const dateStr = currentDateInTimezone(BACKUP_TIMEZONE);
-    const filename = `helpdesk-backup-${dateStr}.db`;
+    const filename = filenameOverride || `helpdesk-backup-${dateStr}.db`;
     await uploadBackupToOneDrive(buffer, filename);
     console.log(`[backup] Uploaded ${filename} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
     return { ok: true, folder: BACKUP_FOLDER, filename };
@@ -78,6 +78,40 @@ async function runBackup() {
     console.error('[backup] Failed:', err.message);
     return { ok: false, reason: 'upload_failed', error: err.message };
   }
+}
+
+// Lists every backup currently sitting in the OneDrive folder, newest first — used
+// by the "Restore from backup" screen so an admin can see and pick one.
+async function listBackups() {
+  if (!configured) return { ok: false, reason: 'not_configured' };
+  try {
+    const token = await getAccessToken();
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(BACKUP_USER)}/drive/root:/${BACKUP_FOLDER}:/children?$orderby=lastModifiedDateTime desc&$top=200`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) throw new Error(`Graph list failed (${res.status}): ${await res.text()}`);
+    const data = await res.json();
+    const backups = (data.value || [])
+      .filter((f) => f.name.toLowerCase().endsWith('.db'))
+      .map((f) => ({ id: f.id, name: f.name, size: f.size, lastModified: f.lastModifiedDateTime }));
+    return { ok: true, backups };
+  } catch (err) {
+    console.error('[backup] Could not list backups:', err.message);
+    return { ok: false, reason: 'list_failed', error: err.message };
+  }
+}
+
+// Downloads one specific backup by its OneDrive item id (as returned by listBackups).
+async function downloadBackup(itemId) {
+  const token = await getAccessToken();
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(BACKUP_USER)}/drive/items/${itemId}/content`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`Download failed (${res.status}): ${await res.text()}`);
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 // Checks once an hour whether it's the configured local hour in BACKUP_TIMEZONE and
@@ -98,4 +132,4 @@ function startBackupScheduler() {
   }, 60 * 60 * 1000);
 }
 
-module.exports = { runBackup, startBackupScheduler };
+module.exports = { runBackup, listBackups, downloadBackup, startBackupScheduler, DB_PATH };
