@@ -57,6 +57,10 @@ function AppRoutes() {
       <Route path="/templates" element={<RequireAdmin><Templates /></RequireAdmin>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
 
+      <Route path="/projects" element={<RequireAuth><Projects /></RequireAuth>} />
+      <Route path="/projects/:id" element={<RequireAuth><ProjectDetail /></RequireAuth>} />
+      <Route path="/projects/:id/entries/:entryId" element={<RequireAuth><ProjectEntryForm /></RequireAuth>} />
+
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
       <Route path="/kb/:id/edit" element={<RequireAuth><ArticleForm /></RequireAuth>} />
