@@ -23,10 +23,13 @@ const LOGO_URL = `${FRONTEND_URL}/logo.jpg`;
 // the calendar and OneDrive backups, not a mailbox username/password.
 async function sendViaGraph({ to, subject, text, html, attachments }) {
   const token = await getAccessToken();
+  // `to` may be a single address or a comma-separated list — Graph needs each one as
+  // its own entry in toRecipients, not one address field holding a joined string.
+  const recipients = to.split(',').map((addr) => addr.trim()).filter(Boolean);
   const message = {
     subject,
     body: { contentType: html ? 'HTML' : 'Text', content: html || text },
-    toRecipients: [{ emailAddress: { address: to } }],
+    toRecipients: recipients.map((addr) => ({ emailAddress: { address: addr } })),
   };
   if (attachments && attachments.length > 0) {
     message.attachments = attachments.map((a) => ({
@@ -97,8 +100,6 @@ function brandedEmail({ title, bodyHtml, footerNote }) {
 </div>`;
 }
 
-// A little colored status pill used in the "status changed" email — mirrors the
-// pills in the app itself so it's instantly familiar.
 function statusPillColor(status) {
   const colors = {
     Open: '#3a63ad', 'In Progress': '#c98a1f', 'On Hold': '#6b7570',
@@ -222,9 +223,6 @@ function sendJobSheetEmail({ toEmail, jobNumber, subject, pdfBuffer }) {
   });
 }
 
-// Sent specifically when a job is marked Resolved/Closed — distinct from the generic
-// status-change email, with its own "job's done" framing and (when available) the
-// signed job sheet attached as proof of completion.
 function notifyJobComplete({ toEmail, ticketNumber, subject, pdfBuffer }) {
   const html = brandedEmail({
     title: 'Your job is complete',
@@ -250,9 +248,6 @@ function notifyJobComplete({ toEmail, ticketNumber, subject, pdfBuffer }) {
   });
 }
 
-// Staff-only notice sent when a job is marked Closed — never goes to the client,
-// only to the internal collections/dispatch address, since "Closed" is an internal
-// archival state rather than something a customer needs to be told about.
 function notifyJobClosed({ toEmail, ticketNumber, subject }) {
   const html = brandedEmail({
     title: `Job closed — #${ticketNumber}`,
@@ -274,8 +269,6 @@ function notifyJobClosed({ toEmail, ticketNumber, subject }) {
   });
 }
 
-// Sent to a tech when a job is newly assigned or reassigned to them, so they find out
-// without having to keep checking the Jobs list themselves.
 function notifyJobAssigned({ toEmail, ticketNumber, subject, contactName }) {
   const html = brandedEmail({
     title: 'A job has been assigned to you',
@@ -298,4 +291,33 @@ function notifyJobAssigned({ toEmail, ticketNumber, subject, contactName }) {
   });
 }
 
-module.exports = { sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed, notifyJobAssigned, sendPasswordReset, sendJobSheetEmail, hasSmtp };
+// Sent when a Project entry is submitted — goes to the fixed internal distribution
+// list (not the client), with the completed form attached as a PDF.
+function notifyProjectEntryComplete({ toEmails, projectName, siteName, entryNumber, pdfBuffer }) {
+  const siteLine = siteName ? ` — ${siteName}` : '';
+  const html = brandedEmail({
+    title: 'Job complete',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>${projectName}</strong> — Entry #${entryNumber}${siteLine} has been completed.
+      </p>
+      <p style="font-size:13px; color:#555; margin:0;">
+        ${pdfBuffer ? 'The completed form is attached as a PDF.' : ''}
+      </p>
+    `,
+  });
+
+  return sendMail({
+    to: toEmails.join(','),
+    subject: `${projectName} — Entry #${entryNumber} complete${siteLine}`,
+    text: `${projectName} — Entry #${entryNumber}${siteLine} has been completed.${pdfBuffer ? ' The completed form is attached.' : ''}`,
+    html,
+    attachments: pdfBuffer ? [{ filename: `${projectName.replace(/[^a-z0-9]+/gi, '-')}-Entry-${entryNumber}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }] : undefined,
+  });
+}
+
+module.exports = {
+  sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete,
+  notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, sendPasswordReset,
+  sendJobSheetEmail, hasSmtp,
+};
