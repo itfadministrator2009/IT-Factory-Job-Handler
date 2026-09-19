@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff, RotateCcw, AlertTriangle } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -7,7 +7,44 @@ import { useAuth } from '../context/AuthContext';
 export default function Settings() {
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'agent';
+  const [tab, setTab] = useState('users'); // 'users' | 'backup'
 
+  if (!isAdmin) {
+    return (
+      <Layout>
+        <div className="page-header"><div><h1>Settings</h1></div></div>
+        <div className="empty-state">
+          <h3>Admins only</h3>
+          <p>You need admin access to view this page.</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <div className="page-header">
+        <div>
+          <h1>Settings</h1>
+          <div className="subtitle">Manage your Work Desk configuration.</div>
+        </div>
+      </div>
+
+      <div className="settings-tabs" style={{ marginBottom: 20 }}>
+        <span className={'settings-tab' + (tab === 'users' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('users')}>
+          Manage Users
+        </span>
+        <span className={'settings-tab' + (tab === 'backup' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('backup')}>
+          Backup
+        </span>
+      </div>
+
+      {tab === 'users' ? <ManageUsersTab currentUser={currentUser} /> : <BackupTab />}
+    </Layout>
+  );
+}
+
+function ManageUsersTab({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -19,9 +56,6 @@ export default function Settings() {
   const [role, setRole] = useState('user');
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-  const [backupRunning, setBackupRunning] = useState(false);
-  const [backupMsg, setBackupMsg] = useState('');
 
   const [resetTarget, setResetTarget] = useState(null);
   const [resetPassword, setResetPassword] = useState('');
@@ -44,8 +78,7 @@ export default function Settings() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }
-
-  useEffect(() => { if (isAdmin) load(); }, [isAdmin]);
+  useEffect(() => { load(); }, []);
 
   async function handleAddUser(e) {
     e.preventDefault();
@@ -84,19 +117,6 @@ export default function Settings() {
     }
   }
 
-  async function handleBackupNow() {
-    setBackupRunning(true);
-    setBackupMsg('');
-    try {
-      const { data } = await api.post('/backup/now');
-      setBackupMsg(`Backup uploaded to OneDrive (${data.folder}/${data.filename})`);
-    } catch (err) {
-      setBackupMsg(err.response?.data?.error || 'Could not run backup');
-    } finally {
-      setBackupRunning(false);
-    }
-  }
-
   function openReset(u) {
     setResetTarget(u);
     setResetPassword('');
@@ -127,9 +147,6 @@ export default function Settings() {
     }
   }
 
-  // A soft heads-up, not a block — shared emails are supported, but self-service
-  // "Forgot password" can only ever reach one of the accounts on a shared email, so
-  // it's worth knowing that going in.
   function emailSharedWithSomeoneElse(email, excludingUserId) {
     const target = (email || '').trim().toLowerCase();
     if (!target) return false;
@@ -151,32 +168,9 @@ export default function Settings() {
     }
   }
 
-  if (!isAdmin) {
-    return (
-      <Layout>
-        <div className="page-header"><div><h1>Settings</h1></div></div>
-        <div className="empty-state">
-          <h3>Admins only</h3>
-          <p>You need admin access to view this page.</p>
-        </div>
-      </Layout>
-    );
-  }
-
   return (
-    <Layout>
-      <div className="page-header">
-        <div>
-          <h1>Settings</h1>
-          <div className="subtitle">Manage your Work Desk configuration.</div>
-        </div>
-      </div>
-
-      <div className="settings-tabs">
-        <span className="settings-tab active">Users</span>
-      </div>
-
-      <div className="page-header" style={{ marginTop: 20 }}>
+    <div>
+      <div className="page-header" style={{ marginTop: 0 }}>
         <div>
           <h3 style={{ fontSize: 16 }}>Team members</h3>
           <div className="subtitle">Add people and control who has admin access.</div>
@@ -221,13 +215,7 @@ export default function Settings() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-                <button
-                  type="button"
-                  className="password-toggle"
-                  onClick={() => setShowPassword((s) => !s)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  tabIndex={-1}
-                >
+                <button type="button" className="password-toggle" onClick={() => setShowPassword((s) => !s)} tabIndex={-1}>
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
@@ -262,38 +250,18 @@ export default function Settings() {
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
-                  <td>
-                    {u.name}
-                    {u.id === currentUser.id && <span style={{ color: 'var(--muted)' }}> (you)</span>}
-                  </td>
+                  <td>{u.name}{u.id === currentUser.id && <span style={{ color: 'var(--muted)' }}> (you)</span>}</td>
                   <td>{u.email}</td>
                   <td>
-                    <select
-                      value={u.role === 'agent' ? 'admin' : u.role}
-                      onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                    >
+                    <select value={u.role === 'agent' ? 'admin' : u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}>
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
                     </select>
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => openEdit(u)}
-                        title="Edit user"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => openReset(u)}
-                        title="Reset password"
-                      >
-                        <KeyRound size={13} />
-                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => openReset(u)} title="Reset password"><KeyRound size={13} /></button>
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -315,23 +283,6 @@ export default function Settings() {
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
         <ShieldCheck size={13} /> Admins can manage users and roles here. Everyone — Admin or User — has the same access to jobs, reports, templates, and the knowledge base.
       </p>
-
-      <div className="panel" style={{ padding: 24, marginTop: 24, maxWidth: 480 }}>
-        <h3 style={{ fontSize: 16, marginBottom: 6 }}>
-          <DatabaseBackup size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Backups
-        </h3>
-        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
-          A backup of the database uploads to OneDrive automatically every night at 2am (Sydney time). You can also trigger one right now.
-        </p>
-        {backupMsg && (
-          <div className={backupMsg.startsWith('Backup uploaded') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 12 }}>
-            {backupMsg}
-          </div>
-        )}
-        <button className="btn btn-ghost btn-sm" onClick={handleBackupNow} disabled={backupRunning}>
-          {backupRunning ? 'Sending…' : 'Back up now'}
-        </button>
-      </div>
 
       {editTarget && (
         <div className="modal-overlay" onClick={() => setEditTarget(null)}>
@@ -391,13 +342,7 @@ export default function Settings() {
                     required
                     autoFocus
                   />
-                  <button
-                    type="button"
-                    className="password-toggle"
-                    onClick={() => setShowResetPassword((s) => !s)}
-                    aria-label={showResetPassword ? 'Hide password' : 'Show password'}
-                    tabIndex={-1}
-                  >
+                  <button type="button" className="password-toggle" onClick={() => setShowResetPassword((s) => !s)} tabIndex={-1}>
                     {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
@@ -412,6 +357,173 @@ export default function Settings() {
           </div>
         </div>
       )}
-    </Layout>
+    </div>
+  );
+}
+
+function BackupTab() {
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupMsg, setBackupMsg] = useState('');
+
+  const [backups, setBackups] = useState(null);
+  const [listError, setListError] = useState('');
+
+  const [restoreTarget, setRestoreTarget] = useState(null);
+  const [confirmText, setConfirmText] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState('');
+  const [restoreDone, setRestoreDone] = useState(false);
+
+  function loadBackups() {
+    setListError('');
+    api.get('/backup/list').then((res) => setBackups(res.data.backups)).catch((err) => {
+      setListError(err.response?.data?.error || 'Could not load backups');
+      setBackups([]);
+    });
+  }
+  useEffect(() => { loadBackups(); }, []);
+
+  async function handleBackupNow() {
+    setBackupRunning(true);
+    setBackupMsg('');
+    try {
+      const { data } = await api.post('/backup/now');
+      setBackupMsg(`Backup uploaded to OneDrive (${data.folder}/${data.filename})`);
+      loadBackups();
+    } catch (err) {
+      setBackupMsg(err.response?.data?.error || 'Could not run backup');
+    } finally {
+      setBackupRunning(false);
+    }
+  }
+
+  function openRestore(backup) {
+    setRestoreTarget(backup);
+    setConfirmText('');
+    setRestoreError('');
+  }
+
+  async function handleRestore() {
+    setRestoring(true);
+    setRestoreError('');
+    try {
+      await api.post('/backup/restore', { backupId: restoreTarget.id });
+      setRestoreDone(true);
+      setRestoreTarget(null);
+    } catch (err) {
+      setRestoreError(err.response?.data?.error || 'Restore failed');
+      setRestoring(false);
+    }
+  }
+
+  function formatSize(bytes) {
+    if (!bytes) return '';
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+  function formatDate(s) {
+    return new Date(s).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  if (restoreDone) {
+    return (
+      <div className="panel" style={{ padding: 24, maxWidth: 480 }}>
+        <h3 style={{ fontSize: 16, marginBottom: 10 }}>Restoring…</h3>
+        <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+          The database has been swapped and the app is restarting now — this takes a few seconds.
+          Refresh this page shortly; you may need to log in again.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="panel" style={{ padding: 24, marginBottom: 24, maxWidth: 520 }}>
+        <h3 style={{ fontSize: 16, marginBottom: 6 }}>
+          <DatabaseBackup size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Back up now
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
+          A backup of the database uploads to OneDrive automatically every night at 2am (Sydney time). You can also trigger one right now.
+        </p>
+        {backupMsg && (
+          <div className={backupMsg.startsWith('Backup uploaded') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 12 }}>
+            {backupMsg}
+          </div>
+        )}
+        <button className="btn btn-ghost btn-sm" onClick={handleBackupNow} disabled={backupRunning}>
+          {backupRunning ? 'Sending…' : 'Back up now'}
+        </button>
+      </div>
+
+      <div className="panel" style={{ padding: 24, maxWidth: 640 }}>
+        <h3 style={{ fontSize: 16, marginBottom: 6 }}>
+          <RotateCcw size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Restore from backup
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
+          This replaces everything currently in the app with an older backup. A safety copy of the current data is always taken automatically first, but this is still a big action — the app will restart afterward.
+        </p>
+
+        {listError && <div className="error-banner">{listError}</div>}
+
+        {!backups ? (
+          <p style={{ color: 'var(--muted)', fontSize: 13 }}>Loading backups…</p>
+        ) : backups.length === 0 ? (
+          <p style={{ color: 'var(--muted)', fontSize: 13 }}>No backups found yet.</p>
+        ) : (
+          <table className="ticket-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Date</th>
+                <th>Size</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {backups.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.name}</td>
+                  <td style={{ color: 'var(--muted)' }}>{formatDate(b.lastModified)}</td>
+                  <td style={{ color: 'var(--muted)' }}>{formatSize(b.size)}</td>
+                  <td>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => openRestore(b)}>Restore</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {restoreTarget && (
+        <div className="modal-overlay" onClick={() => !restoring && setRestoreTarget(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><AlertTriangle size={16} style={{ verticalAlign: -2, marginRight: 6, color: 'var(--coral)' }} />Restore this backup?</h3>
+              {!restoring && <button type="button" onClick={() => setRestoreTarget(null)}><X size={18} /></button>}
+            </div>
+            {restoreError && <div className="error-banner">{restoreError}</div>}
+            <p style={{ fontSize: 13, color: '#333', lineHeight: 1.6, marginBottom: 10 }}>
+              This will replace <strong>everything</strong> currently in the app with <strong>{restoreTarget.name}</strong> (from {formatDate(restoreTarget.lastModified)}).
+              Anything added or changed since that backup will be lost from the live app (it will still exist in today's automatic safety backup).
+            </p>
+            <p style={{ fontSize: 13, color: '#333', marginBottom: 14 }}>
+              Type <strong>RESTORE</strong> below to confirm.
+            </p>
+            <div className="field">
+              <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="RESTORE" disabled={restoring} autoFocus />
+            </div>
+            <button
+              className="btn btn-accent"
+              style={{ width: '100%', justifyContent: 'center', background: 'var(--coral)' }}
+              disabled={confirmText !== 'RESTORE' || restoring}
+              onClick={handleRestore}
+            >
+              {restoring ? 'Restoring…' : 'Restore and restart the app'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
