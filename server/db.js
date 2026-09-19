@@ -261,5 +261,53 @@ function peekNextJobNumber() {
   const row = db.prepare('SELECT n FROM job_number_seq').get();
   return (row?.n || 0) + 1;
 }
+db.exec(`
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  template_json TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
 
+CREATE TABLE IF NOT EXISTS project_assignments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(project_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS project_entries (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  entry_number INTEGER NOT NULL,
+  site_name TEXT,
+  status TEXT NOT NULL DEFAULT 'Draft',
+  answers_json TEXT NOT NULL DEFAULT '{}',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  submitted_at TEXT,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS project_entry_photos (
+  id TEXT PRIMARY KEY,
+  entry_id TEXT NOT NULL,
+  field_id TEXT NOT NULL,
+  repeat_index INTEGER,
+  stored_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime_type TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (entry_id) REFERENCES project_entries(id) ON DELETE CASCADE
+);
+`);
 module.exports = { db, nextJobNumber, peekNextJobNumber };
