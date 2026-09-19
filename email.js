@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { getAccessToken, configured: graphConfigured } = require('./calendar');
 
 const hasSmtp = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
@@ -16,8 +17,55 @@ const FROM = process.env.FROM_EMAIL || 'helpdesk@example.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const LOGO_URL = `${FRONTEND_URL}/logo.jpg`;
 
+// Sends via Microsoft Graph's sendMail API instead of SMTP — this sidesteps the
+// "basic authentication disabled" (535 5.7.139) error many Microsoft 365 tenants now
+// enforce by default, since Graph uses the same OAuth app-only token already used for
+// the calendar and OneDrive backups, not a mailbox username/password.
+async function sendViaGraph({ to, subject, text, html, attachments }) {
+  const token = await getAccessToken();
+  // `to` may be a single address or a comma-separated list — Graph needs each one as
+  // its own entry in toRecipients, not one address field holding a joined string.
+  const recipients = to.split(',').map((addr) => addr.trim()).filter(Boolean);
+  const message = {
+    subject,
+    body: { contentType: html ? 'HTML' : 'Text', content: html || text },
+    toRecipients: recipients.map((addr) => ({ emailAddress: { address: addr } })),
+  };
+  if (attachments && attachments.length > 0) {
+    message.attachments = attachments.map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: a.filename,
+      contentType: a.contentType || 'application/octet-stream',
+      contentBytes: (Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content)).toString('base64'),
+    }));
+  }
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(FROM)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, saveToSentItems: true }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Graph sendMail failed (${res.status}): ${errText}`);
+  }
+}
+
 async function sendMail({ to, subject, text, html, attachments }) {
   if (!to) return;
+
+  // Prefer Graph when Microsoft 365 is configured — falls back to SMTP (if set up)
+  // or dev-mode logging if Graph fails, so one misconfigured path never blocks mail
+  // entirely once at least one method is working.
+  if (graphConfigured) {
+    try {
+      await sendViaGraph({ to, subject, text, html, attachments });
+      return;
+    } catch (err) {
+      console.error('[email] Graph send failed, falling back:', err.message);
+    }
+  }
+
   if (!transporter) {
     console.log(`[email:dev-mode] To: ${to} | Subject: ${subject}\n${text}\n${attachments ? `(${attachments.length} attachment(s))` : ''}`);
     return;
@@ -52,8 +100,6 @@ function brandedEmail({ title, bodyHtml, footerNote }) {
 </div>`;
 }
 
-// A little colored status pill used in the "status changed" email — mirrors the
-// pills in the app itself so it's instantly familiar.
 function statusPillColor(status) {
   const colors = {
     Open: '#3a63ad', 'In Progress': '#c98a1f', 'On Hold': '#6b7570',
@@ -177,9 +223,6 @@ function sendJobSheetEmail({ toEmail, jobNumber, subject, pdfBuffer }) {
   });
 }
 
-// Sent specifically when a job is marked Resolved/Closed — distinct from the generic
-// status-change email, with its own "job's done" framing and (when available) the
-// signed job sheet attached as proof of completion.
 function notifyJobComplete({ toEmail, ticketNumber, subject, pdfBuffer }) {
   const html = brandedEmail({
     title: 'Your job is complete',
@@ -205,9 +248,6 @@ function notifyJobComplete({ toEmail, ticketNumber, subject, pdfBuffer }) {
   });
 }
 
-// Staff-only notice sent when a job is marked Closed — never goes to the client,
-// only to the internal collections/dispatch address, since "Closed" is an internal
-// archival state rather than something a customer needs to be told about.
 function notifyJobClosed({ toEmail, ticketNumber, subject }) {
   const html = brandedEmail({
     title: `Job closed — #${ticketNumber}`,
@@ -229,4 +269,55 @@ function notifyJobClosed({ toEmail, ticketNumber, subject }) {
   });
 }
 
-module.exports = { sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete, notifyJobClosed, sendPasswordReset, sendJobSheetEmail, hasSmtp };
+function notifyJobAssigned({ toEmail, ticketNumber, subject, contactName }) {
+  const html = brandedEmail({
+    title: 'A job has been assigned to you',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>Ticket #${ticketNumber}</strong> has been assigned to you:
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 8px; font-size:14px; color:#333; font-weight:600;">
+        ${subject}
+      </div>
+      ${contactName ? `<p style="font-size:13px; color:#555; margin:8px 0 0;">Contact: ${contactName}</p>` : ''}
+    `,
+  });
+
+  return sendMail({
+    to: toEmail,
+    subject: `[Ticket #${ticketNumber}] Assigned to you: ${subject}`,
+    text: `Ticket #${ticketNumber} ("${subject}") has been assigned to you.`,
+    html,
+  });
+}
+
+// Sent when a Project entry is submitted — goes to the fixed internal distribution
+// list (not the client), with the completed form attached as a PDF.
+function notifyProjectEntryComplete({ toEmails, projectName, siteName, entryNumber, pdfBuffer }) {
+  const siteLine = siteName ? ` — ${siteName}` : '';
+  const html = brandedEmail({
+    title: 'Job complete',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>${projectName}</strong> — Entry #${entryNumber}${siteLine} has been completed.
+      </p>
+      <p style="font-size:13px; color:#555; margin:0;">
+        ${pdfBuffer ? 'The completed form is attached as a PDF.' : ''}
+      </p>
+    `,
+  });
+
+  return sendMail({
+    to: toEmails.join(','),
+    subject: `${projectName} — Entry #${entryNumber} complete${siteLine}`,
+    text: `${projectName} — Entry #${entryNumber}${siteLine} has been completed.${pdfBuffer ? ' The completed form is attached.' : ''}`,
+    html,
+    attachments: pdfBuffer ? [{ filename: `${projectName.replace(/[^a-z0-9]+/gi, '-')}-Entry-${entryNumber}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }] : undefined,
+  });
+}
+
+module.exports = {
+  sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete,
+  notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, sendPasswordReset,
+  sendJobSheetEmail, hasSmtp,
+};

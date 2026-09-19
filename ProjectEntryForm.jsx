@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import SignaturePadLib from 'signature_pad';
-import { CheckCircle2, Camera, Trash2, Plus } from 'lucide-react';
+import { CheckCircle2, Camera, Trash2, Plus, FileText, Mail } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
+import { useAuth } from '../context/AuthContext';
 
 // Mirrors the exact same conditional-logic rules as the backend's validateSubmission
 // (server/routes/projects.js) — kept in sync deliberately, since the two must agree
@@ -28,6 +29,8 @@ function isFieldRequired(field, instanceAnswers) {
 export default function ProjectEntryForm() {
   const { id, entryId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'agent';
 
   const [project, setProject] = useState(null);
   const [entry, setEntry] = useState(null);
@@ -36,7 +39,14 @@ export default function ProjectEntryForm() {
   const [saveState, setSaveState] = useState(''); // '', 'saving', 'saved'
   const [problems, setProblems] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [reassigning, setReassigning] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [emailingPdf, setEmailingPdf] = useState(false);
+  const [emailSentMsg, setEmailSentMsg] = useState('');
   const saveTimer = useRef(null);
+
+  useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
 
   useEffect(() => {
     api.get(`/projects/${id}`).then((res) => setProject(res.data.project));
@@ -100,7 +110,9 @@ export default function ProjectEntryForm() {
     const { data } = await api.post(`/projects/${id}/entries/${entryId}/photos`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    setPhotos((prev) => [...prev.filter((p) => !(p.field_id === fieldId && p.repeat_index === (repeatIndex ?? null))), data.photo]);
+    // Appends rather than replaces — a field can hold more than one photo (e.g.
+    // several angles of a rack, or multiple pages of a config printout).
+    setPhotos((prev) => [...prev, data.photo]);
   }
 
   async function handlePhotoDelete(photoId) {
@@ -122,6 +134,44 @@ export default function ProjectEntryForm() {
     }
   }
 
+  async function handleReassign(newAssignedTo) {
+    setReassigning(true);
+    try {
+      const { data } = await api.patch(`/projects/${id}/entries/${entryId}`, { assigned_to: newAssignedTo || null });
+      setEntry(data.entry);
+    } finally {
+      setReassigning(false);
+    }
+  }
+
+  async function handleViewPdf() {
+    setGeneratingPdf(true);
+    const newTab = window.open('', '_blank');
+    try {
+      const res = await api.get(`/projects/${id}/entries/${entryId}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      if (newTab) newTab.location = url;
+      else window.open(url, '_blank');
+    } catch (err) {
+      if (newTab) newTab.close();
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
+  async function handleEmailPdf() {
+    setEmailingPdf(true);
+    setEmailSentMsg('');
+    try {
+      const { data } = await api.post(`/projects/${id}/entries/${entryId}/email-pdf`);
+      setEmailSentMsg(`Sent to ${data.sentTo.join(', ')}`);
+    } catch (err) {
+      setEmailSentMsg(err.response?.data?.error || 'Could not send email');
+    } finally {
+      setEmailingPdf(false);
+    }
+  }
+
   if (!project || !entry || !answers) return <Layout><div className="empty-state">Loading…</div></Layout>;
 
   const readOnly = entry.status === 'Submitted';
@@ -135,10 +185,16 @@ export default function ProjectEntryForm() {
           <h1>Entry #{entry.entry_number}</h1>
           <div className="subtitle">{project.name}{entry.site_name ? ` · ${entry.site_name}` : ''}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {!readOnly && saveState && (
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{saveState === 'saving' ? 'Saving…' : 'Saved'}</span>
           )}
+          <button className="btn btn-ghost btn-sm" onClick={handleViewPdf} disabled={generatingPdf}>
+            <FileText size={14} /> {generatingPdf ? 'Generating…' : 'View PDF'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={handleEmailPdf} disabled={emailingPdf}>
+            <Mail size={14} /> {emailingPdf ? 'Sending…' : 'Email PDF'}
+          </button>
           {readOnly ? (
             <span className="success-banner" style={{ margin: 0 }}><CheckCircle2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Submitted</span>
           ) : (
@@ -149,15 +205,37 @@ export default function ProjectEntryForm() {
         </div>
       </div>
 
+      {emailSentMsg && (
+        <div className={emailSentMsg.startsWith('Sent to') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 16 }}>
+          {emailSentMsg}
+        </div>
+      )}
+
       {!readOnly && (
-        <div className="field" style={{ maxWidth: 380, marginBottom: 20 }}>
-          <label htmlFor="site-name">Site name</label>
-          <input
-            id="site-name"
-            defaultValue={entry.site_name || ''}
-            onBlur={(e) => api.patch(`/projects/${id}/entries/${entryId}`, { site_name: e.target.value })}
-            placeholder="e.g. Harvey Norman Chatswood"
-          />
+        <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div className="field" style={{ maxWidth: 380, marginBottom: 0 }}>
+            <label htmlFor="site-name">Site name</label>
+            <input
+              id="site-name"
+              defaultValue={entry.site_name || ''}
+              onBlur={(e) => api.patch(`/projects/${id}/entries/${entryId}`, { site_name: e.target.value })}
+              placeholder="e.g. Harvey Norman Chatswood"
+            />
+          </div>
+          {isAdmin && (
+            <div className="field" style={{ maxWidth: 240, marginBottom: 0 }}>
+              <label htmlFor="assigned-to">Assigned to</label>
+              <select
+                id="assigned-to"
+                value={entry.assigned_to || ''}
+                onChange={(e) => handleReassign(e.target.value)}
+                disabled={reassigning}
+              >
+                <option value="">Unassigned</option>
+                {allUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
       )}
 
@@ -322,29 +400,35 @@ function FieldRenderer({ field, instanceAnswers, readOnly, photos, repeatIndex, 
   }
   if (field.type === 'photo') {
     const key = repeatIndex === undefined ? null : repeatIndex;
-    const photo = photos.find((p) => p.field_id === field.id && (p.repeat_index ?? null) === key);
+    const fieldPhotos = photos.filter((p) => p.field_id === field.id && (p.repeat_index ?? null) === key);
     return (
       <div className="field">
         {label}
-        {photo ? (
-          <div className="attachment-row">
-            <span className="name"><Camera size={13} /> {photo.original_name}</span>
-            {!readOnly && (
-              <button type="button" className="danger" onClick={() => onPhotoDelete(photo.id)}>Remove</button>
-            )}
+        {fieldPhotos.length > 0 && (
+          <div className="attachment-list">
+            {fieldPhotos.map((photo) => (
+              <div key={photo.id} className="attachment-row">
+                <span className="name"><Camera size={13} /> {photo.original_name}</span>
+                {!readOnly && (
+                  <button type="button" className="danger" onClick={() => onPhotoDelete(photo.id)}>Remove</button>
+                )}
+              </div>
+            ))}
           </div>
-        ) : readOnly ? (
+        )}
+        {fieldPhotos.length === 0 && readOnly && (
           <div className="comment-body"><em style={{ color: 'var(--muted)' }}>No photo</em></div>
-        ) : (
-          <label className="dropzone" style={{ display: 'block', cursor: 'pointer' }}>
+        )}
+        {!readOnly && (
+          <label className="dropzone" style={{ display: 'block', cursor: 'pointer', marginTop: fieldPhotos.length > 0 ? 8 : 0 }}>
             <Camera size={16} style={{ marginBottom: 4 }} /><br />
-            Tap to take or upload a photo
+            {fieldPhotos.length > 0 ? 'Tap to add another photo' : 'Tap to take or upload a photo'}
             <input
               type="file"
               accept="image/*"
               capture="environment"
               style={{ display: 'none' }}
-              onChange={(e) => { if (e.target.files[0]) onPhotoUpload(e.target.files[0]); }}
+              onChange={(e) => { if (e.target.files[0]) onPhotoUpload(e.target.files[0]); e.target.value = ''; }}
             />
           </label>
         )}
