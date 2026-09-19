@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, X, UserPlus } from 'lucide-react';
+import { Plus, X, UserPlus, Trash2 } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -48,6 +48,12 @@ export default function ProjectDetail() {
     }
   }
 
+  async function handleDeleteProject() {
+    if (!confirm(`Delete "${project.name}"? This removes every entry and photo under it too — this can't be undone.`)) return;
+    await api.delete(`/projects/${id}`);
+    navigate('/projects');
+  }
+
   if (error) return <Layout><div className="empty-state"><h3>{error}</h3></div></Layout>;
   if (!project) return <Layout><div className="empty-state">Loading…</div></Layout>;
 
@@ -66,6 +72,14 @@ export default function ProjectDetail() {
           <Plus size={16} /> {creatingEntry ? 'Creating…' : 'New entry'}
         </button>
       </div>
+
+      {isAdmin && (
+        <div style={{ marginBottom: 20 }}>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={handleDeleteProject}>
+            <Trash2 size={13} /> Delete this project
+          </button>
+        </div>
+      )}
 
       <div className="detail-grid">
         <div>
