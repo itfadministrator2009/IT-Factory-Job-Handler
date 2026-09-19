@@ -86,8 +86,13 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       if (!isFieldVisible(field, instanceAnswers)) return; // never shown to the tech — leave it out of the record too
       const value = instanceAnswers[field.id];
 
-      ensureSpace(20);
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#333').text(field.label, left, doc.y, { width: pageWidth });
+      // Measure the label's actual height first — some labels in a template like this
+      // run 150+ characters and wrap to 2-3 lines, so a fixed small reservation isn't
+      // enough and was letting labels run into whatever content followed them.
+      doc.fontSize(9).font('Helvetica-Bold');
+      const labelHeight = doc.heightOfString(field.label, { width: pageWidth });
+      ensureSpace(labelHeight + 4);
+      doc.fillColor('#333').text(field.label, left, doc.y, { width: pageWidth });
 
       if (field.type === 'photo') {
         const fps = photosFor(field.id, repeatIndex);
@@ -124,15 +129,23 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
           doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('Not signed');
         }
       } else {
-        doc.fontSize(9).font('Helvetica').fillColor('#111').text(value || '—', left, doc.y, { width: pageWidth });
+        // Text/textarea/date/yesno answers — same measure-first approach as the label,
+        // since a long free-text answer can wrap just as far as a long label can.
+        const text = value || '—';
+        doc.fontSize(9).font('Helvetica');
+        const valueHeight = doc.heightOfString(text, { width: pageWidth });
+        ensureSpace(valueHeight + 4);
+        doc.fillColor('#111').text(text, left, doc.y, { width: pageWidth });
       }
       doc.moveDown(0.5);
     }
 
     template.sections.forEach((section) => {
-      ensureSpace(40);
+      doc.fontSize(12).font('Helvetica-Bold');
+      const titleHeight = doc.heightOfString(section.title, { width: pageWidth });
+      ensureSpace(titleHeight + 10);
       doc.moveDown(0.3);
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(TEAL).text(section.title, left, doc.y, { width: pageWidth });
+      doc.fillColor(TEAL).text(section.title, left, doc.y, { width: pageWidth });
       doc.moveTo(left, doc.y + 2).lineTo(left + pageWidth, doc.y + 2).strokeColor(LINE).stroke();
       doc.moveDown(0.5);
 
@@ -142,8 +155,11 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
           doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('None recorded.');
         }
         instances.forEach((instanceAnswers, idx) => {
-          ensureSpace(24);
-          doc.fontSize(10).font('Helvetica-Bold').fillColor('#333').text(`${section.title} #${idx + 1}`, left, doc.y, { width: pageWidth });
+          const instanceLabel = `${section.title} #${idx + 1}`;
+          doc.fontSize(10).font('Helvetica-Bold');
+          const instanceLabelHeight = doc.heightOfString(instanceLabel, { width: pageWidth });
+          ensureSpace(instanceLabelHeight + 6);
+          doc.fillColor('#333').text(instanceLabel, left, doc.y, { width: pageWidth });
           doc.moveDown(0.3);
           section.fields.forEach((field) => renderField(field, instanceAnswers, idx));
           doc.moveDown(0.3);
