@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings } from 'lucide-react';
+import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
@@ -27,6 +27,9 @@ export default function Layout({ children }) {
               <PlusCircle size={16} /> New Job
             </NavLink>
           )}
+          <NavLink to="/projects" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+            <FolderKanban size={16} /> Projects
+          </NavLink>
           {isAdmin && (
             <NavLink to="/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
               <BarChart3 size={16} /> Reports
