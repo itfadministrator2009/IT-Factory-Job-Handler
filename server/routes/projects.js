@@ -6,6 +6,14 @@ const { v4: uuid } = require('uuid');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole, currentRole } = require('../permissions');
+const { buildProjectEntryPdf } = require('../projectPdfBuilder');
+const { notifyProjectEntryComplete } = require('../email');
+
+// Fixed internal distribution list notified whenever a project entry is submitted —
+// configurable via env var without a code change, defaulting to the addresses given.
+const PROJECT_COMPLETE_EMAILS = (process.env.PROJECT_COMPLETE_EMAILS
+  || 'sam@itfactory.com.au,tom@itfactory.com.au,rnahas@itfactory.com.au,michael@itfactory.com.au,admin@itfactory.com.au,elina@itfactory.com.au')
+  .split(',').map((s) => s.trim()).filter(Boolean);
 
 const router = express.Router();
 router.use(authRequired);
@@ -243,6 +251,28 @@ router.get('/:id/entries/:entryId', (req, res) => {
   res.json({ entry: { ...entry, answers: JSON.parse(entry.answers_json), assignee }, photos });
 });
 
+// Builds the PDF and emails it to the fixed distribution list — shared by the
+// automatic send-on-submit below and the manual "Email PDF" button, so both stay
+// identical in what they generate and send.
+async function sendCompletionEmail(projectId, entryId) {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  const entry = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(entryId);
+  const photos = db.prepare('SELECT * FROM project_entry_photos WHERE entry_id = ?').all(entryId);
+  const pdfBuffer = await buildProjectEntryPdf(
+    { ...project, template: JSON.parse(project.template_json) },
+    { ...entry, answers: JSON.parse(entry.answers_json) },
+    photos,
+    UPLOAD_DIR,
+  );
+  await notifyProjectEntryComplete({
+    toEmails: PROJECT_COMPLETE_EMAILS,
+    projectName: project.name,
+    siteName: entry.site_name,
+    entryNumber: entry.entry_number,
+    pdfBuffer,
+  });
+}
+
 router.patch('/:id/entries/:entryId', (req, res) => {
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
   if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
@@ -285,6 +315,15 @@ router.patch('/:id/entries/:entryId', (req, res) => {
 
   const updated = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(req.params.entryId);
   const assignee = updated.assigned_to ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(updated.assigned_to) : null;
+
+  // Fire-and-forget: never block the response on email/PDF generation, and never let
+  // a mail hiccup here undo a submission that already succeeded.
+  if (submit) {
+    sendCompletionEmail(req.params.id, req.params.entryId).catch((err) => {
+      console.error('[projects] Could not send completion email:', err.message);
+    });
+  }
+
   res.json({ entry: { ...updated, answers: JSON.parse(updated.answers_json), assignee } });
 });
 
@@ -342,6 +381,47 @@ router.delete('/photos/:photoId', (req, res) => {
   fs.unlink(path.join(UPLOAD_DIR, photo.stored_name), () => {});
   db.prepare('DELETE FROM project_entry_photos WHERE id = ?').run(req.params.photoId);
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// PDF — view/download the completed entry, or manually (re)send the completion
+// email. Both available once an entry exists; the PDF naturally looks sparse for
+// a still-in-progress (Draft) entry since it just reflects whatever's saved so far.
+// ---------------------------------------------------------------------------
+
+router.get('/:id/entries/:entryId/pdf', async (req, res) => {
+  const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
+  if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  const photos = db.prepare('SELECT * FROM project_entry_photos WHERE entry_id = ?').all(entry.id);
+
+  try {
+    const pdfBuffer = await buildProjectEntryPdf(
+      { ...project, template: JSON.parse(project.template_json) },
+      { ...entry, answers: JSON.parse(entry.answers_json) },
+      photos,
+      UPLOAD_DIR,
+    );
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Entry-${entry.entry_number}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[projects] Could not generate PDF:', err.message);
+    res.status(500).json({ error: 'Could not generate PDF' });
+  }
+});
+
+router.post('/:id/entries/:entryId/email-pdf', async (req, res) => {
+  const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
+  if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
+
+  try {
+    await sendCompletionEmail(req.params.id, req.params.entryId);
+    res.json({ ok: true, sentTo: PROJECT_COMPLETE_EMAILS });
+  } catch (err) {
+    console.error('[projects] Could not send completion email:', err.message);
+    res.status(500).json({ error: 'Could not generate or send the PDF' });
+  }
 });
 
 module.exports = router;
