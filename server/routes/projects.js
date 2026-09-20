@@ -253,8 +253,11 @@ router.get('/:id/entries/:entryId', (req, res) => {
 
 // Builds the PDF and emails it to the fixed distribution list — shared by the
 // automatic send-on-submit below and the manual "Email PDF" button, so both stay
-// identical in what they generate and send.
-async function sendCompletionEmail(projectId, entryId) {
+// identical in what they generate and send. An explicit recipients list (from the
+// "Email PDF" dialog, where someone can add/remove addresses before sending)
+// overrides the default distribution list; the automatic send-on-submit never
+// passes one, so it always uses the default.
+async function sendCompletionEmail(projectId, entryId, recipients) {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(entryId);
   const photos = db.prepare('SELECT * FROM project_entry_photos WHERE entry_id = ?').all(entryId);
@@ -264,13 +267,15 @@ async function sendCompletionEmail(projectId, entryId) {
     photos,
     UPLOAD_DIR,
   );
+  const toEmails = Array.isArray(recipients) && recipients.length > 0 ? recipients : PROJECT_COMPLETE_EMAILS;
   await notifyProjectEntryComplete({
-    toEmails: PROJECT_COMPLETE_EMAILS,
+    toEmails,
     projectName: project.name,
     siteName: entry.site_name,
     entryNumber: entry.entry_number,
     pdfBuffer,
   });
+  return toEmails;
 }
 
 router.patch('/:id/entries/:entryId', (req, res) => {
@@ -417,13 +422,31 @@ router.get('/:id/entries/:entryId/pdf', async (req, res) => {
   }
 });
 
+router.get('/:id/entries/:entryId/email-defaults', (req, res) => {
+  const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
+  if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
+  res.json({ recipients: PROJECT_COMPLETE_EMAILS });
+});
+
 router.post('/:id/entries/:entryId/email-pdf', async (req, res) => {
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
   if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
 
+  const { recipients } = req.body;
+  if (recipients !== undefined) {
+    if (!Array.isArray(recipients) || recipients.length === 0) {
+      return res.status(400).json({ error: 'At least one recipient is required' });
+    }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalid = recipients.find((r) => typeof r !== 'string' || !emailPattern.test(r.trim()));
+    if (invalid !== undefined) {
+      return res.status(400).json({ error: `"${invalid}" doesn't look like a valid email address` });
+    }
+  }
+
   try {
-    await sendCompletionEmail(req.params.id, req.params.entryId);
-    res.json({ ok: true, sentTo: PROJECT_COMPLETE_EMAILS });
+    const sentTo = await sendCompletionEmail(req.params.id, req.params.entryId, recipients);
+    res.json({ ok: true, sentTo });
   } catch (err) {
     console.error('[projects] Could not send completion email:', err.message);
     res.status(500).json({ error: 'Could not generate or send the PDF' });
