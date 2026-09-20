@@ -146,14 +146,25 @@ export default function ProjectEntryForm() {
 
   async function handleViewPdf() {
     setGeneratingPdf(true);
-    const newTab = window.open('', '_blank');
     try {
       const res = await api.get(`/projects/${id}/entries/${entryId}/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      if (newTab) newTab.location = url;
-      else window.open(url, '_blank');
+      // A blob URL has no filename of its own — if the browser hands the file off to
+      // an external viewer (Adobe Acrobat, etc.) rather than showing it inline, that
+      // app's own Save dialog just shows whatever temporary name the download got,
+      // which is why this needs an explicit filename here rather than just opening
+      // the blob URL directly.
+      const rawName = `${project.name} - ${entry.site_name || `Entry ${entry.entry_number}`}`;
+      const fileName = rawName.replace(/[\\/:*?"<>|]/g, '').trim() + '.pdf';
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } catch (err) {
-      if (newTab) newTab.close();
+      // no-op — nothing was opened to clean up
     } finally {
       setGeneratingPdf(false);
     }
