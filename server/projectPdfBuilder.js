@@ -54,7 +54,13 @@ async function loadResizedPhoto(srcPath) {
 // whatever a project's template actually contains, not a fixed layout.
 function buildProjectEntryPdf(project, entry, photos, uploadDir) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    // Sets the PDF's own internal title metadata — Chrome/Edge's built-in PDF viewer
+    // uses this (not the blob URL, which has no meaningful name) as the suggested
+    // filename when someone clicks Save from within the viewer. Strips characters
+    // that aren't safe in a filename.
+    const rawTitle = `${project.name} - ${entry.site_name || `Entry ${entry.entry_number}`}`;
+    const safeTitle = rawTitle.replace(/[\\/:*?"<>|]/g, '').trim();
+    const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: safeTitle } });
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
