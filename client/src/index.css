@@ -5,9 +5,10 @@
   --paper: #f6f5f1;
   --panel: #ffffff;
   --line: #e2e0d8;
-  --teal: #1e4d4b;
-  --teal-dim: #2c6663;
+  --teal: #155e6b;
+  --teal-dim: #1f7684;
   --coral: #e8734a;
+  --danger: #c23f1c;
   --amber: #c98a1f;
   --green: #3f7d4f;
   --blue: #3a63ad;
@@ -186,6 +187,15 @@ input, select, textarea {
 .btn-ghost:hover { border-color: var(--teal); }
 
 .btn-sm { padding: 6px 12px; font-size: 13px; }
+
+.icon-btn {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* ---------- Cards / panels ---------- */
 .panel {
@@ -562,7 +572,7 @@ input, select, textarea {
   font-weight: 600;
   text-decoration: none;
 }
-.attachment-row button.danger { color: var(--coral); }
+.attachment-row button.danger { color: var(--danger); }
 
 .dropzone {
   border: 1.5px dashed var(--line);
