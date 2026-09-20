@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, Trash2, Mail, X } from 'lucide-react';
+import { Plus, Trash2, Mail, X, Pencil } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import TemplateBuilder from '../components/TemplateBuilder';
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -17,6 +18,10 @@ export default function ProjectDetail() {
   const [error, setError] = useState('');
 
   const [showNewEntry, setShowNewEntry] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editSections, setEditSections] = useState([]);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateError, setTemplateError] = useState('');
   const [newSiteName, setNewSiteName] = useState('');
   const [newAssignedTo, setNewAssignedTo] = useState('');
   const [creatingEntry, setCreatingEntry] = useState(false);
@@ -58,6 +63,36 @@ export default function ProjectDetail() {
     if (!confirm(`Delete "${project.name}"? This removes every entry and photo under it too — this can't be undone.`)) return;
     await api.delete(`/projects/${id}`);
     navigate('/projects');
+  }
+
+  function openEditForm() {
+    // Deep-clone so cancelling doesn't leave any half-edited state behind if the
+    // form is reopened later in the same visit.
+    setEditSections(JSON.parse(JSON.stringify(project.template.sections)));
+    setTemplateError('');
+    setShowEditForm(true);
+  }
+
+  async function handleSaveTemplate() {
+    setTemplateError('');
+    if (editSections.length === 0) {
+      setTemplateError('Add at least one section before saving.');
+      return;
+    }
+    if (editSections.some((s) => s.fields.length === 0)) {
+      setTemplateError('Every section needs at least one question — remove any empty sections or add a question to them.');
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const { data } = await api.patch(`/projects/${id}`, { template: { sections: editSections } });
+      setProject(data.project);
+      setShowEditForm(false);
+    } catch (err) {
+      setTemplateError(err.response?.data?.error || 'Could not save changes');
+    } finally {
+      setSavingTemplate(false);
+    }
   }
 
   async function handleDeleteEntry(entryId, e) {
@@ -174,10 +209,32 @@ export default function ProjectDetail() {
       </div>
 
       {isAdmin && (
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={openEditForm}>
+            <Pencil size={13} /> Edit form
+          </button>
           <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={handleDeleteProject}>
             <Trash2 size={13} /> Delete this project
           </button>
+        </div>
+      )}
+
+      {showEditForm && (
+        <div className="panel" style={{ padding: 24, marginBottom: 20, maxWidth: 760 }}>
+          <h3 style={{ fontSize: 15, marginBottom: 6 }}>Edit form</h3>
+          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
+            Changes apply to every new entry from now on. Entries already submitted keep whatever was on the form when they were filled out.
+          </p>
+          {templateError && <div className="error-banner">{templateError}</div>}
+          <TemplateBuilder sections={editSections} onChange={setEditSections} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button className="btn btn-accent" type="button" onClick={handleSaveTemplate} disabled={savingTemplate}>
+              {savingTemplate ? 'Saving…' : 'Save changes'}
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={() => setShowEditForm(false)} disabled={savingTemplate}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
