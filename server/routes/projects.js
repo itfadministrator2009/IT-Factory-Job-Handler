@@ -242,6 +242,93 @@ router.post('/:id/entries', (req, res) => {
   res.status(201).json({ entry: { ...entry, answers: JSON.parse(entry.answers_json) } });
 });
 
+// ---------------------------------------------------------------------------
+// Bulk actions on entries — all admin-only, matching how bulk actions work on
+// the main Jobs list (select several, reassign/delete/email them at once).
+// Deliberately placed BEFORE the /:id/entries/:entryId routes below: Express
+// matches routes in the order they're declared, and :entryId would otherwise
+// swallow "bulk" as if it were a literal entry id.
+// ---------------------------------------------------------------------------
+
+function validateRecipients(recipients) {
+  if (recipients === undefined) return null;
+  if (!Array.isArray(recipients) || recipients.length === 0) return 'At least one recipient is required';
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const invalid = recipients.find((r) => typeof r !== 'string' || !emailPattern.test(r.trim()));
+  if (invalid !== undefined) return `"${invalid}" doesn't look like a valid email address`;
+  return null;
+}
+
+// Not tied to one specific entry — used to pre-fill the bulk-email dialog before
+// any particular entries are even known to have been selected.
+router.get('/:id/email-defaults', (req, res) => {
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!project || !canAccessProject(req, project.id)) return res.status(404).json({ error: 'Project not found' });
+  res.json({ recipients: PROJECT_COMPLETE_EMAILS });
+});
+
+router.patch('/:id/entries/bulk', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can bulk-edit entries' });
+  const { ids, assigned_to } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
+  if (assigned_to === undefined) return res.status(400).json({ error: 'assigned_to is required' });
+  if (assigned_to) {
+    const target = db.prepare('SELECT id FROM users WHERE id = ?').get(assigned_to);
+    if (!target) return res.status(400).json({ error: 'Assigned user not found' });
+  }
+
+  let updated = 0;
+  ids.forEach((entryId) => {
+    const entry = db.prepare('SELECT id FROM project_entries WHERE id = ? AND project_id = ?').get(entryId, req.params.id);
+    if (!entry) return; // silently skip anything not actually in this project
+    db.prepare("UPDATE project_entries SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?").run(assigned_to || null, entryId);
+    updated++;
+  });
+  res.json({ ok: true, updated });
+});
+
+router.post('/:id/entries/bulk-delete', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can bulk-delete entries' });
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
+
+  let deleted = 0;
+  ids.forEach((entryId) => {
+    const entry = db.prepare('SELECT id FROM project_entries WHERE id = ? AND project_id = ?').get(entryId, req.params.id);
+    if (!entry) return;
+    const entryPhotos = db.prepare('SELECT stored_name FROM project_entry_photos WHERE entry_id = ?').all(entryId);
+    entryPhotos.forEach((p) => fs.unlink(path.join(UPLOAD_DIR, p.stored_name), () => {}));
+    db.prepare('DELETE FROM project_entries WHERE id = ?').run(entryId);
+    deleted++;
+  });
+  res.json({ ok: true, deleted });
+});
+
+// Sequential (not parallel) on purpose — each one generates a full PDF, so running
+// many at once in parallel could spike memory on a large batch. A partial failure
+// (one bad photo file, say) doesn't stop the rest — every result is reported back.
+router.post('/:id/entries/bulk-email-pdf', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can bulk-email entries' });
+  const { ids, recipients } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
+  const recipientError = validateRecipients(recipients);
+  if (recipientError) return res.status(400).json({ error: recipientError });
+
+  const results = [];
+  for (const entryId of ids) {
+    const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(entryId, req.params.id);
+    if (!entry) { results.push({ entryId, ok: false, error: 'Not found' }); continue; }
+    try {
+      const sentTo = await sendCompletionEmail(req.params.id, entryId, recipients);
+      results.push({ entryId, entryNumber: entry.entry_number, ok: true, sentTo });
+    } catch (err) {
+      results.push({ entryId, entryNumber: entry.entry_number, ok: false, error: err.message });
+    }
+  }
+  const failed = results.filter((r) => !r.ok);
+  res.json({ ok: failed.length === 0, results, sentCount: results.length - failed.length, failedCount: failed.length });
+});
+
 router.get('/:id/entries/:entryId', (req, res) => {
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
   if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
@@ -452,5 +539,10 @@ router.post('/:id/entries/:entryId/email-pdf', async (req, res) => {
     res.status(500).json({ error: 'Could not generate or send the PDF' });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Bulk actions live earlier in this file, right after entry creation — see the
+// comment there explaining why they must come before /:id/entries/:entryId.
+// ---------------------------------------------------------------------------
 
 module.exports = router;
