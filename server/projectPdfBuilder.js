@@ -1,10 +1,19 @@
 const PDFDocument = require('pdfkit');
+const sharp = require('sharp');
 const path = require('path');
-const fs = require('fs');
 
 const TEAL = '#1e4d4b';
 const MUTED = '#6b7570';
 const LINE = '#c9c7bd';
+
+// Photos are only ever displayed at a small size in this PDF (a few centimetres), so
+// there's no reason to embed a phone camera's full 12MP original — pdfkit embeds
+// JPEGs almost as-is without recompressing, so a handful of untouched 2-3MB photos
+// was the entire reason these PDFs were running to 13MB+. Resizing to roughly the
+// actual display resolution first cuts that down to a small fraction of the size
+// with no visible quality loss at the size they're actually shown.
+const PHOTO_MAX_DIMENSION = 1000; // px, longest side
+const PHOTO_JPEG_QUALITY = 78;
 
 function fmtDate(s) {
   if (!s) return '—';
@@ -26,6 +35,18 @@ function matchesCondition(cond, instanceAnswers) {
 }
 function isFieldVisible(field, instanceAnswers) {
   return matchesCondition(field.visibleIf, instanceAnswers);
+}
+
+// Resizes and recompresses a photo down to roughly its real display resolution before
+// it's ever handed to pdfkit. .rotate() with no arguments auto-orients the image
+// according to its EXIF data first — a welcome side effect, since pdfkit itself
+// ignores EXIF orientation and would otherwise embed some phone photos sideways.
+async function loadResizedPhoto(srcPath) {
+  return sharp(srcPath)
+    .rotate()
+    .resize({ width: PHOTO_MAX_DIMENSION, height: PHOTO_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: PHOTO_JPEG_QUALITY })
+    .toBuffer();
 }
 
 // Renders a completed (submitted) project entry as a read-only PDF — walks the same
@@ -77,7 +98,7 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       return h;
     }
 
-    function renderField(field, instanceAnswers, repeatIndex) {
+    async function renderField(field, instanceAnswers, repeatIndex) {
       if (field.type === 'instruction') return;
       if (!isFieldVisible(field, instanceAnswers)) return; // never shown to the tech — leave it out of the record too
       const value = instanceAnswers[field.id];
@@ -95,24 +116,24 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
         if (fps.length === 0) {
           doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('No photo attached');
         } else {
-          fps.forEach((p) => {
+          for (const p of fps) {
             const maxW = Math.min(pageWidth, 260);
             const maxH = 170;
             ensureSpace(maxH + 20);
             try {
-              // The cursor position is captured BEFORE drawing and the position
-              // afterward is set explicitly (not read back from doc.y) — some
-              // real-world photos were found to make pdfkit silently move the
-              // cursor during doc.image() itself, which the old code trusted and
-              // which was the actual cause of content overlapping on a single page.
+              const resizedBuffer = await loadResizedPhoto(path.join(uploadDir, p.stored_name));
+              // The cursor position is captured BEFORE drawing and set explicitly
+              // afterward (not read back from doc.y) — some real-world photos were
+              // found to make pdfkit silently move the cursor during doc.image()
+              // itself, which caused content to overlap on a single page previously.
               const startY = doc.y;
-              const actualHeight = drawImageFitted(path.join(uploadDir, p.stored_name), left, startY, maxW, maxH);
+              const actualHeight = drawImageFitted(resizedBuffer, left, startY, maxW, maxH);
               doc.y = startY + actualHeight;
               doc.moveDown(0.4);
             } catch (e) {
               doc.fontSize(9).fillColor('#a23a1c').text('(could not load image)');
             }
-          });
+          }
         }
       } else if (field.type === 'signature') {
         if (value) {
@@ -143,37 +164,44 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       doc.moveDown(0.5);
     }
 
-    template.sections.forEach((section) => {
-      doc.fontSize(12).font('Helvetica-Bold');
-      const titleHeight = doc.heightOfString(section.title, { width: pageWidth });
-      ensureSpace(titleHeight + 10);
-      doc.moveDown(0.3);
-      doc.fillColor(TEAL).text(section.title, left, doc.y, { width: pageWidth });
-      doc.moveTo(left, doc.y + 2).lineTo(left + pageWidth, doc.y + 2).strokeColor(LINE).stroke();
-      doc.moveDown(0.5);
+    (async () => {
+      for (const section of template.sections) {
+        doc.fontSize(12).font('Helvetica-Bold');
+        const titleHeight = doc.heightOfString(section.title, { width: pageWidth });
+        ensureSpace(titleHeight + 10);
+        doc.moveDown(0.3);
+        doc.fillColor(TEAL).text(section.title, left, doc.y, { width: pageWidth });
+        doc.moveTo(left, doc.y + 2).lineTo(left + pageWidth, doc.y + 2).strokeColor(LINE).stroke();
+        doc.moveDown(0.5);
 
-      if (section.repeatable) {
-        const instances = Array.isArray(answers[section.id]) ? answers[section.id] : [];
-        if (instances.length === 0) {
-          doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('None recorded.');
+        if (section.repeatable) {
+          const instances = Array.isArray(answers[section.id]) ? answers[section.id] : [];
+          if (instances.length === 0) {
+            doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('None recorded.');
+          }
+          for (let idx = 0; idx < instances.length; idx++) {
+            const instanceAnswers = instances[idx];
+            const instanceLabel = `${section.title} #${idx + 1}`;
+            doc.fontSize(10).font('Helvetica-Bold');
+            const instanceLabelHeight = doc.heightOfString(instanceLabel, { width: pageWidth });
+            ensureSpace(instanceLabelHeight + 6);
+            doc.fillColor('#333').text(instanceLabel, left, doc.y, { width: pageWidth });
+            doc.moveDown(0.3);
+            for (const field of section.fields) {
+              await renderField(field, instanceAnswers, idx);
+            }
+            doc.moveDown(0.3);
+          }
+        } else {
+          const instanceAnswers = answers[section.id] || {};
+          for (const field of section.fields) {
+            await renderField(field, instanceAnswers, undefined);
+          }
         }
-        instances.forEach((instanceAnswers, idx) => {
-          const instanceLabel = `${section.title} #${idx + 1}`;
-          doc.fontSize(10).font('Helvetica-Bold');
-          const instanceLabelHeight = doc.heightOfString(instanceLabel, { width: pageWidth });
-          ensureSpace(instanceLabelHeight + 6);
-          doc.fillColor('#333').text(instanceLabel, left, doc.y, { width: pageWidth });
-          doc.moveDown(0.3);
-          section.fields.forEach((field) => renderField(field, instanceAnswers, idx));
-          doc.moveDown(0.3);
-        });
-      } else {
-        const instanceAnswers = answers[section.id] || {};
-        section.fields.forEach((field) => renderField(field, instanceAnswers, undefined));
       }
-    });
 
-    doc.end();
+      doc.end();
+    })().catch(reject);
   });
 }
 
