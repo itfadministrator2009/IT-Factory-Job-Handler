@@ -260,11 +260,12 @@ function ManageUsersTab({ currentUser }) {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => openReset(u)} title="Reset password"><KeyRound size={13} /></button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openReset(u)} title="Reset password"><KeyRound size={13} /></button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-ghost btn-sm icon-btn"
+                        style={{ color: 'var(--danger)' }}
                         onClick={() => handleDelete(u)}
                         disabled={u.id === currentUser.id}
                         title={u.id === currentUser.id ? "You can't remove your own account" : 'Remove user'}
@@ -388,7 +389,11 @@ function BackupTab() {
     setBackupMsg('');
     try {
       const { data } = await api.post('/backup/now');
-      setBackupMsg(`Backup uploaded to OneDrive (${data.folder}/${data.filename})`);
+      setBackupMsg(
+        data.uploadsFilename
+          ? `Backup uploaded to OneDrive — database and photos (${data.folder}/${data.filename} + ${data.uploadsFilename})`
+          : `Backup uploaded to OneDrive (${data.folder}/${data.filename}) — no photos to back up yet`
+      );
       loadBackups();
     } catch (err) {
       setBackupMsg(err.response?.data?.error || 'Could not run backup');
@@ -499,7 +504,7 @@ function BackupTab() {
         <div className="modal-overlay" onClick={() => !restoring && setRestoreTarget(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3><AlertTriangle size={16} style={{ verticalAlign: -2, marginRight: 6, color: 'var(--coral)' }} />Restore this backup?</h3>
+              <h3><AlertTriangle size={16} style={{ verticalAlign: -2, marginRight: 6, color: 'var(--danger)' }} />Restore this backup?</h3>
               {!restoring && <button type="button" onClick={() => setRestoreTarget(null)}><X size={18} /></button>}
             </div>
             {restoreError && <div className="error-banner">{restoreError}</div>}
@@ -515,7 +520,7 @@ function BackupTab() {
             </div>
             <button
               className="btn btn-accent"
-              style={{ width: '100%', justifyContent: 'center', background: 'var(--coral)' }}
+              style={{ width: '100%', justifyContent: 'center', background: 'var(--danger)' }}
               disabled={confirmText !== 'RESTORE' || restoring}
               onClick={handleRestore}
             >
