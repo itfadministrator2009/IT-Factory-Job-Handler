@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Mail, X } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -21,12 +21,24 @@ export default function ProjectDetail() {
   const [newAssignedTo, setNewAssignedTo] = useState('');
   const [creatingEntry, setCreatingEntry] = useState(false);
 
+  const [selected, setSelected] = useState(new Set());
+  const [bulkAssignTo, setBulkAssignTo] = useState('');
+  const [bulkApplying, setBulkApplying] = useState(false);
+
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailRecipients, setEmailRecipients] = useState([]);
+  const [newRecipientInput, setNewRecipientInput] = useState('');
+  const [emailModalError, setEmailModalError] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [bulkEmailResultMsg, setBulkEmailResultMsg] = useState('');
+
   function load() {
     api.get(`/projects/${id}`).then((res) => setProject(res.data.project)).catch(() => setError('Could not load project'));
     api.get(`/projects/${id}/entries`).then((res) => setEntries(res.data.entries));
   }
   useEffect(() => { load(); }, [id]);
   useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
+  useEffect(() => { setSelected(new Set()); }, [entries?.length === 0]);
 
   async function handleCreateEntry(e) {
     e.preventDefault();
@@ -55,6 +67,93 @@ export default function ProjectDetail() {
     load();
   }
 
+  function toggleSelect(entryId) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(entryId)) next.delete(entryId); else next.add(entryId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === entries.length) setSelected(new Set());
+    else setSelected(new Set(entries.map((e) => e.id)));
+  }
+
+  async function handleBulkReassign() {
+    if (!bulkAssignTo) return;
+    setBulkApplying(true);
+    try {
+      await api.patch(`/projects/${id}/entries/bulk`, { ids: Array.from(selected), assigned_to: bulkAssignTo === 'unassigned' ? null : bulkAssignTo });
+      setSelected(new Set());
+      setBulkAssignTo('');
+      load();
+    } finally {
+      setBulkApplying(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (!confirm(`Delete ${selected.size} selected ${selected.size === 1 ? 'entry' : 'entries'}? This can't be undone.`)) return;
+    setBulkApplying(true);
+    try {
+      await api.post(`/projects/${id}/entries/bulk-delete`, { ids: Array.from(selected) });
+      setSelected(new Set());
+      load();
+    } finally {
+      setBulkApplying(false);
+    }
+  }
+
+  async function openBulkEmailModal() {
+    setEmailModalError('');
+    setBulkEmailResultMsg('');
+    setNewRecipientInput('');
+    setShowEmailModal(true);
+    try {
+      const { data } = await api.get(`/projects/${id}/email-defaults`);
+      setEmailRecipients(data.recipients);
+    } catch (err) {
+      setEmailModalError('Could not load the default recipient list — you can still add addresses manually.');
+      setEmailRecipients([]);
+    }
+  }
+
+  function removeRecipient(email) {
+    setEmailRecipients((prev) => prev.filter((r) => r !== email));
+  }
+
+  function addRecipient() {
+    const email = newRecipientInput.trim();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailModalError(`"${email}" doesn't look like a valid email address`);
+      return;
+    }
+    if (emailRecipients.includes(email)) { setNewRecipientInput(''); return; }
+    setEmailRecipients((prev) => [...prev, email]);
+    setNewRecipientInput('');
+    setEmailModalError('');
+  }
+
+  async function handleSendBulkEmail() {
+    setEmailSending(true);
+    setEmailModalError('');
+    try {
+      const { data } = await api.post(`/projects/${id}/entries/bulk-email-pdf`, { ids: Array.from(selected), recipients: emailRecipients });
+      setShowEmailModal(false);
+      setBulkEmailResultMsg(
+        data.failedCount > 0
+          ? `Sent ${data.sentCount} of ${data.results.length} — ${data.failedCount} failed.`
+          : `Sent ${data.sentCount} ${data.sentCount === 1 ? 'entry' : 'entries'} to ${emailRecipients.length} ${emailRecipients.length === 1 ? 'address' : 'addresses'}.`
+      );
+    } catch (err) {
+      setEmailModalError(err.response?.data?.error || 'Could not send emails');
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
   if (error) return <Layout><div className="empty-state"><h3>{error}</h3></div></Layout>;
   if (!project) return <Layout><div className="empty-state">Loading…</div></Layout>;
 
@@ -76,7 +175,7 @@ export default function ProjectDetail() {
 
       {isAdmin && (
         <div style={{ marginBottom: 20 }}>
-          <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={handleDeleteProject}>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={handleDeleteProject}>
             <Trash2 size={13} /> Delete this project
           </button>
         </div>
@@ -110,6 +209,34 @@ export default function ProjectDetail() {
         </div>
       )}
 
+      {bulkEmailResultMsg && (
+        <div className="success-banner" style={{ marginBottom: 16 }}>
+          <span>{bulkEmailResultMsg}</span>
+          <button type="button" onClick={() => setBulkEmailResultMsg('')}><X size={15} /></button>
+        </div>
+      )}
+
+      {isAdmin && selected.size > 0 && (
+        <div className="bulk-toolbar">
+          <span>{selected.size} selected</span>
+          <select value={bulkAssignTo} onChange={(e) => setBulkAssignTo(e.target.value)}>
+            <option value="">Assign to…</option>
+            <option value="unassigned">Unassigned</option>
+            {allUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <button type="button" onClick={handleBulkReassign} disabled={bulkApplying || !bulkAssignTo}>
+            {bulkApplying ? 'Applying…' : 'Apply'}
+          </button>
+          <button type="button" onClick={openBulkEmailModal} disabled={bulkApplying}>
+            <Mail size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Email PDFs
+          </button>
+          <button type="button" onClick={handleBulkDelete} disabled={bulkApplying} style={{ color: 'var(--danger)' }}>
+            <Trash2 size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Delete
+          </button>
+          <button type="button" className="clear-selection" onClick={() => setSelected(new Set())}>Clear</button>
+        </div>
+      )}
+
       <div className="panel" style={{ padding: 18 }}>
         <div className="comment-meta"><strong style={{ color: 'var(--ink)' }}>Entries</strong></div>
         {!entries ? (
@@ -123,6 +250,11 @@ export default function ProjectDetail() {
           <table className="ticket-table">
             <thead>
               <tr>
+                {isAdmin && (
+                  <th style={{ width: 32 }}>
+                    <input type="checkbox" checked={selected.size === entries.length} onChange={toggleSelectAll} />
+                  </th>
+                )}
                 <th>#</th>
                 <th>Site</th>
                 <th>Status</th>
@@ -134,6 +266,11 @@ export default function ProjectDetail() {
             <tbody>
               {entries.map((e) => (
                 <tr key={e.id} className="clickable" onClick={() => navigate(`/projects/${id}/entries/${e.id}`)}>
+                  {isAdmin && (
+                    <td onClick={(ev) => ev.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(e.id)} onChange={() => toggleSelect(e.id)} />
+                    </td>
+                  )}
                   <td className="ticket-num">#{e.entry_number}</td>
                   <td>{e.site_name || <span style={{ color: 'var(--muted)' }}>Untitled</span>}</td>
                   <td>
@@ -143,7 +280,7 @@ export default function ProjectDetail() {
                   <td style={{ color: 'var(--muted)' }}>{formatDate(e.updated_at)}</td>
                   {isAdmin && (
                     <td onClick={(ev) => ev.stopPropagation()}>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={(ev) => handleDeleteEntry(e.id, ev)}>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={(ev) => handleDeleteEntry(e.id, ev)} title="Delete entry">
                         <Trash2 size={13} />
                       </button>
                     </td>
@@ -154,6 +291,52 @@ export default function ProjectDetail() {
           </table>
         )}
       </div>
+
+      {showEmailModal && (
+        <div className="modal-overlay" onClick={() => !emailSending && setShowEmailModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Email {selected.size} {selected.size === 1 ? 'PDF' : 'PDFs'}</h3>
+              {!emailSending && <button type="button" onClick={() => setShowEmailModal(false)}><X size={18} /></button>}
+            </div>
+            {emailModalError && <div className="error-banner">{emailModalError}</div>}
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
+              Each selected entry's completed PDF will be sent to everyone below.
+            </p>
+            <div className="attachment-list" style={{ marginBottom: 12 }}>
+              {emailRecipients.map((email) => (
+                <div key={email} className="attachment-row">
+                  <span className="name">{email}</span>
+                  <button type="button" className="danger" onClick={() => removeRecipient(email)} disabled={emailSending}>Remove</button>
+                </div>
+              ))}
+              {emailRecipients.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--muted)' }}>No recipients yet — add at least one below.</p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input
+                type="email"
+                value={newRecipientInput}
+                onChange={(e) => setNewRecipientInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
+                placeholder="Add an email address"
+                disabled={emailSending}
+                style={{ flex: 1 }}
+              />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addRecipient} disabled={emailSending}>Add</button>
+            </div>
+            <button
+              className="btn btn-accent"
+              style={{ width: '100%', justifyContent: 'center' }}
+              onClick={handleSendBulkEmail}
+              disabled={emailSending || emailRecipients.length === 0}
+            >
+              {emailSending ? 'Sending…' : `Send ${selected.size} ${selected.size === 1 ? 'PDF' : 'PDFs'} to ${emailRecipients.length} ${emailRecipients.length === 1 ? 'address' : 'addresses'}`}
+            </button>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
