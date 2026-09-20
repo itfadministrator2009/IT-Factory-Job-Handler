@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import SignaturePadLib from 'signature_pad';
-import { CheckCircle2, Camera, Trash2, Plus, FileText, Mail } from 'lucide-react';
+import { CheckCircle2, Camera, Trash2, Plus, FileText, Mail, X } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +43,10 @@ export default function ProjectEntryForm() {
   const [reassigning, setReassigning] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [emailingPdf, setEmailingPdf] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailRecipients, setEmailRecipients] = useState([]);
+  const [newRecipientInput, setNewRecipientInput] = useState('');
+  const [emailModalError, setEmailModalError] = useState('');
   const [emailSentMsg, setEmailSentMsg] = useState('');
   const saveTimer = useRef(null);
 
@@ -170,14 +174,48 @@ export default function ProjectEntryForm() {
     }
   }
 
-  async function handleEmailPdf() {
-    setEmailingPdf(true);
-    setEmailSentMsg('');
+  async function openEmailModal() {
+    setEmailModalError('');
+    setNewRecipientInput('');
+    setShowEmailModal(true);
     try {
-      const { data } = await api.post(`/projects/${id}/entries/${entryId}/email-pdf`);
+      const { data } = await api.get(`/projects/${id}/entries/${entryId}/email-defaults`);
+      setEmailRecipients(data.recipients);
+    } catch (err) {
+      setEmailModalError('Could not load the default recipient list — you can still add addresses manually.');
+      setEmailRecipients([]);
+    }
+  }
+
+  function removeRecipient(email) {
+    setEmailRecipients((prev) => prev.filter((r) => r !== email));
+  }
+
+  function addRecipient() {
+    const email = newRecipientInput.trim();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailModalError(`"${email}" doesn't look like a valid email address`);
+      return;
+    }
+    if (emailRecipients.includes(email)) {
+      setNewRecipientInput('');
+      return;
+    }
+    setEmailRecipients((prev) => [...prev, email]);
+    setNewRecipientInput('');
+    setEmailModalError('');
+  }
+
+  async function handleSendEmail() {
+    setEmailingPdf(true);
+    setEmailModalError('');
+    try {
+      const { data } = await api.post(`/projects/${id}/entries/${entryId}/email-pdf`, { recipients: emailRecipients });
+      setShowEmailModal(false);
       setEmailSentMsg(`Sent to ${data.sentTo.join(', ')}`);
     } catch (err) {
-      setEmailSentMsg(err.response?.data?.error || 'Could not send email');
+      setEmailModalError(err.response?.data?.error || 'Could not send email');
     } finally {
       setEmailingPdf(false);
     }
@@ -203,8 +241,8 @@ export default function ProjectEntryForm() {
           <button className="btn btn-ghost btn-sm" onClick={handleViewPdf} disabled={generatingPdf}>
             <FileText size={14} /> {generatingPdf ? 'Generating…' : 'View PDF'}
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleEmailPdf} disabled={emailingPdf}>
-            <Mail size={14} /> {emailingPdf ? 'Sending…' : 'Email PDF'}
+          <button className="btn btn-ghost btn-sm" onClick={openEmailModal} disabled={emailingPdf}>
+            <Mail size={14} /> Email PDF
           </button>
           {readOnly ? (
             <span className="success-banner" style={{ margin: 0 }}><CheckCircle2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Submitted</span>
@@ -274,6 +312,52 @@ export default function ProjectEntryForm() {
           apiBase={id}
         />
       ))}
+
+      {showEmailModal && (
+        <div className="modal-overlay" onClick={() => !emailingPdf && setShowEmailModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Email PDF</h3>
+              {!emailingPdf && <button type="button" onClick={() => setShowEmailModal(false)}><X size={18} /></button>}
+            </div>
+            {emailModalError && <div className="error-banner">{emailModalError}</div>}
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
+              This will be sent to everyone below. Add or remove addresses as needed.
+            </p>
+            <div className="attachment-list" style={{ marginBottom: 12 }}>
+              {emailRecipients.map((email) => (
+                <div key={email} className="attachment-row">
+                  <span className="name">{email}</span>
+                  <button type="button" className="danger" onClick={() => removeRecipient(email)} disabled={emailingPdf}>Remove</button>
+                </div>
+              ))}
+              {emailRecipients.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--muted)' }}>No recipients yet — add at least one below.</p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input
+                type="email"
+                value={newRecipientInput}
+                onChange={(e) => setNewRecipientInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
+                placeholder="Add an email address"
+                disabled={emailingPdf}
+                style={{ flex: 1 }}
+              />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addRecipient} disabled={emailingPdf}>Add</button>
+            </div>
+            <button
+              className="btn btn-accent"
+              style={{ width: '100%', justifyContent: 'center' }}
+              onClick={handleSendEmail}
+              disabled={emailingPdf || emailRecipients.length === 0}
+            >
+              {emailingPdf ? 'Sending…' : `Send to ${emailRecipients.length} ${emailRecipients.length === 1 ? 'address' : 'addresses'}`}
+            </button>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
