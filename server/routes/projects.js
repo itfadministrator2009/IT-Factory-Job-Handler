@@ -395,6 +395,8 @@ router.get('/:id/entries/:entryId/pdf', async (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   const photos = db.prepare('SELECT * FROM project_entry_photos WHERE entry_id = ?').all(entry.id);
 
+  console.log(`[pdf] Generating PDF for entry #${entry.entry_number} (${entry.id}) — ${photos.length} photo(s) found. pdfkit version: ${require('pdfkit/package.json').version}`);
+
   try {
     const pdfBuffer = await buildProjectEntryPdf(
       { ...project, template: JSON.parse(project.template_json) },
@@ -402,11 +404,13 @@ router.get('/:id/entries/:entryId/pdf', async (req, res) => {
       photos,
       UPLOAD_DIR,
     );
+    const pageCount = (pdfBuffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    console.log(`[pdf] Generated successfully — ${pdfBuffer.length} bytes, approx ${pageCount} page(s).`);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Entry-${entry.entry_number}.pdf"`);
     res.send(pdfBuffer);
   } catch (err) {
-    console.error('[projects] Could not generate PDF:', err.message);
+    console.error('[projects] Could not generate PDF:', err.message, err.stack);
     res.status(500).json({ error: 'Could not generate PDF' });
   }
 });
