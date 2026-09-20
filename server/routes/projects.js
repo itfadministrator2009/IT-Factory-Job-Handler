@@ -407,7 +407,9 @@ router.get('/:id/entries/:entryId/pdf', async (req, res) => {
     const pageCount = (pdfBuffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
     console.log(`[pdf] Generated successfully — ${pdfBuffer.length} bytes, approx ${pageCount} page(s).`);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Entry-${entry.entry_number}.pdf"`);
+    const rawName = `${project.name} - ${entry.site_name || `Entry ${entry.entry_number}`}`;
+    const safeName = rawName.replace(/[\\/:*?"<>|]/g, '').trim();
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}.pdf"`);
     res.send(pdfBuffer);
   } catch (err) {
     console.error('[projects] Could not generate PDF:', err.message, err.stack);
