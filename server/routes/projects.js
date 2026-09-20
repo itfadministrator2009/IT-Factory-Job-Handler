@@ -7,7 +7,7 @@ const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole, currentRole } = require('../permissions');
 const { buildProjectEntryPdf } = require('../projectPdfBuilder');
-const { notifyProjectEntryComplete } = require('../email');
+const { notifyProjectEntryComplete, notifyProjectEntryAssigned } = require('../email');
 
 // Fixed internal distribution list notified whenever a project entry is submitted —
 // configurable via env var without a code change, defaulting to the addresses given.
@@ -221,9 +221,27 @@ router.get('/:id/entries', (req, res) => {
 
 // Admin-only: create a new entry with just a site name and who it's assigned to —
 // the assigned person fills in the rest of the form themselves later.
+// Notifies whoever a project entry is newly assigned to — fires only when there's
+// an actual new assignee (clearing to unassigned sends nothing), matching the same
+// pattern already used for Jobs. Fire-and-forget with its own .catch, since a mail
+// hiccup here should never affect the actual assignment succeeding.
+function notifyEntryAssignment(newAssignedTo, projectName, entry) {
+  if (!newAssignedTo) return;
+  const target = db.prepare('SELECT email FROM users WHERE id = ?').get(newAssignedTo);
+  if (!target?.email) return;
+  notifyProjectEntryAssigned({
+    toEmail: target.email,
+    projectName,
+    entryNumber: entry.entry_number,
+    siteName: entry.site_name,
+  }).catch((err) => {
+    console.error('[projects] Could not send entry-assigned email:', err.message);
+  });
+}
+
 router.post('/:id/entries', (req, res) => {
   if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can create entries' });
-  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  const project = db.prepare('SELECT id, name FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const { site_name, assigned_to } = req.body;
@@ -239,6 +257,7 @@ router.post('/:id/entries', (req, res) => {
     .run(id, req.params.id, entryNumber, site_name || null, assigned_to || null, req.user.id);
 
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(id);
+  notifyEntryAssignment(assigned_to, project.name, entry);
   res.status(201).json({ entry: { ...entry, answers: JSON.parse(entry.answers_json) } });
 });
 
@@ -276,13 +295,17 @@ router.patch('/:id/entries/bulk', (req, res) => {
     const target = db.prepare('SELECT id FROM users WHERE id = ?').get(assigned_to);
     if (!target) return res.status(400).json({ error: 'Assigned user not found' });
   }
+  const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(req.params.id);
 
   let updated = 0;
   ids.forEach((entryId) => {
-    const entry = db.prepare('SELECT id FROM project_entries WHERE id = ? AND project_id = ?').get(entryId, req.params.id);
+    const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(entryId, req.params.id);
     if (!entry) return; // silently skip anything not actually in this project
     db.prepare("UPDATE project_entries SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?").run(assigned_to || null, entryId);
     updated++;
+    if (assigned_to && assigned_to !== entry.assigned_to) {
+      notifyEntryAssignment(assigned_to, project.name, entry);
+    }
   });
   res.json({ ok: true, updated });
 });
@@ -387,6 +410,10 @@ router.patch('/:id/entries/:entryId', (req, res) => {
     }
     updates.push('assigned_to = ?');
     params.push(assigned_to || null);
+    if (assigned_to && assigned_to !== entry.assigned_to) {
+      const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(req.params.id);
+      notifyEntryAssignment(assigned_to, project.name, entry);
+    }
   }
 
   if (submit) {
