@@ -25,7 +25,7 @@ router.post('/now', adminRequired, async (req, res) => {
     };
     return res.status(400).json({ error: messages[result.reason] || 'Backup failed' });
   }
-  res.json({ ok: true, folder: result.folder, filename: result.filename });
+  res.json({ ok: true, folder: result.folder, filename: result.filename, uploadsFilename: result.uploadsFilename });
 });
 
 router.get('/list', adminRequired, async (req, res) => {
