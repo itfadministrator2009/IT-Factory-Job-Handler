@@ -41,9 +41,16 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const left = doc.page.margins.left;
     const bottom = doc.page.height - doc.page.margins.bottom;
+    console.log(`[pdf-trace] page dimensions: width=${doc.page.width} height=${doc.page.height} bottom-threshold=${bottom}`);
+    let pageAddCount = 0;
 
     function ensureSpace(needed) {
-      if (doc.y + needed > bottom) doc.addPage();
+      if (doc.y + needed > bottom) {
+        pageAddCount++;
+        console.log(`[pdf-trace] addPage() #${pageAddCount} triggered: doc.y=${doc.y.toFixed(1)} + needed=${needed.toFixed(1)} > bottom=${bottom.toFixed(1)}`);
+        doc.addPage();
+        console.log(`[pdf-trace]   after addPage(): doc.y=${doc.y.toFixed(1)}`);
+      }
     }
 
     // ---- Header ----
@@ -85,6 +92,7 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       if (field.type === 'instruction') return;
       if (!isFieldVisible(field, instanceAnswers)) return; // never shown to the tech — leave it out of the record too
       const value = instanceAnswers[field.id];
+      console.log(`[pdf-trace] field "${field.id}" (${field.type}) start: doc.y=${doc.y.toFixed(1)}`);
 
       // Measure the label's actual height first — some labels in a template like this
       // run 150+ characters and wrap to 2-3 lines, so a fixed small reservation isn't
@@ -93,21 +101,30 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       const labelHeight = doc.heightOfString(field.label, { width: pageWidth });
       ensureSpace(labelHeight + 4);
       doc.fillColor('#333').text(field.label, left, doc.y, { width: pageWidth });
+      console.log(`[pdf-trace]   after label (measured height=${labelHeight.toFixed(1)}): doc.y=${doc.y.toFixed(1)}`);
 
       if (field.type === 'photo') {
         const fps = photosFor(field.id, repeatIndex);
+        console.log(`[pdf-trace]   photo field has ${fps.length} photo(s) attached`);
         if (fps.length === 0) {
           doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('No photo attached');
         } else {
-          fps.forEach((p) => {
+          fps.forEach((p, pi) => {
             const maxW = Math.min(pageWidth, 260);
             const maxH = 170;
             ensureSpace(maxH + 20);
             try {
-              const actualHeight = drawImageFitted(path.join(uploadDir, p.stored_name), left, doc.y, maxW, maxH);
+              const fullPath = path.join(uploadDir, p.stored_name);
+              const fileExists = require('fs').existsSync(fullPath);
+              const fileSize = fileExists ? require('fs').statSync(fullPath).size : -1;
+              console.log(`[pdf-trace]   photo #${pi} file="${p.stored_name}" exists=${fileExists} size=${fileSize} doc.y before=${doc.y.toFixed(1)}`);
+              const actualHeight = drawImageFitted(fullPath, left, doc.y, maxW, maxH);
+              console.log(`[pdf-trace]   photo #${pi} drawn, computed height=${actualHeight.toFixed(1)}`);
               doc.y += actualHeight;
               doc.moveDown(0.4);
+              console.log(`[pdf-trace]   after photo #${pi}: doc.y=${doc.y.toFixed(1)}`);
             } catch (e) {
+              console.log(`[pdf-trace]   photo #${pi} FAILED TO LOAD: ${e.message}`);
               doc.fontSize(9).fillColor('#a23a1c').text('(could not load image)');
             }
           });
@@ -123,6 +140,7 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
             doc.y += actualHeight;
             doc.moveDown(0.2);
           } catch (e) {
+            console.log(`[pdf-trace]   signature FAILED TO RENDER: ${e.message}`);
             doc.fontSize(9).fillColor('#a23a1c').text('(signature could not be rendered)');
           }
         } else {
@@ -136,11 +154,14 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
         const valueHeight = doc.heightOfString(text, { width: pageWidth });
         ensureSpace(valueHeight + 4);
         doc.fillColor('#111').text(text, left, doc.y, { width: pageWidth });
+        console.log(`[pdf-trace]   value type=${typeof value} length=${String(text).length} measured height=${valueHeight.toFixed(1)}`);
       }
       doc.moveDown(0.5);
+      console.log(`[pdf-trace] field "${field.id}" end: doc.y=${doc.y.toFixed(1)}`);
     }
 
     template.sections.forEach((section) => {
+      console.log(`[pdf-trace] === section "${section.id}" start: doc.y=${doc.y.toFixed(1)} ===`);
       doc.fontSize(12).font('Helvetica-Bold');
       const titleHeight = doc.heightOfString(section.title, { width: pageWidth });
       ensureSpace(titleHeight + 10);
