@@ -1,8 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const archiver = require('archiver');
 const { getAccessToken, configured: graphConfigured } = require('./calendar');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
+// Same folder every uploaded photo (job attachments and project entry photos alike)
+// actually lives in — must match UPLOAD_DIR in routes/attachments.js and
+// routes/projects.js exactly, or backups would silently miss real files.
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
 // Which mailbox's OneDrive holds the backups, and which folder within it. Reuses the
 // same Azure AD app already set up for the calendar — just needs one more permission
 // granted (Files.ReadWrite.All) in that same app registration.
@@ -63,6 +68,26 @@ async function uploadBackupToOneDrive(buffer, filename) {
 }
 
 // Used by both the nightly scheduler and the admin "Back up now" button.
+// Zips every file in a directory (non-recursive concerns aside — attachments and
+// photos are all stored flat, one level deep) into an in-memory buffer, ready to
+// upload the same way the database file already is.
+function zipDirectory(sourceDir) {
+  return new Promise((resolve, reject) => {
+    const archive = archiver('zip', { zlib: { level: 6 } });
+    const chunks = [];
+    archive.on('data', (chunk) => chunks.push(chunk));
+    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    archive.on('warning', (err) => { if (err.code !== 'ENOENT') reject(err); });
+    archive.on('error', reject);
+    archive.directory(sourceDir, false);
+    archive.finalize();
+  });
+}
+
+// Used by both the nightly scheduler and the admin "Back up now" button. Backs up
+// the database AND every uploaded photo/attachment — the database alone used to be
+// the only thing backed up, which meant a lost disk would silently take every photo
+// with it even though the database restored fine.
 async function runBackup(filenameOverride) {
   if (!configured) return { ok: false, reason: 'not_configured' };
   if (!fs.existsSync(DB_PATH)) return { ok: false, reason: 'db_not_found' };
@@ -72,8 +97,28 @@ async function runBackup(filenameOverride) {
     const dateStr = currentDateInTimezone(BACKUP_TIMEZONE);
     const filename = filenameOverride || `helpdesk-backup-${dateStr}.db`;
     await uploadBackupToOneDrive(buffer, filename);
-    console.log(`[backup] Uploaded ${filename} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
-    return { ok: true, folder: BACKUP_FOLDER, filename };
+
+    let uploadsFilename = null;
+    const hasUploads = fs.existsSync(UPLOAD_DIR) && fs.readdirSync(UPLOAD_DIR).length > 0;
+    if (hasUploads) {
+      try {
+        const zipBuffer = await zipDirectory(UPLOAD_DIR);
+        uploadsFilename = filenameOverride
+          ? filenameOverride.replace(/\.db$/, '-uploads.zip')
+          : `helpdesk-uploads-${dateStr}.zip`;
+        await uploadBackupToOneDrive(zipBuffer, uploadsFilename);
+      } catch (err) {
+        // The database backup already succeeded above — don't fail the whole
+        // operation just because the (larger, slower) photo archive had a problem.
+        // Callers can tell a photo backup didn't happen because uploadsFilename
+        // comes back null.
+        console.error('[backup] Database backed up, but photo/attachment backup failed:', err.message);
+        uploadsFilename = null;
+      }
+    }
+
+    console.log(`[backup] Uploaded ${filename}${uploadsFilename ? ` and ${uploadsFilename}` : ''} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
+    return { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename };
   } catch (err) {
     console.error('[backup] Failed:', err.message);
     return { ok: false, reason: 'upload_failed', error: err.message };
