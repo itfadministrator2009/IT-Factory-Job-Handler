@@ -1,25 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Folder, X } from 'lucide-react';
+import { Plus, Folder } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-
-// A minimal starter template used when the "blank" option is picked on New Project —
-// gives the admin one real section/field to build outward from rather than an empty
-// shell, since the JSON is hand-edited for now (no drag-and-drop builder yet).
-const BLANK_TEMPLATE = {
-  sections: [
-    {
-      id: 'section_1',
-      title: 'Section 1',
-      repeatable: false,
-      fields: [
-        { id: 'field_1', type: 'text', label: 'Question text', required: true },
-      ],
-    },
-  ],
-};
+import TemplateBuilder, { blankTemplate } from '../components/TemplateBuilder';
 
 export default function Projects() {
   const navigate = useNavigate();
@@ -29,7 +14,7 @@ export default function Projects() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [templateText, setTemplateText] = useState(JSON.stringify(BLANK_TEMPLATE, null, 2));
+  const [sections, setSections] = useState(blankTemplate().sections);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -41,18 +26,19 @@ export default function Projects() {
   async function handleCreate(e) {
     e.preventDefault();
     setError('');
-    let template;
-    try {
-      template = JSON.parse(templateText);
-    } catch (err) {
-      setError('Template is not valid JSON — check for a missing comma or bracket.');
+    if (sections.length === 0) {
+      setError('Add at least one section before creating the project.');
+      return;
+    }
+    if (sections.some((s) => s.fields.length === 0)) {
+      setError('Every section needs at least one question — remove any empty sections or add a question to them.');
       return;
     }
     setSaving(true);
     try {
-      const { data } = await api.post('/projects', { name, description, template });
+      const { data } = await api.post('/projects', { name, description, template: { sections } });
       setShowForm(false);
-      setName(''); setDescription(''); setTemplateText(JSON.stringify(BLANK_TEMPLATE, null, 2));
+      setName(''); setDescription(''); setSections(blankTemplate().sections);
       navigate(`/projects/${data.project.id}`);
     } catch (err) {
       setError(err.response?.data?.error || 'Could not create project');
@@ -76,7 +62,7 @@ export default function Projects() {
       </div>
 
       {showForm && (
-        <div className="panel" style={{ padding: 24, marginBottom: 20, maxWidth: 640 }}>
+        <div className="panel" style={{ padding: 24, marginBottom: 20, maxWidth: 760 }}>
           {error && <div className="error-banner">{error}</div>}
           <form onSubmit={handleCreate}>
             <div className="field">
@@ -87,20 +73,11 @@ export default function Projects() {
               <label htmlFor="pdesc">Description</label>
               <input id="pdesc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this project covers" />
             </div>
-            <div className="field">
-              <label htmlFor="ptemplate">Form template (JSON)</label>
-              <textarea
-                id="ptemplate"
-                value={templateText}
-                onChange={(e) => setTemplateText(e.target.value)}
-                style={{ fontFamily: 'monospace', fontSize: 12, minHeight: 220 }}
-              />
-              <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-                Sections can be <code>repeatable</code>. Field types: text, textarea, date, datetime, yesno, photo, signature, instruction.
-                Add <code>visibleIf</code>/<code>requiredIf</code>: <code>{'{ field: "id", equals: "No" }'}</code> or <code>{'{ field: "id", notEmpty: true }'}</code> or <code>{'{ field: "id", empty: true }'}</code>.
-              </p>
-            </div>
-            <button className="btn btn-accent" type="submit" disabled={saving}>
+
+            <h3 style={{ fontSize: 15, marginTop: 22, marginBottom: 14 }}>Form</h3>
+            <TemplateBuilder sections={sections} onChange={setSections} />
+
+            <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 10 }}>
               {saving ? 'Creating…' : 'Create project'}
             </button>
           </form>
