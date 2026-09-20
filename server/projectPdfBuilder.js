@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const path = require('path');
+const fs = require('fs');
 
 const TEAL = '#1e4d4b';
 const MUTED = '#6b7570';
@@ -41,16 +42,9 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const left = doc.page.margins.left;
     const bottom = doc.page.height - doc.page.margins.bottom;
-    console.log(`[pdf-trace] page dimensions: width=${doc.page.width} height=${doc.page.height} bottom-threshold=${bottom}`);
-    let pageAddCount = 0;
 
     function ensureSpace(needed) {
-      if (doc.y + needed > bottom) {
-        pageAddCount++;
-        console.log(`[pdf-trace] addPage() #${pageAddCount} triggered: doc.y=${doc.y.toFixed(1)} + needed=${needed.toFixed(1)} > bottom=${bottom.toFixed(1)}`);
-        doc.addPage();
-        console.log(`[pdf-trace]   after addPage(): doc.y=${doc.y.toFixed(1)}`);
-      }
+      if (doc.y + needed > bottom) doc.addPage();
     }
 
     // ---- Header ----
@@ -73,12 +67,7 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
 
     // Draws an image scaled to fit within maxW x maxH — computed exactly from the
     // image's real dimensions (via doc.openImage) rather than relying on pdfkit's
-    // `fit` option and then guessing how tall the result actually was. This is what
-    // was actually causing photos to overlap the text below them: the previous code
-    // assumed a fixed height after drawing, which didn't always match reality.
-    // Returns the exact height it used, so the caller can advance the cursor by
-    // precisely that amount — never too little (which caused the overlap) and never
-    // an unnecessarily large guess either.
+    // `fit` option and guessing how tall the result was.
     function drawImageFitted(src, x, y, maxW, maxH) {
       const img = doc.openImage(src);
       const scale = Math.min(maxW / img.width, maxH / img.height);
@@ -92,7 +81,6 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       if (field.type === 'instruction') return;
       if (!isFieldVisible(field, instanceAnswers)) return; // never shown to the tech — leave it out of the record too
       const value = instanceAnswers[field.id];
-      console.log(`[pdf-trace] field "${field.id}" (${field.type}) start: doc.y=${doc.y.toFixed(1)}`);
 
       // Measure the label's actual height first — some labels in a template like this
       // run 150+ characters and wrap to 2-3 lines, so a fixed small reservation isn't
@@ -101,30 +89,27 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
       const labelHeight = doc.heightOfString(field.label, { width: pageWidth });
       ensureSpace(labelHeight + 4);
       doc.fillColor('#333').text(field.label, left, doc.y, { width: pageWidth });
-      console.log(`[pdf-trace]   after label (measured height=${labelHeight.toFixed(1)}): doc.y=${doc.y.toFixed(1)}`);
 
       if (field.type === 'photo') {
         const fps = photosFor(field.id, repeatIndex);
-        console.log(`[pdf-trace]   photo field has ${fps.length} photo(s) attached`);
         if (fps.length === 0) {
           doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('No photo attached');
         } else {
-          fps.forEach((p, pi) => {
+          fps.forEach((p) => {
             const maxW = Math.min(pageWidth, 260);
             const maxH = 170;
             ensureSpace(maxH + 20);
             try {
-              const fullPath = path.join(uploadDir, p.stored_name);
-              const fileExists = require('fs').existsSync(fullPath);
-              const fileSize = fileExists ? require('fs').statSync(fullPath).size : -1;
-              console.log(`[pdf-trace]   photo #${pi} file="${p.stored_name}" exists=${fileExists} size=${fileSize} doc.y before=${doc.y.toFixed(1)}`);
-              const actualHeight = drawImageFitted(fullPath, left, doc.y, maxW, maxH);
-              console.log(`[pdf-trace]   photo #${pi} drawn, computed height=${actualHeight.toFixed(1)}`);
-              doc.y += actualHeight;
+              // The cursor position is captured BEFORE drawing and the position
+              // afterward is set explicitly (not read back from doc.y) — some
+              // real-world photos were found to make pdfkit silently move the
+              // cursor during doc.image() itself, which the old code trusted and
+              // which was the actual cause of content overlapping on a single page.
+              const startY = doc.y;
+              const actualHeight = drawImageFitted(path.join(uploadDir, p.stored_name), left, startY, maxW, maxH);
+              doc.y = startY + actualHeight;
               doc.moveDown(0.4);
-              console.log(`[pdf-trace]   after photo #${pi}: doc.y=${doc.y.toFixed(1)}`);
             } catch (e) {
-              console.log(`[pdf-trace]   photo #${pi} FAILED TO LOAD: ${e.message}`);
               doc.fontSize(9).fillColor('#a23a1c').text('(could not load image)');
             }
           });
@@ -136,11 +121,11 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
             const buf = Buffer.from(base64, 'base64');
             const maxW = 200, maxH = 80;
             ensureSpace(maxH + 20);
-            const actualHeight = drawImageFitted(buf, left, doc.y, maxW, maxH);
-            doc.y += actualHeight;
+            const startY = doc.y;
+            const actualHeight = drawImageFitted(buf, left, startY, maxW, maxH);
+            doc.y = startY + actualHeight;
             doc.moveDown(0.2);
           } catch (e) {
-            console.log(`[pdf-trace]   signature FAILED TO RENDER: ${e.message}`);
             doc.fontSize(9).fillColor('#a23a1c').text('(signature could not be rendered)');
           }
         } else {
@@ -154,14 +139,11 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
         const valueHeight = doc.heightOfString(text, { width: pageWidth });
         ensureSpace(valueHeight + 4);
         doc.fillColor('#111').text(text, left, doc.y, { width: pageWidth });
-        console.log(`[pdf-trace]   value type=${typeof value} length=${String(text).length} measured height=${valueHeight.toFixed(1)}`);
       }
       doc.moveDown(0.5);
-      console.log(`[pdf-trace] field "${field.id}" end: doc.y=${doc.y.toFixed(1)}`);
     }
 
     template.sections.forEach((section) => {
-      console.log(`[pdf-trace] === section "${section.id}" start: doc.y=${doc.y.toFixed(1)} ===`);
       doc.fontSize(12).font('Helvetica-Bold');
       const titleHeight = doc.heightOfString(section.title, { width: pageWidth });
       ensureSpace(titleHeight + 10);
