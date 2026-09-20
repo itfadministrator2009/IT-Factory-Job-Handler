@@ -158,7 +158,7 @@ export default function JobDetail() {
             <Pencil size={14} /> Edit details
           </button>
           {isAdmin && (
-            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={handleDeleteJob} disabled={deleting}>
+            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={handleDeleteJob} disabled={deleting}>
               <Trash2 size={14} /> {deleting ? 'Deleting…' : 'Delete job'}
             </button>
           )}
