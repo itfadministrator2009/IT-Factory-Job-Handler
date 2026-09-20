@@ -316,8 +316,29 @@ function notifyProjectEntryComplete({ toEmails, projectName, siteName, entryNumb
   });
 }
 
+// Sent to a tech (or admin) when a project entry — a site visit — is assigned or
+// reassigned to them. Mirrors notifyJobAssigned above for the regular Jobs feature.
+function notifyProjectEntryAssigned({ toEmail, projectName, entryNumber, siteName }) {
+  const siteLine = siteName ? ` — ${siteName}` : '';
+  const html = brandedEmail({
+    title: 'A job has been assigned to you',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>${projectName}</strong> — Entry #${entryNumber}${siteLine} has been assigned to you.
+      </p>
+    `,
+  });
+
+  return sendMail({
+    to: toEmail,
+    subject: `${projectName} — Entry #${entryNumber} assigned to you${siteLine}`,
+    text: `${projectName} — Entry #${entryNumber}${siteLine} has been assigned to you.`,
+    html,
+  });
+}
+
 module.exports = {
   sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete,
-  notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, sendPasswordReset,
-  sendJobSheetEmail, hasSmtp,
+  notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, notifyProjectEntryAssigned,
+  sendPasswordReset, sendJobSheetEmail, hasSmtp,
 };
