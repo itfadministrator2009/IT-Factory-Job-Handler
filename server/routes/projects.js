@@ -170,12 +170,69 @@ router.get('/:id', (req, res) => {
   res.json({ project: withParsedTemplate(project) });
 });
 
+// Before a template update actually removes a question, checks whether any existing
+// entry has a real answer sitting under it — if so, that answer would silently stop
+// appearing anywhere (the entry view, the PDF) the moment the template changes,
+// since both render strictly from the CURRENT template's list of questions. This
+// doesn't block the change; it just tells the caller what's at stake so an admin
+// can decide, rather than finding out by accident later.
+function findAnsweredRemovedFields(oldTemplate, newTemplate, projectId) {
+  const newFieldKeys = new Set();
+  (newTemplate.sections || []).forEach((s) => (s.fields || []).forEach((f) => newFieldKeys.add(`${s.id}::${f.id}`)));
+
+  const removedFields = [];
+  (oldTemplate.sections || []).forEach((s) => {
+    (s.fields || []).forEach((f) => {
+      if (f.type === 'instruction') return; // never holds an answerable value
+      if (!newFieldKeys.has(`${s.id}::${f.id}`)) {
+        removedFields.push({ sectionId: s.id, sectionTitle: s.title, fieldId: f.id, fieldLabel: f.label, fieldType: f.type });
+      }
+    });
+  });
+  if (removedFields.length === 0) return [];
+
+  const entries = db.prepare('SELECT id, answers_json FROM project_entries WHERE project_id = ?').all(projectId);
+  const photosByEntry = new Map();
+  function hasPhotoAnswer(entryId, fieldId) {
+    if (!photosByEntry.has(entryId)) {
+      photosByEntry.set(entryId, db.prepare('SELECT field_id FROM project_entry_photos WHERE entry_id = ?').all(entryId));
+    }
+    return photosByEntry.get(entryId).some((p) => p.field_id === fieldId);
+  }
+
+  function isAnswered(value) {
+    return value !== undefined && value !== null && value !== '';
+  }
+
+  return removedFields.filter(({ sectionId, fieldId, fieldType }) => {
+    return entries.some((entry) => {
+      if (fieldType === 'photo') return hasPhotoAnswer(entry.id, fieldId);
+      const answers = JSON.parse(entry.answers_json || '{}');
+      const sectionAnswers = answers[sectionId];
+      if (Array.isArray(sectionAnswers)) return sectionAnswers.some((instance) => isAnswered(instance?.[fieldId]));
+      return isAnswered(sectionAnswers?.[fieldId]);
+    });
+  });
+}
+
 router.patch('/:id', (req, res) => {
   if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can edit projects' });
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const { name, description, template } = req.body;
+  const { name, description, template, force } = req.body;
+
+  if (template !== undefined && !force) {
+    const oldTemplate = JSON.parse(project.template_json);
+    const answeredRemoved = findAnsweredRemovedFields(oldTemplate, template, req.params.id);
+    if (answeredRemoved.length > 0) {
+      return res.status(409).json({
+        requiresConfirmation: true,
+        warnings: answeredRemoved.map((f) => `"${f.sectionTitle}" → "${f.fieldLabel}"`),
+      });
+    }
+  }
+
   const updates = [];
   const params = [];
   if (name !== undefined) { updates.push('name = ?'); params.push(name); }
@@ -207,20 +264,37 @@ router.get('/:id/entries', (req, res) => {
   const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
   if (!project || !canAccessProject(req, project.id)) return res.status(404).json({ error: 'Project not found' });
 
-  const entries = isAdmin(req.user.id)
-    ? db.prepare('SELECT * FROM project_entries WHERE project_id = ? ORDER BY entry_number DESC').all(req.params.id)
-    : db.prepare('SELECT * FROM project_entries WHERE project_id = ? AND assigned_to = ? ORDER BY entry_number DESC').all(req.params.id, req.user.id);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const offset = (page - 1) * limit;
+
+  const scoped = !isAdmin(req.user.id);
+  const whereClause = scoped ? 'WHERE project_id = ? AND assigned_to = ?' : 'WHERE project_id = ?';
+  const whereParams = scoped ? [req.params.id, req.user.id] : [req.params.id];
+
+  const total = db.prepare(`SELECT COUNT(*) as c FROM project_entries ${whereClause}`).get(...whereParams).c;
+  const entries = db.prepare(`SELECT * FROM project_entries ${whereClause} ORDER BY entry_number DESC LIMIT ? OFFSET ?`).all(...whereParams, limit, offset);
 
   const withNames = entries.map((e) => ({
     ...e,
     answers: JSON.parse(e.answers_json),
     assignee: e.assigned_to ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(e.assigned_to) : null,
   }));
-  res.json({ entries: withNames });
+  res.json({ entries: withNames, total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
 });
 
 // Admin-only: create a new entry with just a site name and who it's assigned to —
 // the assigned person fills in the rest of the form themselves later.
+function userName(userId) {
+  if (!userId) return null;
+  return db.prepare('SELECT name FROM users WHERE id = ?').get(userId)?.name || null;
+}
+
+function logEntryAudit(entryId, field, oldValue, newValue, changedBy) {
+  db.prepare('INSERT INTO project_entry_audit (id, entry_id, field, old_value, new_value, changed_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(uuid(), entryId, field, oldValue ?? null, newValue ?? null, changedBy);
+}
+
 // Notifies whoever a project entry is newly assigned to — fires only when there's
 // an actual new assignee (clearing to unassigned sends nothing), matching the same
 // pattern already used for Jobs. Fire-and-forget with its own .catch, since a mail
@@ -257,6 +331,7 @@ router.post('/:id/entries', (req, res) => {
     .run(id, req.params.id, entryNumber, site_name || null, assigned_to || null, req.user.id);
 
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(id);
+  if (assigned_to) logEntryAudit(id, 'assigned_to', null, userName(assigned_to), req.user.id);
   notifyEntryAssignment(assigned_to, project.name, entry);
   res.status(201).json({ entry: { ...entry, answers: JSON.parse(entry.answers_json) } });
 });
@@ -303,6 +378,9 @@ router.patch('/:id/entries/bulk', (req, res) => {
     if (!entry) return; // silently skip anything not actually in this project
     db.prepare("UPDATE project_entries SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?").run(assigned_to || null, entryId);
     updated++;
+    if ((assigned_to || null) !== entry.assigned_to) {
+      logEntryAudit(entryId, 'assigned_to', userName(entry.assigned_to), userName(assigned_to), req.user.id);
+    }
     if (assigned_to && assigned_to !== entry.assigned_to) {
       notifyEntryAssignment(assigned_to, project.name, entry);
     }
@@ -358,7 +436,9 @@ router.get('/:id/entries/:entryId', (req, res) => {
 
   const photos = db.prepare('SELECT id, field_id, repeat_index, original_name, mime_type, created_at FROM project_entry_photos WHERE entry_id = ?').all(entry.id);
   const assignee = entry.assigned_to ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(entry.assigned_to) : null;
-  res.json({ entry: { ...entry, answers: JSON.parse(entry.answers_json), assignee }, photos });
+  const audit = db.prepare('SELECT * FROM project_entry_audit WHERE entry_id = ? ORDER BY changed_at DESC').all(entry.id)
+    .map((a) => ({ ...a, user: a.changed_by ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(a.changed_by) : null }));
+  res.json({ entry: { ...entry, answers: JSON.parse(entry.answers_json), assignee }, photos, audit });
 });
 
 // Builds the PDF and emails it to the fixed distribution list — shared by the
@@ -410,6 +490,9 @@ router.patch('/:id/entries/:entryId', (req, res) => {
     }
     updates.push('assigned_to = ?');
     params.push(assigned_to || null);
+    if ((assigned_to || null) !== entry.assigned_to) {
+      logEntryAudit(req.params.entryId, 'assigned_to', userName(entry.assigned_to), userName(assigned_to), req.user.id);
+    }
     if (assigned_to && assigned_to !== entry.assigned_to) {
       const project = db.prepare('SELECT name FROM projects WHERE id = ?').get(req.params.id);
       notifyEntryAssignment(assigned_to, project.name, entry);
@@ -425,6 +508,7 @@ router.patch('/:id/entries/:entryId', (req, res) => {
       return res.status(400).json({ error: 'This entry is incomplete', problems });
     }
     updates.push("status = 'Submitted'", "submitted_at = datetime('now')");
+    logEntryAudit(req.params.entryId, 'status', entry.status, 'Submitted', req.user.id);
   }
 
   if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
