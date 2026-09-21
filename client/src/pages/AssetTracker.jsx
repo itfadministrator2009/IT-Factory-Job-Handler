@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 // Columns shown in the main table — a curated subset of the (potentially many)
 // fields, since showing all 24+ as columns would be unusable. Clicking a row opens
 // every field for that asset.
-const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'serial_number', 'customer', 'status'];
+const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'serial_number', 'customer', 'status', 'zoho_ticket_number'];
 
 export default function AssetTracker() {
   const navigate = useNavigate();
@@ -450,5 +450,5 @@ export default function AssetTracker() {
 
 function formatDate(s) {
   const d = new Date(s.replace(' ', 'T') + 'Z');
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
