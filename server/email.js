@@ -337,8 +337,29 @@ function notifyProjectEntryAssigned({ toEmail, projectName, entryNumber, siteNam
   });
 }
 
+// Sent when someone emails a selected batch of asset records as a CSV — used by the
+// Asset Tracker's bulk "Email" action.
+function notifyAssetReport({ toEmails, count, csvBuffer }) {
+  const html = brandedEmail({
+    title: 'Asset report',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        A report of <strong>${count} asset${count === 1 ? '' : 's'}</strong> is attached as a CSV file.
+      </p>
+    `,
+  });
+
+  return sendMail({
+    to: toEmails.join(','),
+    subject: `Asset report — ${count} asset${count === 1 ? '' : 's'}`,
+    text: `A report of ${count} asset${count === 1 ? '' : 's'} is attached as a CSV file.`,
+    html,
+    attachments: [{ filename: `asset-report-${new Date().toISOString().slice(0, 10)}.csv`, content: csvBuffer, contentType: 'text/csv' }],
+  });
+}
+
 module.exports = {
   sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete,
   notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, notifyProjectEntryAssigned,
-  sendPasswordReset, sendJobSheetEmail, hasSmtp,
+  notifyAssetReport, sendPasswordReset, sendJobSheetEmail, hasSmtp,
 };
