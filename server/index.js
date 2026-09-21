@@ -13,6 +13,7 @@ const templateRoutes = require('./routes/templates');
 const reportRoutes = require('./routes/reports');
 const backupRoutes = require('./routes/backup');
 const projectRoutes = require('./routes/projects');
+const assetRoutes = require('./routes/assets');
 const { startBackupScheduler } = require('./backup');
 
 const app = express();
@@ -41,6 +42,7 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/assets', assetRoutes);
 
 const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {
