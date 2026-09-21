@@ -358,7 +358,7 @@ export default function AssetTracker() {
                   )}
                   {SUMMARY_KEYS.map((key) => <td key={key}>{displayValue(a.fields[key])}</td>)}
                   <td style={{ color: 'var(--muted)' }}>{formatDate(a.created_at)}</td>
-                  <td style={{ color: 'var(--muted)' }}>{a.creator?.name || '—'}</td>
+                  <td style={{ color: 'var(--muted)' }}>{a.fields._imported_creator_name || a.creator?.name || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEditForm(a)} title="Edit"><Pencil size={13} /></button>
