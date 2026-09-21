@@ -172,6 +172,21 @@ CREATE TABLE IF NOT EXISTS project_entry_photos (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (entry_id) REFERENCES project_entries(id) ON DELETE CASCADE
 );
+
+-- Who assigned/reassigned/submitted a given entry, and when — the equivalent of
+-- job_audit above, but for project entries. Bulk actions can reassign many entries
+-- at once, so this answers "who did that, and when" after the fact.
+CREATE TABLE IF NOT EXISTS project_entry_audit (
+  id TEXT PRIMARY KEY,
+  entry_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  changed_by TEXT,
+  changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (entry_id) REFERENCES project_entries(id) ON DELETE CASCADE,
+  FOREIGN KEY (changed_by) REFERENCES users(id)
+);
 -- ================= end Projects feature =================
 `);
 
