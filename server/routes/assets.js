@@ -239,12 +239,41 @@ router.post('/import', upload.single('file'), (req, res) => {
   // Returns null if the text can't be parsed as a date at all, rather than
   // guessing — an unparsed date falls back to "now" instead of silently storing
   // something wrong.
+  // Turns a wide range of common date text (e.g. "Mon, Sep 21, 2026 4:28 PM", an
+  // ISO string, "21/09/2026") into the 'YYYY-MM-DD HH:MM:SS' UTC form SQLite and
+  // the rest of this app expect.
+  //
+  // The wall-clock numbers in a historical spreadsheet like this one were written
+  // in Sydney local time — they need to be converted to their UTC equivalent
+  // before storing, or the app's existing "stored value is UTC, convert to the
+  // viewer's local time for display" convention will silently shift every
+  // timestamp by Sydney's UTC offset (10-11 hours, depending on daylight saving),
+  // which is exactly what was pushing evening entries into the next calendar day.
   function parseHistoricalDate(text) {
     if (!text || !text.trim()) return null;
     const d = new Date(text.trim());
     if (isNaN(d.getTime())) return null;
+    // Extracted with local getters, so these are the wall-clock numbers as
+    // written in the source text, independent of the server's own timezone.
+    const wallClock = { y: d.getFullYear(), mo: d.getMonth() + 1, day: d.getDate(), h: d.getHours(), mi: d.getMinutes(), s: d.getSeconds() };
+
+    // Standard "guess, measure, correct" technique for converting a named-zone
+    // wall-clock time to a UTC instant using only built-in Intl (no date library
+    // needed, and it automatically accounts for daylight saving).
+    const guessUtcMs = Date.UTC(wallClock.y, wallClock.mo - 1, wallClock.day, wallClock.h, wallClock.mi, wallClock.s);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Australia/Sydney', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(new Date(guessUtcMs));
+    const get = (type) => parseInt(parts.find((p) => p.type === type).value, 10);
+    const shownHour = get('hour') === 24 ? 0 : get('hour'); // Intl can report midnight as "24"
+    const shownAsUtcMs = Date.UTC(get('year'), get('month') - 1, get('day'), shownHour, get('minute'), get('second'));
+    const wantedMs = Date.UTC(wallClock.y, wallClock.mo - 1, wallClock.day, wallClock.h, wallClock.mi, wallClock.s);
+    const correctedUtcMs = guessUtcMs + (wantedMs - shownAsUtcMs);
+
+    const utc = new Date(correctedUtcMs);
     const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${utc.getUTCFullYear()}-${pad(utc.getUTCMonth() + 1)}-${pad(utc.getUTCDate())} ${pad(utc.getUTCHours())}:${pad(utc.getUTCMinutes())}:${pad(utc.getUTCSeconds())}`;
   }
 
   const headerCells = parseCsvLine(lines[0]).map((h) => h.trim());
