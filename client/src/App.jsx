@@ -17,6 +17,9 @@ import Settings from './pages/Settings';
 import Projects from './pages/Projects';
 import ProjectDetail from './pages/ProjectDetail';
 import ProjectEntryForm from './pages/ProjectEntryForm';
+import AssetTracker from './pages/AssetTracker';
+import AssetReports from './pages/AssetReports';
+import AssetFields from './pages/AssetFields';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -60,6 +63,10 @@ function AppRoutes() {
       <Route path="/projects" element={<RequireAuth><Projects /></RequireAuth>} />
       <Route path="/projects/:id" element={<RequireAuth><ProjectDetail /></RequireAuth>} />
       <Route path="/projects/:id/entries/:entryId" element={<RequireAuth><ProjectEntryForm /></RequireAuth>} />
+
+      <Route path="/assets" element={<RequireAuth><AssetTracker /></RequireAuth>} />
+      <Route path="/assets/reports" element={<RequireAdmin><AssetReports /></RequireAdmin>} />
+      <Route path="/assets/fields" element={<RequireAdmin><AssetFields /></RequireAdmin>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
