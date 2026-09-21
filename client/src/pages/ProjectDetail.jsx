@@ -37,13 +37,25 @@ export default function ProjectDetail() {
   const [emailSending, setEmailSending] = useState(false);
   const [bulkEmailResultMsg, setBulkEmailResultMsg] = useState('');
 
-  function load() {
+  const [entriesPage, setEntriesPage] = useState(1);
+  const [totalEntryPages, setTotalEntryPages] = useState(1);
+
+  function load(page = entriesPage) {
     api.get(`/projects/${id}`).then((res) => setProject(res.data.project)).catch(() => setError('Could not load project'));
-    api.get(`/projects/${id}/entries`).then((res) => setEntries(res.data.entries));
+    api.get(`/projects/${id}/entries`, { params: { page } }).then((res) => {
+      setEntries(res.data.entries);
+      setTotalEntryPages(res.data.totalPages);
+      setEntriesPage(res.data.page);
+    });
   }
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(1); }, [id]);
   useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
   useEffect(() => { setSelected(new Set()); }, [entries?.length === 0]);
+
+  function goToPage(page) {
+    if (page < 1 || page > totalEntryPages) return;
+    load(page);
+  }
 
   async function handleCreateEntry(e) {
     e.preventDefault();
@@ -73,7 +85,7 @@ export default function ProjectDetail() {
     setShowEditForm(true);
   }
 
-  async function handleSaveTemplate() {
+  async function handleSaveTemplate(force) {
     setTemplateError('');
     if (editSections.length === 0) {
       setTemplateError('Add at least one section before saving.');
@@ -85,11 +97,22 @@ export default function ProjectDetail() {
     }
     setSavingTemplate(true);
     try {
-      const { data } = await api.patch(`/projects/${id}`, { template: { sections: editSections } });
+      const { data } = await api.patch(`/projects/${id}`, { template: { sections: editSections }, force });
       setProject(data.project);
       setShowEditForm(false);
     } catch (err) {
-      setTemplateError(err.response?.data?.error || 'Could not save changes');
+      if (err.response?.status === 409 && err.response.data?.requiresConfirmation) {
+        const list = err.response.data.warnings.join('\n');
+        const confirmed = confirm(
+          `Some entries already have answers to questions you're removing:\n\n${list}\n\nThose answers will stay in the database but won't be visible anywhere once you remove these questions. Continue anyway?`
+        );
+        if (confirmed) {
+          await handleSaveTemplate(true);
+          return;
+        }
+      } else {
+        setTemplateError(err.response?.data?.error || 'Could not save changes');
+      }
     } finally {
       setSavingTemplate(false);
     }
@@ -228,7 +251,7 @@ export default function ProjectDetail() {
           {templateError && <div className="error-banner">{templateError}</div>}
           <TemplateBuilder sections={editSections} onChange={setEditSections} />
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button className="btn btn-accent" type="button" onClick={handleSaveTemplate} disabled={savingTemplate}>
+            <button className="btn btn-accent" type="button" onClick={() => handleSaveTemplate(false)} disabled={savingTemplate}>
               {savingTemplate ? 'Saving…' : 'Save changes'}
             </button>
             <button className="btn btn-ghost" type="button" onClick={() => setShowEditForm(false)} disabled={savingTemplate}>
@@ -346,6 +369,17 @@ export default function ProjectDetail() {
               ))}
             </tbody>
           </table>
+        )}
+        {entries && entries.length > 0 && totalEntryPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', padding: '14px 0 4px' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => goToPage(entriesPage - 1)} disabled={entriesPage <= 1}>
+              Previous
+            </button>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>Page {entriesPage} of {totalEntryPages}</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => goToPage(entriesPage + 1)} disabled={entriesPage >= totalEntryPages}>
+              Next
+            </button>
+          </div>
         )}
       </div>
 
