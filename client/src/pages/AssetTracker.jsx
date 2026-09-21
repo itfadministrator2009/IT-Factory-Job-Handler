@@ -221,7 +221,7 @@ export default function AssetTracker() {
     if (field.type === 'multiselect') {
       const selectedVals = Array.isArray(value) ? value : [];
       return (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, border: '1px solid var(--line)', borderRadius: 8, padding: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '6px 12px', border: '1px solid var(--line)', borderRadius: 8, padding: 10, maxHeight: 220, overflowY: 'auto' }}>
           {field.options?.map((o) => (
             <label key={o} className="checkbox-label" style={{ fontSize: 12 }}>
               <input
@@ -385,7 +385,7 @@ export default function AssetTracker() {
 
       {showForm && fieldDefs && (
         <div className="modal-overlay" onClick={() => !saving && setShowForm(false)}>
-          <div className="modal-card sign-off-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="modal-card sign-off-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1100, width: '95vw', height: '92vh' }}>
             <div className="modal-header">
               <h3>{editingAsset ? 'Edit asset' : 'Add asset'}</h3>
               {!saving && <button type="button" onClick={() => setShowForm(false)}><X size={18} /></button>}
@@ -394,7 +394,7 @@ export default function AssetTracker() {
             <form onSubmit={handleSaveAsset} className="sign-off-scroll">
               <div className="form-grid">
                 {fieldDefs.map((f) => (
-                  <div className="field" key={f.field_key}>
+                  <div className={'field' + ((f.type === 'multiselect' || f.type === 'textarea') ? ' span-2' : '')} key={f.field_key}>
                     <label>{f.label}</label>
                     {renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}
                   </div>
