@@ -1,10 +1,12 @@
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban, Boxes } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const isAdmin = user?.role === 'admin' || user?.role === 'agent';
+  const onAssetsSection = location.pathname.startsWith('/assets');
 
   return (
     <div className="app-shell">
@@ -30,6 +32,26 @@ export default function Layout({ children }) {
           <NavLink to="/projects" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
             <FolderKanban size={16} /> Projects
           </NavLink>
+          <NavLink to="/assets" end className={() => 'sidebar-link' + (onAssetsSection ? ' active' : '')}>
+            <Boxes size={16} /> ITF Asset Tracker
+          </NavLink>
+          {onAssetsSection && (
+            <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
+              <NavLink to="/assets" end className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                All Assets
+              </NavLink>
+              {isAdmin && (
+                <NavLink to="/assets/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                  Reports
+                </NavLink>
+              )}
+              {isAdmin && (
+                <NavLink to="/assets/fields" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                  Manage Fields
+                </NavLink>
+              )}
+            </div>
+          )}
           {isAdmin && (
             <NavLink to="/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
               <BarChart3 size={16} /> Reports
