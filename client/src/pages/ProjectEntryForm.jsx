@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import SignaturePadLib from 'signature_pad';
-import { CheckCircle2, Camera, Trash2, Plus, FileText, Mail, X } from 'lucide-react';
+import { CheckCircle2, Camera, Trash2, Plus, FileText, Mail, X, History } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +35,7 @@ export default function ProjectEntryForm() {
   const [project, setProject] = useState(null);
   const [entry, setEntry] = useState(null);
   const [photos, setPhotos] = useState([]);
+  const [audit, setAudit] = useState([]);
   const [answers, setAnswers] = useState(null);
   const [saveState, setSaveState] = useState(''); // '', 'saving', 'saved'
   const [problems, setProblems] = useState([]);
@@ -58,6 +59,7 @@ export default function ProjectEntryForm() {
       setEntry(res.data.entry);
       setAnswers(res.data.entry.answers || {});
       setPhotos(res.data.photos);
+      setAudit(res.data.audit || []);
     });
   }, [id, entryId]);
 
@@ -286,6 +288,23 @@ export default function ProjectEntryForm() {
             </div>
           )}
         </div>
+      )}
+
+      {audit.length > 0 && (
+        <details style={{ marginBottom: 16 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <History size={13} /> History ({audit.length})
+          </summary>
+          <div className="panel side-block" style={{ marginTop: 8 }}>
+            {audit.map((a) => (
+              <div key={a.id} className="audit-item">
+                <strong>{a.user?.name || 'System'}</strong> changed {fieldLabel(a.field)} from{' '}
+                <strong>{a.old_value || '—'}</strong> to <strong>{a.new_value || '—'}</strong>
+                <div>{formatDateTime(a.changed_at)}</div>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {problems.length > 0 && (
@@ -592,4 +611,13 @@ function SignatureField({ value, onSave }) {
       </div>
     </div>
   );
+}
+
+function formatDateTime(s) {
+  const d = new Date(s.replace(' ', 'T') + 'Z');
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function fieldLabel(field) {
+  return field === 'assigned_to' ? 'assigned to' : field;
 }
