@@ -880,3 +880,13 @@ input, select, textarea {
     display: none;
   }
 }
+
+/* ---------- Print (Asset Tracker's Print button) ---------- */
+@media print {
+  .sidebar, .page-header button, .btn, .bulk-toolbar, .back-link,
+  .success-banner button, .error-banner, form { display: none !important; }
+  .app-shell { display: block; }
+  .main { padding: 0; }
+  .panel { border: none; }
+  .ticket-table th, .ticket-table td { padding: 6px 8px; font-size: 12px; }
+}
