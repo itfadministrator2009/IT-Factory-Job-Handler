@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const { randomUUID } = require('crypto');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
 const db = new Database(DB_PATH);
@@ -188,7 +189,85 @@ CREATE TABLE IF NOT EXISTS project_entry_audit (
   FOREIGN KEY (changed_by) REFERENCES users(id)
 );
 -- ================= end Projects feature =================
+
+-- ================= Asset Tracker feature =================
+-- Field definitions are data, not schema — this is what lets an admin "add a
+-- field" or edit a dropdown's options from the UI without ever touching the
+-- database. Every asset's actual values live in assets.fields_json, keyed by
+-- field_key, exactly like project_entries.answers_json does for Projects.
+CREATE TABLE IF NOT EXISTS asset_field_defs (
+  id TEXT PRIMARY KEY,
+  field_key TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'text', -- text | textarea | number | date | dropdown | multiselect
+  options_json TEXT, -- JSON array of strings — only meaningful for dropdown/multiselect
+  is_core INTEGER NOT NULL DEFAULT 0, -- core fields ship built-in; their options can still be edited, but the field itself can't be deleted
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS assets (
+  id TEXT PRIMARY KEY,
+  fields_json TEXT NOT NULL DEFAULT '{}',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_assets_created_at ON assets(created_at);
+
+CREATE TABLE IF NOT EXISTS asset_audit (
+  id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  changed_by TEXT,
+  changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+  FOREIGN KEY (changed_by) REFERENCES users(id)
+);
+-- ================= end Asset Tracker feature =================
 `);
+
+// Seeds the built-in Asset Tracker fields once, matching the columns and dropdown
+// values actually used in IT Factory's existing asset register — so the tracker is
+// immediately usable with the categories and conditions already in real use, while
+// still letting an admin add more fields or options later.
+function seedAssetFieldDefs() {
+  const count = db.prepare('SELECT COUNT(*) as c FROM asset_field_defs').get().c;
+  if (count > 0) return;
+  const opts = (arr) => JSON.stringify(arr);
+  const fields = [
+    ['asset_tag', 'Asset Tag', 'text', null],
+    ['category', 'Category', 'dropdown', opts(['AIO', 'Desktop', 'Docking Station', 'Hard Drive', 'Keyboard', 'Laptop', 'Miscellaneous Equipment', 'Mobile Phone', 'Monitor', 'Mouse', 'Network', 'Printer', 'Tablet', 'UPS'])],
+    ['manufacturer', 'Manufacturer', 'dropdown', opts(['APC', 'Acer', 'Apple', 'Cisco', 'Dell', 'Epson', 'HP', 'LG', 'Lenovo', 'Microsoft', 'Mixed', 'Nokia', 'Oppo', 'Targus', 'Toshiba', 'WD', 'Zebra'])],
+    ['model_name', 'Model Name', 'text', null],
+    ['model_number', 'Model Number', 'text', null],
+    ['serial_number', 'Serial Number', 'text', null],
+    ['client_asset_tag', 'Client Asset Tag', 'text', null],
+    ['ram', 'Ram', 'text', null],
+    ['cpu_speed', 'CPU Speed', 'text', null],
+    ['cpu_gen', 'CPU Gen', 'text', null],
+    ['hdd', 'HDD', 'text', null],
+    ['battery', 'Battery', 'dropdown', opts(['Yes', 'No'])],
+    ['condition_appearance', 'Condition Appearance', 'multiselect', opts(['Ok', 'Bezel-Dents', 'Brand New - Open Box', 'Broken Latch', 'Cracked Front Bezel', 'Damaged Casing', 'Damaged Casing Major', 'Damaged Hinge', 'Detached Screen - Broken', 'Faulty Backlight', 'Light Screen Scratches', 'Minor Screen Scratch', 'Missing Cover', 'Missing Rubber Feet', 'Scratched Screen ( Minor)', 'Screen Bubbles', 'Screen-Cracks', 'Screen-Damaged Glass', 'Screen-Moderate Scratches', 'Swollen Battery'])],
+    ['condition_completeness', 'Condition Completeness', 'multiselect', opts(['Ok', 'Missing Battery', 'Missing HDD', 'Missing Power Adapter', 'Missing RAM', 'Missing Stand'])],
+    ['condition_operability', 'Condition Operability', 'multiselect', opts(['Ok', 'BIOS Password', 'Bios Password Removed', 'Cracked Screen', 'Faulty HDD - Not Detected', 'Faulty Screen Lines', 'Faulty Screen No Display', 'Google Locked', 'Looping on Apple Logo', 'Noisey Fan', 'Not Booting', 'Not Powering up', 'Not Tested', 'Screen Dark Spots', 'Screen Dim'])],
+    ['condition_services', 'Condition Services', 'multiselect', opts(['Ok', 'Blancco Failed', 'Blancco Wiped', 'E-Waste', 'Factory Reset', 'HDD Shredded', 'Lazesoft Wiped', 'Power Washed'])],
+    ['asset_upgrade', 'Asset Upgrade', 'text', null],
+    ['asset_sent_to', 'Asset Sent To', 'dropdown', opts(['E-Waste', 'ITF Australia', 'Return to Client', 'Wholesale'])],
+    ['customer', 'Customer', 'text', null],
+    ['zoho_ticket_number', 'Zoho Ticket Number', 'text', null],
+    ['audit_month', 'Audit Month', 'text', null],
+    ['comments', 'Comments', 'textarea', null],
+    ['status', 'Status', 'dropdown', opts(['Available', 'Sold'])],
+    ['buyer', 'Buyer', 'text', null],
+  ];
+  const insert = db.prepare('INSERT INTO asset_field_defs (id, field_key, label, type, options_json, is_core, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?)');
+  fields.forEach(([key, label, type, options], idx) => insert.run(randomUUID(), key, label, type, options, idx));
+}
+seedAssetFieldDefs();
 
 function addColumnIfMissing(table, column, definition) {
   try {
