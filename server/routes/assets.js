@@ -234,15 +234,33 @@ router.post('/import', upload.single('file'), (req, res) => {
     return cells;
   }
 
+  // Turns a wide range of common date text (e.g. "Mon, Sep 21, 2026 4:28 PM", an
+  // ISO string, "21/09/2026") into the 'YYYY-MM-DD HH:MM:SS' form SQLite expects.
+  // Returns null if the text can't be parsed as a date at all, rather than
+  // guessing — an unparsed date falls back to "now" instead of silently storing
+  // something wrong.
+  function parseHistoricalDate(text) {
+    if (!text || !text.trim()) return null;
+    const d = new Date(text.trim());
+    if (isNaN(d.getTime())) return null;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
   const headerCells = parseCsvLine(lines[0]).map((h) => h.trim());
   const defs = getFieldDefs();
   const labelToKey = new Map(defs.map((f) => [f.label.toLowerCase(), f.field_key]));
+  const dateCreatedIdx = headerCells.findIndex((h) => h.toLowerCase() === 'date created');
+  const userNameIdx = headerCells.findIndex((h) => h.toLowerCase() === 'user name');
+  const allUsers = db.prepare('SELECT id, name FROM users').all();
+  const userByName = new Map(allUsers.map((u) => [u.name.trim().toLowerCase(), u.id]));
 
   let created = 0;
   const skippedColumns = [];
   headerCells.forEach((h) => { if (!labelToKey.has(h.toLowerCase()) && h !== 'Date Created' && h !== 'User Name') skippedColumns.push(h); });
 
-  const insert = db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)');
+  const insertWithDate = db.prepare('INSERT INTO assets (id, fields_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
+  const insertDefault = db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)');
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
     const fields = {};
@@ -253,8 +271,27 @@ router.post('/import', upload.single('file'), (req, res) => {
         fields[key] = def?.type === 'multiselect' ? cells[idx].split(',').map((s) => s.trim()).filter(Boolean) : cells[idx];
       }
     });
+
+    // A name in the sheet that doesn't match any real Work Desk account (very
+    // likely for a bulk historical import) is kept as plain text on the record
+    // itself, under a key no real field uses — so "who entered this" survives for
+    // reporting even without a matching user account.
+    let createdBy = req.user.id;
+    if (userNameIdx >= 0 && cells[userNameIdx]) {
+      const rawName = cells[userNameIdx].trim();
+      const matchedId = userByName.get(rawName.toLowerCase());
+      if (matchedId) createdBy = matchedId;
+      else if (rawName) fields._imported_creator_name = rawName;
+    }
+
     if (Object.keys(fields).length === 0) continue;
-    insert.run(randomUUID(), JSON.stringify(fields), req.user.id);
+
+    const historicalDate = dateCreatedIdx >= 0 ? parseHistoricalDate(cells[dateCreatedIdx]) : null;
+    if (historicalDate) {
+      insertWithDate.run(randomUUID(), JSON.stringify(fields), createdBy, historicalDate, historicalDate);
+    } else {
+      insertDefault.run(randomUUID(), JSON.stringify(fields), createdBy);
+    }
     created++;
   }
 
@@ -266,10 +303,14 @@ router.get('/reports/summary', (req, res) => {
 
   const total = db.prepare('SELECT COUNT(*) as c FROM assets').get().c;
 
+  // Grouped by the imported name text when present (so 60 historical rows entered
+  // by "Ian" show up as Ian's own bucket, not lumped under whichever admin actually
+  // ran the import), falling back to the real account otherwise.
   const byTech = db.prepare(`
-    SELECT u.name as name, COUNT(*) as count
+    SELECT COALESCE(json_extract(a.fields_json, '$._imported_creator_name'), u.name) as name, COUNT(*) as count
     FROM assets a LEFT JOIN users u ON u.id = a.created_by
-    GROUP BY a.created_by ORDER BY count DESC
+    GROUP BY COALESCE(json_extract(a.fields_json, '$._imported_creator_name'), a.created_by)
+    ORDER BY count DESC
   `).all().map((r) => ({ name: r.name || 'Unassigned', count: r.count }));
 
   const byMonth = db.prepare(`
