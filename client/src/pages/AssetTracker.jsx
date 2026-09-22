@@ -116,6 +116,11 @@ export default function AssetTracker() {
     else setSelected(new Set(assets.map((a) => a.id)));
   }
 
+  async function handleSelectAllMatching() {
+    const { data } = await api.get('/assets/all-ids', { params: { q: query } });
+    setSelected(new Set(data.ids));
+  }
+
   async function handleBulkDelete() {
     if (!confirm(`Delete ${selected.size} selected ${selected.size === 1 ? 'asset' : 'assets'}?`)) return;
     setBulkApplying(true);
@@ -300,6 +305,15 @@ export default function AssetTracker() {
         <div className="success-banner" style={{ marginBottom: 16 }}>
           <span>{emailResultMsg}</span>
           <button type="button" onClick={() => setEmailResultMsg('')}><X size={15} /></button>
+        </div>
+      )}
+
+      {isAdmin && selected.size > 0 && selected.size === assets?.length && total > assets.length && (
+        <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--muted)' }}>
+          All {assets.length} on this page are selected.{' '}
+          <button type="button" onClick={handleSelectAllMatching} style={{ background: 'none', border: 'none', color: 'var(--teal)', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>
+            Select all {total} matching assets
+          </button>
         </div>
       )}
 
