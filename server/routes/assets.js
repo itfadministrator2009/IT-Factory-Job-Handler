@@ -115,6 +115,17 @@ router.get('/', (req, res) => {
   res.json({ assets: rows.map(withParsedFields), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
 });
 
+// Lightweight (ids only, no field data) — lets "Select all N matching assets" grab
+// every id across every page for bulk actions, without pulling full records for
+// however many hundreds of assets that might be.
+router.get('/all-ids', (req, res) => {
+  const q = (req.query.q || '').trim();
+  const where = q ? 'WHERE fields_json LIKE ?' : '';
+  const whereParams = q ? [`%${q}%`] : [];
+  const rows = db.prepare(`SELECT id FROM assets ${where} ORDER BY created_at DESC`).all(...whereParams);
+  res.json({ ids: rows.map((r) => r.id) });
+});
+
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
