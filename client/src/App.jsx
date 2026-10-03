@@ -24,6 +24,8 @@ import StorageManifest from './pages/StorageManifest';
 import StoragePallets from './pages/StoragePallets';
 import StorageClients from './pages/StorageClients';
 import StorageOrders from './pages/StorageOrders';
+import StorageReceiving from './pages/StorageReceiving';
+import StorageReports from './pages/StorageReports';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -76,6 +78,8 @@ function AppRoutes() {
       <Route path="/storage/pallets" element={<RequireAuth><StoragePallets /></RequireAuth>} />
       <Route path="/storage/clients" element={<RequireAuth><StorageClients /></RequireAuth>} />
       <Route path="/storage/orders" element={<RequireAuth><StorageOrders /></RequireAuth>} />
+      <Route path="/storage/receiving" element={<RequireAuth><StorageReceiving /></RequireAuth>} />
+      <Route path="/storage/reports" element={<RequireAdmin><StorageReports /></RequireAdmin>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
