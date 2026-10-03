@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, KeyRound, Search, FileText, X, Plus } from 'lucide-react';
+import { LogOut, KeyRound, Search, FileText, X, Plus, Download, Printer } from 'lucide-react';
 import portalApi, { clearPortalSession, getPortalClient } from '../portal/portalApi';
 import { openPdf } from '../utils/pdf';
 
@@ -28,66 +28,122 @@ function StatusPill({ status }) {
   return <span className="pill" style={{ background: bg, color: fg }}>{status}</span>;
 }
 
-function deviceLabel(i) {
-  return [i.serial || i.assetTag, [i.make, i.model].filter(Boolean).join(' ') || i.item, i.location && `(${i.location})`].filter(Boolean).join(' — ');
+function downloadCsv(filename, rows) {
+  const cell = (v) => {
+    const t = v == null ? '' : String(v);
+    return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const csv = '\ufeff' + rows.map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------
+// "Natural" order so "Pallet 2" sorts before "Pallet 10", like the old portal.
+const naturalCompare = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+
+function ItemStatus({ status }) {
+  if (!status) return null;
+  const inStorage = status === 'In storage';
+  return (
+    <span style={{ background: inStorage ? '#DDEEFB' : '#E1F0E6', color: inStorage ? '#2C6FA8' : '#2F7A44', padding: '3px 9px', borderRadius: 5, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {status}
+    </span>
+  );
+}
+
 function StockTab() {
   const [items, setItems] = useState(null);
-  const [includeAll, setIncludeAll] = useState(false);
+  const [onlyInStorage, setOnlyInStorage] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setItems(null);
-    portalApi.get('/items', { params: includeAll ? { include: 'all' } : {} })
+    portalApi.get('/items')
       .then((res) => setItems(res.data.items))
       .catch((err) => setError(err.response?.data?.error || 'Could not load your stock'));
-  }, [includeAll]);
+  }, []);
 
+  // Same searchable fields as the old portal.
   const visible = useMemo(() => {
     if (!items) return null;
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((i) => [i.item, i.make, i.model, i.serial, i.assetTag, i.location, i.storageCentre, i.poNumber, i.referenceNumber, i.jobNumber]
-      .some((v) => String(v || '').toLowerCase().includes(q)));
-  }, [items, query]);
+    return items.filter((i) => {
+      if (onlyInStorage && i.status !== 'In storage') return false;
+      if (!q) return true;
+      return [i.item, i.make, i.model, i.serial, i.assetTag, i.poNumber, i.orderNumber, i.storageCentre, i.location, i.condition, dmy(i.startDate)]
+        .join(' ').toLowerCase().includes(q);
+    });
+  }, [items, query, onlyInStorage]);
+
+  // Count by item type (quantities summed), as the old portal's chips showed.
+  const breakdown = useMemo(() => {
+    const counts = {};
+    (visible || []).forEach((i) => {
+      const k = i.item || '(no item type)';
+      counts[k] = (counts[k] || 0) + (Number(i.quantity) || 1);
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [visible]);
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 420 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: 460 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search serial, model, location, PO…" style={{ paddingLeft: 30, width: '100%' }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search item, make, model, serial, asset tag, PO, order, location…" style={{ paddingLeft: 30, width: '100%' }} />
         </div>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
-          <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} /> Include items that have left storage
+          <input type="checkbox" checked={onlyInStorage} onChange={(e) => setOnlyInStorage(e.target.checked)} /> Only items in storage
         </label>
-        <span style={{ fontSize: 13, color: 'var(--muted)', marginLeft: 'auto' }}>{visible ? `${visible.length} item${visible.length === 1 ? '' : 's'}` : ''}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!visible || visible.length === 0}
+            onClick={() => downloadCsv('storage-items.csv', [
+              ['Item', 'Make', 'Model', 'Serial', 'Asset Tag', 'PO Number', 'Order Number', 'Storage centre', 'Location', 'Qty', 'Condition', 'Status', 'Start', 'End'],
+              ...visible.map((i) => [i.item, i.make, i.model, i.serial, i.assetTag, i.poNumber, i.orderNumber, i.storageCentre, i.location, i.quantity, i.condition, i.status, dmy(i.startDate), dmy(i.endDate)]),
+            ])}>
+            <Download size={14} /> Export CSV
+          </button>
+        </div>
       </div>
+      {breakdown.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+          {breakdown.map(([k, n]) => (
+            <span key={k} style={{ background: 'var(--surface, #fff)', border: '1px solid var(--line, #e3e1d9)', borderRadius: 999, padding: '3px 10px', fontSize: 12 }}>
+              {k}: <strong>{n}</strong>
+            </span>
+          ))}
+        </div>
+      )}
       {error && <div className="error-banner">{error}</div>}
       <div className="panel" style={{ padding: 0 }}>
         {!visible ? <div className="empty-state">Loading…</div> : visible.length === 0 ? (
-          <div className="empty-state"><h3>No items{query ? ' match your search' : ' in storage'}</h3></div>
+          <div className="empty-state"><h3>No items match</h3></div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table className="ticket-table">
-              <thead><tr><th>Item</th><th>Make / model</th><th>Serial</th><th>Asset tag</th><th>Qty</th><th>Condition</th><th>Storage centre</th><th>Location</th><th>PO</th><th>In</th>{includeAll && <th>Out</th>}</tr></thead>
+              <thead><tr><th>Item</th><th>Make</th><th>Model</th><th>Serial</th><th>Asset Tag</th><th>PO #</th><th>Order #</th><th>Storage centre</th><th>Location</th><th>Qty</th><th>Condition</th><th>Status</th><th>Start</th><th>End</th></tr></thead>
               <tbody>
                 {visible.map((i) => (
                   <tr key={i.id}>
                     <td>{i.item}</td>
-                    <td>{[i.make, i.model].filter(Boolean).join(' ')}</td>
+                    <td>{i.make}</td>
+                    <td>{i.model}</td>
                     <td style={{ fontFamily: 'var(--font-mono, monospace)' }}>{i.serial}</td>
                     <td>{i.assetTag}</td>
-                    <td>{i.quantity}</td>
-                    <td>{i.condition}</td>
+                    <td>{i.poNumber}</td>
+                    <td>{i.orderNumber}</td>
                     <td>{i.storageCentre}</td>
                     <td>{i.location}</td>
-                    <td>{i.poNumber}</td>
+                    <td>{i.quantity}</td>
+                    <td>{i.condition}</td>
+                    <td><ItemStatus status={i.status} /></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(i.startDate)}</td>
-                    {includeAll && <td style={{ whiteSpace: 'nowrap' }}>{dmy(i.endDate)}</td>}
+                    <td style={{ whiteSpace: 'nowrap' }}>{dmy(i.endDate) || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -98,6 +154,7 @@ function StockTab() {
     </>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 function OrdersTab({ refreshKey }) {
@@ -146,53 +203,75 @@ function OrdersTab({ refreshKey }) {
 }
 
 // ---------------------------------------------------------------------------
-const EMPTY_ORDER = { requestedBy: '', deliveryAddress: '', siteContactName: '', siteContactPhone: '', dateToBeDelivered: '', devices: '', configInformation: '', notes: '' };
+const EMPTY_ORDER = { requestedBy: '', deliveryAddress: '', siteContactName: '', siteContactPhone: '', dateToBeDelivered: '', configInformation: '', notes: '' };
 
+function deviceLabel(i) {
+  return `${i.item || 'Item'} — ${[i.make, i.model].filter(Boolean).join(' ')}${i.serial ? ` (S/N ${i.serial})` : ''}`;
+}
+
+// Like the old portal: only devices currently in storage can be ordered; those
+// on a location classified as a pallet are grouped by pallet with a "select
+// the whole pallet" box, and everything else is listed underneath.
 function NewOrderTab({ onSubmitted }) {
   const [form, setForm] = useState(EMPTY_ORDER);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
-  const [pickQuery, setPickQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
 
-  useEffect(() => { portalApi.get('/items').then((res) => setItems(res.data.items)).catch(() => {}); }, []);
+  function loadItems() {
+    portalApi.get('/items').then((res) => setItems(res.data.items.filter((i) => i.status === 'In storage'))).catch(() => setItems([]));
+  }
+  useEffect(() => { loadItems(); }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const pickable = useMemo(() => {
-    const q = pickQuery.trim().toLowerCase();
-    return items.filter((i) => !q || deviceLabel(i).toLowerCase().includes(q)).slice(0, 200);
-  }, [items, pickQuery]);
+  const deviceTypes = useMemo(() => [...new Set((items || []).map((i) => i.item).filter(Boolean))].sort(naturalCompare), [items]);
 
-  function togglePick(i) {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(i.id)) next.delete(i.id); else next.add(i.id);
-      return next;
+  const matches = (i) => {
+    if (typeFilter && (i.item || '').toLowerCase() !== typeFilter) return false;
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [i.item, i.make, i.model, i.serial].filter(Boolean).join(' ').toLowerCase().includes(q);
+  };
+
+  const { palletGroups, loose } = useMemo(() => {
+    const groups = {};
+    const rest = [];
+    (items || []).forEach((i) => {
+      if (i.onPallet) {
+        const key = `${i.storageCentre || ''}|||${i.location}`;
+        if (!groups[key]) groups[key] = { key, label: i.location, items: [] };
+        groups[key].items.push(i);
+      } else rest.push(i);
     });
-  }
+    return { palletGroups: Object.values(groups).sort((a, b) => naturalCompare(a.label, b.label)), loose: rest };
+  }, [items]);
 
-  function devicesText() {
-    const fromPicker = items.filter((i) => picked.has(i.id)).map(deviceLabel);
-    return [...fromPicker, form.devices.trim()].filter(Boolean).join('\n');
+  function toggle(id) {
+    setPicked((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleGroup(group, on) {
+    setPicked((prev) => { const n = new Set(prev); group.items.forEach((i) => (on ? n.add(i.id) : n.delete(i.id))); return n; });
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    const devices = devicesText();
-    if (!devices) { setError('Pick devices from your stock or type what you need.'); return; }
+    if (picked.size === 0) { setError('Select at least one device before submitting.'); return; }
     setSaving(true);
     try {
-      const { data } = await portalApi.post('/orders', { ...form, devices });
+      const { data } = await portalApi.post('/orders', { ...form, deviceIds: [...picked] });
       setDone(data.order);
       setForm(EMPTY_ORDER);
       setPicked(new Set());
       onSubmitted();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not submit the order');
+      if (err.response?.status === 400) loadItems();
     } finally {
       setSaving(false);
     }
@@ -203,48 +282,73 @@ function NewOrderTab({ onSubmitted }) {
       <div className="panel">
         <h3 style={{ marginBottom: 6 }}>Order {done.orderNumber} submitted</h3>
         <p style={{ color: 'var(--muted)', marginBottom: 16 }}>Thanks — the IT Factory team has your request and will be in touch. You can follow its status under Orders.</p>
-        <button type="button" className="btn btn-accent" onClick={() => setDone(null)}><Plus size={16} /> Another order</button>
+        <button type="button" className="btn btn-accent" onClick={() => { setDone(null); loadItems(); }}><Plus size={16} /> Another order</button>
       </div>
     );
   }
 
+  const deviceRow = (i) => (
+    <label key={i.id} style={{ display: matches(i) ? 'flex' : 'none', gap: 8, alignItems: 'center', padding: '4px 8px', fontSize: 13, cursor: 'pointer' }}>
+      <input type="checkbox" checked={picked.has(i.id)} onChange={() => toggle(i.id)} />
+      <span>{deviceLabel(i)}</span>
+    </label>
+  );
+
   return (
     <form onSubmit={handleSubmit} className="panel">
       {error && <div className="error-banner">{error}</div>}
-      <div className="form-grid">
-        <div className="field"><label>Your name</label><input value={form.requestedBy} onChange={set('requestedBy')} maxLength={200} /></div>
-        <div className="field"><label>Deliver by</label><input type="date" value={form.dateToBeDelivered} onChange={set('dateToBeDelivered')} /></div>
-        <div className="field span-2"><label>Delivery address *</label><input value={form.deliveryAddress} onChange={set('deliveryAddress')} required maxLength={500} /></div>
-        <div className="field"><label>Site contact</label><input value={form.siteContactName} onChange={set('siteContactName')} maxLength={200} /></div>
-        <div className="field"><label>Site contact phone</label><input value={form.siteContactPhone} onChange={set('siteContactPhone')} maxLength={60} /></div>
+      <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Select devices for this order</h3>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div className="field" style={{ margin: 0, minWidth: 200 }}>
+          <label>Filter by device type</label>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <option value="">All types</option>
+            {deviceTypes.map((t) => <option key={t} value={t.toLowerCase()}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ margin: 0, flex: '1 1 240px' }}>
+          <label>Search</label>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by make, model, or serial…" />
+        </div>
       </div>
-
-      <h3 style={{ margin: '20px 0 8px', fontSize: 15 }}>Devices</h3>
-      {items.length > 0 && (
-        <>
-          <div style={{ position: 'relative', maxWidth: 420, marginBottom: 8 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
-            <input value={pickQuery} onChange={(e) => setPickQuery(e.target.value)} placeholder="Find in your stock…" style={{ paddingLeft: 30, width: '100%' }} />
-          </div>
-          <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--line, #ddd)', borderRadius: 6, padding: 6, marginBottom: 8 }}>
-            {pickable.map((i) => (
-              <label key={i.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 6px', fontSize: 13, cursor: 'pointer' }}>
-                <input type="checkbox" checked={picked.has(i.id)} onChange={() => togglePick(i)} />
-                <span>{deviceLabel(i)}</span>
-              </label>
-            ))}
-            {pickable.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)', padding: 6 }}>Nothing matches.</div>}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{picked.size} selected</div>
-        </>
-      )}
-      <div className="field"><label>{items.length ? 'Anything else (one per line)' : 'Devices needed (one per line) *'}</label>
-        <textarea rows={4} value={form.devices} onChange={set('devices')} placeholder="e.g. 5 x Dell OptiPlex 7010, or serial numbers" />
+      <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--line, #ddd)', borderRadius: 6, padding: 6, marginBottom: 6 }}>
+        {!items ? <div style={{ padding: 8, color: 'var(--muted)' }}>Loading…</div> : items.length === 0 ? (
+          <div style={{ padding: 8, color: 'var(--muted)' }}>No devices currently in storage.</div>
+        ) : (
+          <>
+            {palletGroups.map((g) => {
+              const visibleItems = g.items.filter(matches);
+              if (!visibleItems.length) return null;
+              const n = g.items.filter((i) => picked.has(i.id)).length;
+              return (
+                <div key={g.key} style={{ marginBottom: 6, border: '1px solid var(--line, #eee)', borderRadius: 6 }}>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', fontWeight: 600, fontSize: 13, background: 'var(--bg, #f6f5f1)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={n === g.items.length}
+                      ref={(el) => { if (el) el.indeterminate = n > 0 && n < g.items.length; }}
+                      onChange={(e) => toggleGroup(g, e.target.checked)} />
+                    Pallet: {g.label} ({g.items.length} item{g.items.length === 1 ? '' : 's'})
+                  </label>
+                  {g.items.map(deviceRow)}
+                </div>
+              );
+            })}
+            {loose.some(matches) && palletGroups.length > 0 && (
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', padding: '8px 8px 2px' }}>Not on a pallet</div>
+            )}
+            {loose.map(deviceRow)}
+          </>
+        )}
       </div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>{picked.size} selected</div>
 
       <div className="form-grid">
-        <div className="field span-2"><label>Configuration / imaging requirements</label><textarea rows={2} value={form.configInformation} onChange={set('configInformation')} maxLength={4000} /></div>
-        <div className="field span-2"><label>Notes</label><textarea rows={2} value={form.notes} onChange={set('notes')} maxLength={4000} /></div>
+        <div className="field span-2"><label>Delivery address *</label><textarea rows={2} value={form.deliveryAddress} onChange={set('deliveryAddress')} required maxLength={500} placeholder="Where should these devices be sent?" /></div>
+        <div className="field"><label>Site contact name</label><input value={form.siteContactName} onChange={set('siteContactName')} maxLength={200} /></div>
+        <div className="field"><label>Site contact phone</label><input type="tel" value={form.siteContactPhone} onChange={set('siteContactPhone')} maxLength={60} /></div>
+        <div className="field"><label>Date to be delivered</label><input type="date" value={form.dateToBeDelivered} onChange={set('dateToBeDelivered')} /></div>
+        <div className="field"><label>Requestor</label><input value={form.requestedBy} onChange={set('requestedBy')} maxLength={200} placeholder="Name of the person placing this order" /></div>
+        <div className="field span-2"><label>Configuration information</label><textarea rows={2} value={form.configInformation} onChange={set('configInformation')} maxLength={4000} placeholder="Any setup, imaging, or configuration instructions" /></div>
+        <div className="field span-2"><label>Additional notes</label><textarea rows={2} value={form.notes} onChange={set('notes')} maxLength={4000} placeholder="Anything else IT Factory should know" /></div>
       </div>
       <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 12 }}>{saving ? 'Submitting…' : 'Submit order'}</button>
     </form>
@@ -342,10 +446,12 @@ export default function Portal() {
   const [tab, setTab] = useState('stock');
   const [ordersKey, setOrdersKey] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
+  const [counts, setCounts] = useState(null);
 
   useEffect(() => {
     portalApi.get('/me').then((res) => setClient(res.data.client)).catch(() => {});
-  }, []);
+    portalApi.get('/summary').then((res) => setCounts(res.data)).catch(() => {});
+  }, [ordersKey]);
 
   function signOut() {
     clearPortalSession();
@@ -360,6 +466,13 @@ export default function Portal() {
           <div style={{ fontWeight: 700 }}>Storage Centre</div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>{client?.name}</div>
         </div>
+        {counts && (
+          <div style={{ display: 'flex', gap: 20, marginLeft: 16 }}>
+            <div><div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{counts.inStorageCount}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>items in storage</div></div>
+            <div><div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{counts.palletCount}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>pallets</div></div>
+            <div><div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{counts.totalCount}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>items on record</div></div>
+          </div>
+        )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPassword(true)}><KeyRound size={14} /> Password</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}><LogOut size={14} /> Sign out</button>
