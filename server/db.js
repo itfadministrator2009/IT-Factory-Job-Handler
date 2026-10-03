@@ -322,6 +322,35 @@ CREATE TABLE IF NOT EXISTS storage_orders (
 );
 
 CREATE TABLE IF NOT EXISTS storage_order_number_seq (n INTEGER);
+
+-- Mirrors LocationsRegistry — classifies a Location *text* (not per storage
+-- centre) as a real pallet-naming pattern or a placeholder, exactly as the old
+-- app does, so the same classification decides pallet-rate lookups everywhere.
+CREATE TABLE IF NOT EXISTS storage_locations_registry (
+  id TEXT PRIMARY KEY,
+  location TEXT NOT NULL UNIQUE,
+  location_key TEXT NOT NULL UNIQUE,
+  is_pallet INTEGER NOT NULL DEFAULT 0,
+  classified_by TEXT,
+  classified_on TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Mirrors the "ReceivingDispatch" sheet (RECEIVING_DISPATCH_HEADERS).
+CREATE TABLE IF NOT EXISTS storage_receiving_dispatch (
+  id TEXT PRIMARY KEY,
+  client TEXT,
+  date_received TEXT,
+  date_dispatched TEXT,
+  rate REAL,
+  stock_received_type TEXT,
+  stock_received_qty TEXT,
+  stock_dispatched_type TEXT,
+  stock_dispatched_qty TEXT,
+  receiving TEXT,
+  dispatch TEXT,
+  saved_by TEXT,
+  saved_on TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- ================= end Storage Centre feature =================
 `);
 
