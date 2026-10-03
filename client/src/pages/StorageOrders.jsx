@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, X, Boxes, Package, Users } from 'lucide-react';
+import { Plus, X, Boxes, Package, Users, FileText } from 'lucide-react';
 import api from '../api';
+import { openPdf } from '../utils/pdf';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 
@@ -104,7 +105,7 @@ export default function StorageOrders() {
                 <tr>
                   <th>Order #</th><th>Client</th><th>Devices</th><th>Delivery Address</th>
                   <th>Site Contact</th><th>Phone</th><th>Date Required</th><th>Config Info</th>
-                  <th>Notes</th><th>Requestor</th><th>Status</th><th>Tracking #</th>
+                  <th>Notes</th><th>Requestor</th><th>Status</th><th>Tracking #</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -126,6 +127,12 @@ export default function StorageOrders() {
                       </select>
                     </td>
                     <td>{o.trackingNumber || '—'}</td>
+                    <td>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Order PDF / delivery docket"
+                        onClick={() => openPdf(api, `/storage/orders/${o.id}/pdf`).catch((err) => alert(err.message))}>
+                        <FileText size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

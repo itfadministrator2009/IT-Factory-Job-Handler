@@ -63,6 +63,11 @@ export default function StorageClients() {
         </div>
       </div>
 
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
+        Clients with a portal login sign in at <a href={`${window.location.origin}/portal/login`} target="_blank" rel="noreferrer">{window.location.origin}/portal/login</a> to
+        see their stock, orders and receiving/dispatch history and to submit orders. Prices and fees are not shown to clients.
+      </p>
+
       <div className="panel" style={{ padding: 0 }}>
         {!clients ? (
           <div className="empty-state">Loading…</div>
@@ -105,8 +110,20 @@ export default function StorageClients() {
               <div className="form-grid">
                 <div className="field"><label>Client name</label><input value={clientName} onChange={(e) => setClientName(e.target.value)} required /></div>
                 <div className="field"><label>Portal username (optional)</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
-                <div className="field"><label>Portal password {editing ? '(leave blank to keep)' : ''}</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+                <div className="field"><label>Portal password (8+ characters){editing ? ' — leave blank to keep' : ''}</label><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
               </div>
+              {editing?.hasPortalLogin && (
+                <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 12, color: 'var(--danger)' }} disabled={saving}
+                  onClick={async () => {
+                    if (!confirm(`Remove portal access for ${editing.clientName}? They will be signed out straight away.`)) return;
+                    setSaving(true);
+                    try { await api.patch(`/storage/clients/${editing.id}`, { removePortalAccess: true }); setShowForm(false); load(); }
+                    catch (err) { setError(err.response?.data?.error || 'Could not remove access'); }
+                    finally { setSaving(false); }
+                  }}>
+                  Remove portal access
+                </button>
+              )}
               <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 16 }}>{saving ? 'Saving…' : 'Save'}</button>
             </form>
           </div>
