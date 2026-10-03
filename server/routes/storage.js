@@ -354,6 +354,171 @@ router.delete('/orders/:id', (req, res) => {
 // storage centres, locations), mirroring the old app's getLists().
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Locations registry — classifies a Location *text* (not per storage centre)
+// as a real pallet or a placeholder, matching the old app's rate-lookup logic.
+// ---------------------------------------------------------------------------
+
+function normalizeLocationKey(s) {
+  return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+router.get('/locations-registry', (req, res) => {
+  const rows = db.prepare('SELECT * FROM storage_locations_registry ORDER BY location').all();
+  res.json({ locations: rows.map((r) => ({ location: r.location, isPallet: !!r.is_pallet, classifiedBy: r.classified_by, classifiedOn: r.classified_on })) });
+});
+
+router.post('/locations-registry', (req, res) => {
+  const { location, isPallet } = req.body;
+  const clean = String(location || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return res.status(400).json({ error: 'A location is required' });
+  const key = normalizeLocationKey(clean);
+  const existing = db.prepare('SELECT id FROM storage_locations_registry WHERE location_key = ?').get(key);
+  if (existing) {
+    db.prepare("UPDATE storage_locations_registry SET is_pallet = ?, classified_by = ?, classified_on = datetime('now') WHERE id = ?")
+      .run(isPallet ? 1 : 0, req.user.name, existing.id);
+  } else {
+    db.prepare('INSERT INTO storage_locations_registry (id, location, location_key, is_pallet, classified_by) VALUES (?, ?, ?, ?, ?)')
+      .run(randomUUID(), clean, key, isPallet ? 1 : 0, req.user.name);
+  }
+  res.status(201).json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Receiving / Dispatch log
+// ---------------------------------------------------------------------------
+
+function rowToRD(row) {
+  if (!row) return row;
+  return {
+    id: row.id, client: row.client, dateReceived: row.date_received, dateDispatched: row.date_dispatched,
+    rate: row.rate, stockReceivedType: row.stock_received_type, stockReceivedQty: row.stock_received_qty,
+    stockDispatchedType: row.stock_dispatched_type, stockDispatchedQty: row.stock_dispatched_qty,
+    receiving: row.receiving, dispatch: row.dispatch, savedBy: row.saved_by, savedOn: row.saved_on,
+  };
+}
+
+router.get('/receiving-dispatch', (req, res) => {
+  res.json({ entries: db.prepare('SELECT * FROM storage_receiving_dispatch ORDER BY saved_on DESC').all().map(rowToRD) });
+});
+
+router.post('/receiving-dispatch', (req, res) => {
+  const b = req.body || {};
+  if (!b.client) return res.status(400).json({ error: 'client is required' });
+  const id = randomUUID();
+  db.prepare(`INSERT INTO storage_receiving_dispatch
+    (id, client, date_received, date_dispatched, rate, stock_received_type, stock_received_qty, stock_dispatched_type, stock_dispatched_qty, receiving, dispatch, saved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, b.client, b.dateReceived || null, b.dateDispatched || null, Number(b.rate) || null,
+      b.stockReceivedType || null, b.stockReceivedQty || null, b.stockDispatchedType || null, b.stockDispatchedQty || null,
+      b.receiving || null, b.dispatch || null, req.user.name);
+  res.status(201).json({ entry: rowToRD(db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(id)) });
+});
+
+router.delete('/receiving-dispatch/:id', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can delete entries' });
+  const result = db.prepare('DELETE FROM storage_receiving_dispatch WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Reports — storage cost per client over a date range, mirroring the old
+// app's computeStorageCostForClient_ (3-tier pallet-rate lookup: exact pallet
+// > any pallet at that storage centre > any pallet for that client).
+// ---------------------------------------------------------------------------
+
+const ALL_PALLETS = '__ALL__';
+const ALL_PALLETS_AT_CENTRE = '__ALL_AT_CENTRE__';
+
+function getPalletRate(pallets, client, storageCentre, location) {
+  if (!location) return null;
+  const c = String(client || '').trim().toLowerCase();
+  const s = String(storageCentre || '').trim().toLowerCase();
+  const l = String(location || '').trim().toLowerCase();
+  const exact = pallets.find((p) => String(p.client || '').trim().toLowerCase() === c
+    && String(p.storageCentre || '').trim().toLowerCase() === s && String(p.location || '').trim().toLowerCase() === l);
+  if (exact) return exact;
+  const centreWildcard = pallets.find((p) => String(p.client || '').trim().toLowerCase() === c
+    && String(p.storageCentre || '').trim().toLowerCase() === s && p.location === ALL_PALLETS_AT_CENTRE);
+  if (centreWildcard) return centreWildcard;
+  return pallets.find((p) => String(p.client || '').trim().toLowerCase() === c && p.location === ALL_PALLETS) || null;
+}
+
+function overlapDays(item, from, to) {
+  if (!item.startDate) return 0;
+  const itemStart = new Date(item.startDate + 'T00:00:00');
+  const itemEnd = item.endDate ? new Date(item.endDate + 'T00:00:00') : new Date();
+  const start = itemStart > from ? itemStart : from;
+  const end = itemEnd < to ? itemEnd : to;
+  if (start > end) return 0;
+  const startMs = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endMs = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.floor((endMs - startMs) / 86400000) + 1;
+}
+
+function computeStorageCostForClient(client, allItems, pallets, from, to) {
+  const clientItems = allItems.filter((i) => i.client === client);
+  const byPallet = {};
+  clientItems.forEach((i) => {
+    const key = `${i.storageCentre || ''}|||${i.location || ''}`;
+    if (!byPallet[key]) byPallet[key] = { storageCentre: i.storageCentre || '', location: i.location || '', items: [] };
+    byPallet[key].items.push(i);
+  });
+  let total = 0;
+  Object.values(byPallet).forEach((g) => {
+    const palletRecord = g.location ? getPalletRate(pallets, client, g.storageCentre, g.location) : null;
+    if (palletRecord) {
+      const days = palletRecord.startDate ? overlapDays(palletRecord, from, to) : Math.floor((to - from) / 86400000) + 1;
+      total += ((Number(palletRecord.priceWeek) || 0) / 7) * Math.max(days, 0);
+    } else {
+      g.items.forEach((i) => {
+        const days = overlapDays(i, from, to);
+        if (days > 0) total += ((Number(i.priceWeek) || 0) / 7) * days;
+      });
+    }
+  });
+  return total;
+}
+
+router.get('/reports/summary', (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required' });
+  const fromDate = new Date(`${from}T00:00:00`);
+  const toDate = new Date(`${to}T23:59:59`);
+
+  const allItems = db.prepare('SELECT * FROM storage_items').all().map(rowToItem);
+  const pallets = db.prepare('SELECT * FROM storage_pallets').all().map(rowToPallet);
+  const clients = [...new Set(allItems.map((i) => i.client).filter(Boolean))].sort();
+
+  const storageByClient = clients.map((client) => ({
+    client, storageCost: Math.round(computeStorageCostForClient(client, allItems, pallets, fromDate, toDate) * 100) / 100,
+  }));
+
+  const rdEntries = db.prepare('SELECT * FROM storage_receiving_dispatch').all().map(rowToRD);
+  const parseStockFee = (str) => {
+    if (!str) return 0;
+    return String(str).split(';').map((s) => s.trim()).filter(Boolean).reduce((total, part) => {
+      const m = part.match(/^(.+?):\s*(\d+)(?:\s*@\s*(.+))?$/);
+      if (!m) return total;
+      const rateNum = Number(String(m[3] || '').replace(/[^0-9.]/g, '')) || 0;
+      return total + (Number(m[2]) || 0) * rateNum;
+    }, 0);
+  };
+  const feesByClient = {};
+  rdEntries.forEach((e) => {
+    if (!e.client) return;
+    feesByClient[e.client] = (feesByClient[e.client] || 0) + parseStockFee(e.receiving) + parseStockFee(e.dispatch);
+  });
+
+  const summary = storageByClient.map((s) => ({
+    client: s.client, storageCost: s.storageCost, receivingDispatchFees: Math.round((feesByClient[s.client] || 0) * 100) / 100,
+    total: Math.round((s.storageCost + (feesByClient[s.client] || 0)) * 100) / 100,
+  }));
+
+  res.json({ from, to, summary, grandTotal: Math.round(summary.reduce((t, s) => t + s.total, 0) * 100) / 100 });
+});
+
 router.get('/lists', (req, res) => {
   const clients = db.prepare("SELECT DISTINCT client FROM storage_items WHERE client IS NOT NULL AND client != '' UNION SELECT client_name FROM storage_clients ORDER BY client").all().map((r) => r.client);
   const storageCentres = db.prepare("SELECT DISTINCT storage_centre FROM storage_items WHERE storage_centre IS NOT NULL AND storage_centre != '' ORDER BY storage_centre").all().map((r) => r.storage_centre);
