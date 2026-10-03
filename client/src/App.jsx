@@ -26,6 +26,10 @@ import StorageClients from './pages/StorageClients';
 import StorageOrders from './pages/StorageOrders';
 import StorageReceiving from './pages/StorageReceiving';
 import StorageReports from './pages/StorageReports';
+import StorageLocations from './pages/StorageLocations';
+import PortalLogin from './pages/PortalLogin';
+import Portal from './pages/Portal';
+import { hasPortalSession } from './portal/portalApi';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -38,6 +42,12 @@ function RequireAdmin({ children }) {
   if (!user) return <Navigate to="/login" replace />;
   const isAdmin = user.role === 'admin' || user.role === 'agent';
   if (!isAdmin) return <Navigate to="/jobs" replace />;
+  return children;
+}
+
+// Storage Centre client portal — uses its own client login, not the staff one.
+function RequirePortal({ children }) {
+  if (!hasPortalSession()) return <Navigate to="/portal/login" replace />;
   return children;
 }
 
@@ -55,6 +65,10 @@ function AppRoutes() {
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+
+      <Route path="/portal/login" element={<PortalLogin />} />
+      <Route path="/portal" element={<RequirePortal><Portal /></RequirePortal>} />
+      <Route path="/portal/*" element={<Navigate to="/portal" replace />} />
 
       <Route path="/dashboard" element={<RequireAdmin><Dashboard /></RequireAdmin>} />
       <Route path="/jobs" element={<RequireAuth><JobList /></RequireAuth>} />
@@ -79,6 +93,7 @@ function AppRoutes() {
       <Route path="/storage/clients" element={<RequireAuth><StorageClients /></RequireAuth>} />
       <Route path="/storage/orders" element={<RequireAuth><StorageOrders /></RequireAuth>} />
       <Route path="/storage/receiving" element={<RequireAuth><StorageReceiving /></RequireAuth>} />
+      <Route path="/storage/locations" element={<RequireAuth><StorageLocations /></RequireAuth>} />
       <Route path="/storage/reports" element={<RequireAdmin><StorageReports /></RequireAdmin>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
