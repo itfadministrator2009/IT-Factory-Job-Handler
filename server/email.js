@@ -361,24 +361,32 @@ function notifyAssetReport({ toEmails, count, csvBuffer }) {
 // Sent when a Storage Centre order's status is changed to Delivered, carrying the
 // courier tracking number — mirrors the "email the customer their order is on its
 // way" step from the original Apps Script app's status-change workflow.
+// Old app wording: subject "Your order X is on its way"; the tracking number and
+// message lines only appear when given.
 function notifyStorageOrderTracking({ toEmail, orderNumber, clientName, trackingNumber, message }) {
+  const e = escapeEmailHtml;
   const html = brandedEmail({
     title: 'Your order is on its way',
     bodyHtml: `
       <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
-        Hi${clientName ? ` ${clientName}` : ''}, your order <strong>${orderNumber}</strong> is on its way.
+        ${clientName ? `${e(clientName)}, your` : 'Your'} order <strong>${e(orderNumber)}</strong> has been dispatched.
       </p>
       <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 16px; font-size:14px; color:#333;">
-        <strong>Tracking number:</strong> ${trackingNumber}
+        <strong>Order number:</strong> ${e(orderNumber)}${trackingNumber ? `<br><strong>Tracking number:</strong> ${e(trackingNumber)}` : ''}
       </div>
-      ${message ? `<p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px; white-space:pre-wrap;">${message}</p>` : ''}
+      ${message ? `<p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px; white-space:pre-wrap;">${e(message)}</p>` : ''}
     `,
   });
 
   return sendMail({
     to: toEmail,
-    subject: `Order ${orderNumber} is on its way — tracking ${trackingNumber}`,
-    text: `Your order ${orderNumber} is on its way.\nTracking number: ${trackingNumber}\n${message || ''}`,
+    subject: `Your order ${orderNumber} is on its way`,
+    text: [
+      'Hi,', '', `Your order ${orderNumber}${clientName ? ` for ${clientName}` : ''} is on its way.`,
+      ...(trackingNumber ? [`Tracking number: ${trackingNumber}`] : []),
+      ...(message ? ['', message] : []),
+      '', 'Thanks,', 'IT Factory Storage Centre',
+    ].join('\n'),
     html,
   });
 }

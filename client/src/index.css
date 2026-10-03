@@ -890,3 +890,39 @@ input, select, textarea {
   .panel { border: none; }
   .ticket-table th, .ticket-table td { padding: 6px 8px; font-size: 12px; }
 }
+
+/* ---------- Storage Centre: print helpers + pallet labels ---------- */
+@media print {
+  .no-print { display: none !important; }
+}
+.pallet-label-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.pallet-label {
+  width: 200px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.pallet-label svg { width: 170px; height: 170px; }
+.pallet-label-name { font-family: var(--font-display); font-weight: 600; font-size: 16px; text-transform: uppercase; line-height: 1.15; word-break: break-word; }
+.pallet-label-sub { font-size: 11.5px; color: var(--muted); }
+@media print {
+  body.printing-pallet-labels .sidebar,
+  body.printing-pallet-labels .page-header,
+  body.printing-pallet-labels .label-controls { display: none !important; }
+  body.printing-pallet-labels .pallet-label-grid { display: block; }
+  body.printing-pallet-labels .pallet-label {
+    width: 75%; margin: 40px auto 0; padding: 40px; border: none; page-break-after: always; break-after: page;
+  }
+  body.printing-pallet-labels .pallet-label:last-child { page-break-after: auto; break-after: auto; }
+  body.printing-pallet-labels .pallet-label svg { width: 260px; height: 260px; margin-top: 24px; }
+  body.printing-pallet-labels .pallet-label-name { font-size: 72px; }
+  body.printing-pallet-labels .pallet-label-sub { font-size: 36px; color: #333; }
+  body.printing-order .sidebar, body.printing-order .main > *:not(.order-print) { display: none !important; }
+  body.printing-order .order-print { display: block !important; }
+}
+.order-print { display: none; }
+.order-print table { border-collapse: collapse; width: 100%; }
+.order-print th, .order-print td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 13px; }
+.order-print th { width: 32%; background: #f6f5f1; }
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--ink); }
+.chip.active { background: var(--teal); border-color: var(--teal); color: #fff; }
+.panel-pad { padding: 16px 18px; }

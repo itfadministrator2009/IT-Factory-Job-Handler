@@ -6,11 +6,14 @@ const { authRequired } = require('../auth');
 const { isAdminRole } = require('../permissions');
 const { notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived } = require('../email');
 const {
-  ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement,
+  ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement, rdLinesInPeriod, round2,
 } = require('../storageBilling');
-const { buildOrderPdf, buildInvoicePdf, invoiceReference } = require('../storagePdf');
+const { buildOrderPdf, buildInvoicePdf, buildRdInvoicePdf, invoiceReference } = require('../storagePdf');
 const { buildStorageCentreZip } = require('../storageExport');
 const { sendWeeklyInvoicingReminder, recipients: weeklyRecipients } = require('../storageWeekly');
+const {
+  billingGaps, calculator, dashboard, modelSummary, parseLocalDate, toNumberOrNull, presetRange, PRESETS,
+} = require('../storageTools');
 
 const router = express.Router();
 router.use(authRequired);
@@ -80,6 +83,93 @@ router.post('/items', (req, res) => {
   res.status(201).json({ item: rowToItem(row) });
 });
 
+// Bulk edit (old bulkUpdateItems): the same value written to every selected
+// item. `updates.status` is the old "Status" override: 'in' clears the end date
+// (back in storage), 'out' sets it to today — but only on items still in
+// storage, so an item that already left keeps its real end date (and billing). Registered before /items/:id so
+// Express doesn't treat "bulk-edit" as an item id.
+const sydneyToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
+const BULK_EDIT_FIELDS = ['client', 'jobNumber', 'referenceNumber', 'storageCentre', 'location', 'quantity', 'condition', 'item', 'make', 'model', 'serial', 'priceWeek', 'startDate', 'endDate', 'assetTag', 'poNumber', 'orderNumber'];
+router.patch('/items/bulk-edit', (req, res) => {
+  const { ids, updates } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
+  if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates object is required' });
+  const u = { ...updates };
+  const markOut = u.status === 'out';
+  if (u.status === 'in') u.endDate = null;
+  if (markOut) delete u.endDate;
+  const sets = [];
+  const setVals = [];
+  BULK_EDIT_FIELDS.forEach((k) => {
+    if (u[k] === undefined) return;
+    let v = u[k] === '' ? null : u[k];
+    if (k === 'priceWeek' && v != null) { v = Number(v); if (!Number.isFinite(v)) return; }
+    sets.push(`${ITEM_FIELD_COLUMNS[k]} = ?`); setVals.push(v);
+  });
+  if (sets.length === 0 && !markOut) return res.status(400).json({ error: 'Nothing to update' });
+  const who = req.user.name || null;
+  const stmt = sets.length ? db.prepare(`UPDATE storage_items SET ${sets.join(', ')}, last_edited_by = ?, updated_at = datetime('now') WHERE id = ?`) : null;
+  const outStmt = db.prepare("UPDATE storage_items SET end_date = ?, last_edited_by = ?, updated_at = datetime('now') WHERE id = ? AND end_date IS NULL");
+  const exists = db.prepare('SELECT 1 FROM storage_items WHERE id = ?');
+  let updated = 0; let markedOut = 0; let found = 0;
+  const today = sydneyToday();
+  db.transaction(() => {
+    ids.forEach((id) => {
+      if (!exists.get(id)) return;
+      found += 1;
+      if (stmt) updated += stmt.run(...setVals, who, id).changes;
+      if (markOut) markedOut += outStmt.run(today, who, id).changes;
+    });
+  })();
+  res.json({ ok: true, updated: stmt ? updated : markedOut, markedOut, notFound: ids.length - found });
+});
+
+// Spreadsheet import (old bulkSaveItems): every row inserted in one transaction.
+// Dates accept YYYY-MM-DD, D/M/YYYY or an Excel serial; quantity and price have
+// "$" and "," stripped. The client maps the spreadsheet's columns first.
+router.post('/items/import', (req, res) => {
+  const rows = req.body?.items;
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'items array is required' });
+  if (rows.length > 20000) return res.status(400).json({ error: 'Import at most 20,000 rows at a time' });
+  const keys = Object.keys(ITEM_FIELD_COLUMNS).filter((k) => !['addedBy', 'lastEditedBy', 'photo'].includes(k));
+  const cols = ['id', ...keys.map((k) => ITEM_FIELD_COLUMNS[k]), 'added_by', 'last_edited_by'];
+  const stmt = db.prepare(`INSERT INTO storage_items (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`);
+  const who = req.user.name || null;
+  const clean = (v) => (v == null ? null : (String(v).trim() || null));
+  let imported = 0;
+  db.transaction(() => {
+    rows.forEach((r) => {
+      if (!r || typeof r !== 'object') return;
+      const vals = keys.map((k) => {
+        if (k === 'startDate' || k === 'endDate') return parseLocalDate(r[k]);
+        if (k === 'priceWeek') return toNumberOrNull(r[k]);
+        if (k === 'quantity') { const n = toNumberOrNull(r[k]); return n == null ? clean(r[k]) : String(n); }
+        return clean(r[k]);
+      });
+      if (vals.every((v) => v == null)) return;
+      stmt.run(randomUUID(), ...vals, who, who);
+      imported += 1;
+    });
+  })();
+  res.status(201).json({ ok: true, imported });
+});
+
+// Model cleanup (old bulkRenameModel): sets Model only; Make is left alone.
+router.post('/items/rename-model', (req, res) => {
+  const { ids, model } = req.body || {};
+  const name = String(model || '').trim();
+  if (!name) return res.status(400).json({ error: 'A new model name is required' });
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
+  const stmt = db.prepare("UPDATE storage_items SET model = ?, last_edited_by = ?, updated_at = datetime('now') WHERE id = ?");
+  let updated = 0;
+  db.transaction(() => { ids.forEach((id) => { updated += stmt.run(name, req.user.name || null, id).changes; }); })();
+  res.json({ ok: true, updated });
+});
+
+router.get('/model-summary', (req, res) => {
+  res.json({ models: modelSummary(req.query.client && req.query.client !== '__ALL__' ? req.query.client : null) });
+});
+
 router.patch('/items/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM storage_items WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Item not found' });
@@ -111,23 +201,6 @@ router.post('/items/bulk-delete', (req, res) => {
   let deleted = 0;
   ids.forEach((id) => { deleted += db.prepare('DELETE FROM storage_items WHERE id = ?').run(id).changes; });
   res.json({ ok: true, deleted });
-});
-
-router.patch('/items/bulk-edit', (req, res) => {
-  const { ids, updates } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array is required' });
-  if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates object is required' });
-  const sets = [];
-  const setVals = [];
-  Object.keys(ITEM_FIELD_COLUMNS).forEach((k) => {
-    if (updates[k] !== undefined) { sets.push(`${ITEM_FIELD_COLUMNS[k]} = ?`); setVals.push(updates[k]); }
-  });
-  if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
-  sets.push("updated_at = datetime('now')");
-  const stmt = db.prepare(`UPDATE storage_items SET ${sets.join(', ')} WHERE id = ?`);
-  let updated = 0;
-  ids.forEach((id) => { updated += stmt.run(...setVals, id).changes; });
-  res.json({ ok: true, updated });
 });
 
 // Item notes (keyed by a free-text "item key", matching the old app's model —
@@ -307,7 +380,7 @@ router.post('/orders', (req, res) => {
   const orderNumber = nextStorageOrderNumber();
   db.prepare(`INSERT INTO storage_orders
     (id, order_number, client, devices, delivery_address, site_contact_name, site_contact_phone, date_to_be_delivered, config_information, notes, requestor, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'In Progress')`)
     .run(id, orderNumber, b.client, b.devices || null, b.deliveryAddress || null, b.siteContactName || null,
       b.siteContactPhone || null, b.dateToBeDelivered || null, b.configInformation || null, b.notes || null, b.requestor || req.user.name);
   const order = db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(id);
@@ -330,6 +403,9 @@ router.post('/orders', (req, res) => {
 // Plain status/field update — does NOT send the tracking email. Changing status to
 // "Delivered" from the UI should go through POST /orders/:id/deliver instead, which
 // sends (or skips) the tracking email and then applies the same status change.
+// The old app's statuses (In Progress / Delivered / Cancelled), plus Pending for
+// orders created before the move.
+const ORDER_STATUSES = ['Pending', 'In Progress', 'Delivered', 'Cancelled'];
 router.patch('/orders/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Order not found' });
@@ -340,6 +416,9 @@ router.patch('/orders/:id', (req, res) => {
     notes: 'notes', requestor: 'requestor', status: 'status',
   };
   const b = req.body || {};
+  if (b.status !== undefined && !ORDER_STATUSES.includes(b.status)) {
+    return res.status(400).json({ error: `status must be one of: ${ORDER_STATUSES.join(', ')}` });
+  }
   const sets = [];
   const vals = [];
   Object.keys(map).forEach((k) => { if (b[k] !== undefined) { sets.push(`${map[k]} = ?`); vals.push(b[k]); } });
@@ -359,19 +438,20 @@ router.post('/orders/:id/deliver', async (req, res) => {
   const { skipEmail, toEmail, trackingNumber, message } = req.body || {};
 
   if (!skipEmail) {
-    if (!toEmail || !trackingNumber) {
-      return res.status(400).json({ error: 'toEmail and trackingNumber are required unless skipEmail is true' });
+    // Tracking number is optional, as in the old app; the email just leaves that line out.
+    if (!toEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(toEmail).trim())) {
+      return res.status(400).json({ error: 'A valid customer email is required unless skipEmail is true' });
     }
     try {
       await notifyStorageOrderTracking({
-        toEmail, orderNumber: existing.order_number, clientName: existing.client, trackingNumber, message,
+        toEmail: String(toEmail).trim(), orderNumber: existing.order_number, clientName: existing.client, trackingNumber: trackingNumber || '', message,
       });
     } catch (err) {
       console.error('[storage] tracking email failed:', err.message);
       return res.status(502).json({ error: 'Could not send the tracking email. The order was not marked Delivered — try again or use Skip.' });
     }
     db.prepare(`UPDATE storage_orders SET status = 'Delivered', tracking_number = ?, tracking_email_sent_to = ?, tracking_email_sent_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
-      .run(trackingNumber, toEmail, req.params.id);
+      .run(trackingNumber || null, String(toEmail).trim(), req.params.id);
   } else {
     db.prepare(`UPDATE storage_orders SET status = 'Delivered', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
   }
@@ -685,6 +765,72 @@ router.get('/reports/invoice.pdf', async (req, res) => {
     console.error('[storage] invoice PDF failed:', err);
     res.status(500).json({ error: 'Could not generate the invoice PDF' });
   }
+});
+
+// Receiving / dispatch invoicing (the old Invoicing tab's second section):
+// receiving and dispatch fees per client for a period, with the lines behind them.
+function rdReport(from, to, client) {
+  const rows = db.prepare('SELECT * FROM storage_receiving_dispatch').all().filter((r) => !client || r.client === client);
+  const byClient = {};
+  rdLinesInPeriod(rows, from, to).forEach((l) => {
+    if (!l.amount) return;
+    const c = byClient[l.client || '(no client)'] || (byClient[l.client || '(no client)'] = { client: l.client || '(no client)', receiving: 0, dispatch: 0, lines: [] });
+    if (l.kind === 'Receiving') c.receiving += l.amount; else c.dispatch += l.amount;
+    c.lines.push(l);
+  });
+  const clients = Object.values(byClient)
+    .map((c) => ({ ...c, receiving: round2(c.receiving), dispatch: round2(c.dispatch), total: round2(c.receiving + c.dispatch) }))
+    .sort((a, b) => a.client.localeCompare(b.client, undefined, { sensitivity: 'base' }));
+  return {
+    from, to, clients,
+    receiving: round2(clients.reduce((t, c) => t + c.receiving, 0)),
+    dispatch: round2(clients.reduce((t, c) => t + c.dispatch, 0)),
+    total: round2(clients.reduce((t, c) => t + c.total, 0)),
+  };
+}
+
+router.get('/reports/rd', (req, res) => {
+  const { from, to, client } = req.query;
+  if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
+  res.json(rdReport(from, to, client || null));
+});
+
+router.get('/reports/rd-invoice.pdf', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can generate invoices' });
+  const { client, from, to } = req.query;
+  if (!client) return res.status(400).json({ error: 'client is required' });
+  if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
+  try {
+    const report = rdReport(from, to, client);
+    const c = report.clients[0] || { client, lines: [], total: 0 };
+    const pdf = await buildRdInvoicePdf({ client, from, to, lines: c.lines, total: c.total });
+    sendPdf(res, pdf, `RD-${invoiceReference({ client, to })}.pdf`, req.query.download === '1');
+  } catch (err) {
+    console.error('[storage] R/D invoice PDF failed:', err);
+    res.status(500).json({ error: 'Could not generate the invoice PDF' });
+  }
+});
+
+// Storage calculator (old Reports tab "Calculator").
+router.get('/reports/calculator', (req, res) => {
+  const { from, to, client, centre, groupBy } = req.query;
+  if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
+  if (groupBy && !['all', 'location', 'none'].includes(groupBy)) return res.status(400).json({ error: 'groupBy must be all, location or none' });
+  res.json(calculator({ from, to, client: client || null, centre: centre || null, groupBy: groupBy || 'all' }));
+});
+
+// Date presets (last week / month / quarter / year / financial year), Sydney time.
+router.get('/reports/presets', (req, res) => {
+  res.json({ presets: Object.fromEntries(PRESETS.map((p) => [p, presetRange(p)])) });
+});
+
+// Items costing $0/week with no pallet rate to cover them.
+router.get('/billing-gaps', (req, res) => {
+  res.json({ items: billingGaps() });
+});
+
+router.get('/dashboard', (req, res) => {
+  res.json(dashboard());
 });
 
 // Download every Storage Centre table as CSVs in a zip (the same file the nightly

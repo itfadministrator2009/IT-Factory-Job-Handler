@@ -289,4 +289,53 @@ function buildInvoicePdf(statement) {
   });
 }
 
-module.exports = { buildOrderPdf, buildInvoicePdf, invoiceReference };
+// Receiving / dispatch only — the old Invoicing tab's per-client PDF.
+function buildRdInvoicePdf({ client, from, to, lines, total }) {
+  return toBuffer((doc) => {
+    let y = header(doc, 'RECEIVING / DISPATCH INVOICE', [
+      ['INVOICE REF:', `RD-${invoiceReference({ client, to })}`],
+      ['INVOICE DATE:', dmy(todaySydney())],
+      ['PERIOD:', `${dmy(from)} – ${dmy(to)}`],
+      ['BILL TO:', client],
+    ]);
+    if (lines.length) {
+      y = table(doc, [
+        { label: 'Stock', width: 0.5 }, { label: 'Date', width: 0.14 }, { label: 'Billed as', width: 0.16 },
+        { label: 'Cost (ex GST)', width: 0.2, align: 'right' },
+      ], lines.map((l) => [l.description || '—', dmy(l.date), l.kind, money(l.amount)]), y);
+    } else {
+      doc.fontSize(8.5).fillColor(MUTED).font('Helvetica').text('No receiving or dispatch charges in this period.', doc.page.margins.left, y);
+      y += 16;
+    }
+    y += 18;
+    const left = doc.page.margins.left;
+    const width = doc.page.width - left - doc.page.margins.right;
+    const gst = GST_RATE ? Math.round(total * GST_RATE) / 100 : 0;
+    const rows = GST_RATE ? [['Subtotal (ex GST)', money(total)], [`GST (${GST_RATE}%)`, money(gst)]] : [];
+    y = ensureSpace(doc, y, rows.length * 18 + 40);
+    const boxW = 250; const boxX = left + width - boxW;
+    rows.forEach(([label, value]) => {
+      doc.fontSize(9).font('Helvetica').fillColor('#333').text(label, boxX, y, { width: 150 });
+      doc.text(value, boxX + 150, y, { width: boxW - 150, align: 'right' });
+      y += 16;
+    });
+    doc.rect(boxX, y + 2, boxW, 24).fill(TEAL);
+    doc.fontSize(10.5).font('Helvetica-Bold').fillColor('white')
+      .text(GST_RATE ? 'TOTAL (inc GST)' : 'TOTAL (ex GST)', boxX + 8, y + 9, { width: 140 })
+      .text(money(Math.round((total + gst) * 100) / 100), boxX + 150, y + 9, { width: boxW - 158, align: 'right' });
+    y += 32;
+    if (!GST_RATE) {
+      doc.fontSize(8.5).font('Helvetica').fillColor(MUTED)
+        .text('This total excludes GST. Please add GST as applicable.', boxX, y, { width: boxW, align: 'right' });
+      y += 14;
+    }
+    if (PAYMENT_LINES.length) {
+      y += 8;
+      y = sectionTitle(doc, 'PAYMENT DETAILS', y);
+      doc.fontSize(8.5).font('Helvetica').fillColor('#111');
+      PAYMENT_LINES.forEach((line) => { doc.text(line, left, y); y += 12; });
+    }
+  });
+}
+
+module.exports = { buildOrderPdf, buildInvoicePdf, buildRdInvoicePdf, invoiceReference };

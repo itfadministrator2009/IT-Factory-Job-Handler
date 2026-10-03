@@ -134,6 +134,9 @@ async function runBackup(filenameOverride) {
       storageFilename = null;
     }
 
+    // Shown on the Storage Centre dashboard ("Last backup: …").
+    try { require('./storageTools').setMeta('last_backup_at', new Date().toISOString()); } catch (err) { /* status only */ }
+
     console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
     return { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename };
   } catch (err) {
