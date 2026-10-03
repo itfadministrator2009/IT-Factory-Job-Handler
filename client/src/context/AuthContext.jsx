@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 import api from '../api';
+import { resetPresence } from '../components/WhoIsOnline';
 
 const AuthContext = createContext(null);
 
@@ -26,6 +27,11 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Drop off the "online now" list straight away (the token is read now,
+    // before it's removed below).
+    const token = localStorage.getItem('helpdesk_token');
+    if (token) api.delete('/presence', { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    resetPresence();
     localStorage.removeItem('helpdesk_token');
     localStorage.removeItem('helpdesk_user');
     setUser(null);
