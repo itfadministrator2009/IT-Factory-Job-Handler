@@ -119,3 +119,30 @@ test('migration maps the old sheet stock type/qty fields', () => {
   const isoDate = mapReceivingDispatch({ client: 'D', dateReceived: '2026-02-28T13:00:00.000Z' });
   assert.equal(isoDate.dateReceived, '2026-03-01');
 });
+
+test('old-app rows: rate lives in the Type text ("Individual Item: 65 @ $5")', async () => {
+  const { mapReceivingDispatch } = require('../scripts/migrate-storage-centre');
+  // Shape seen in the live export (sample 3).
+  const m = mapReceivingDispatch({
+    _row: 28, client: 'NSW Health WSLHD', dateReceived: '', dateDispatched: '22/09/2026', rate: '',
+    stockReceivedType: '', stockReceivedQty: '', stockDispatchedType: 'Individual Item: 9 @ $5', stockDispatchedQty: 9,
+    receiving: '', dispatch: 'Dispatched from Order ORD-00027', savedBy: 'Robert Nahas', savedOn: '24/09/2026 17:24',
+  });
+  assert.equal(m.stockDispatchedType, 'Individual Item');
+  assert.equal(m.stockDispatchedQty, '9');
+  assert.equal(m.rate, 5);
+  assert.equal(m.dateDispatched, '2026-09-22');
+
+  // Several parts stay as written; the API reads the fee from the parts.
+  const multi = mapReceivingDispatch({ client: 'Multi', stockReceivedType: 'Pallets: 2 @ $25; Cartons: 4 @ $3', stockReceivedQty: '6' });
+  assert.equal(multi.stockReceivedType, 'Pallets: 2 @ $25; Cartons: 4 @ $3');
+  assert.equal(multi.rate, null);
+
+  const { data } = await client.post('/api/storage/receiving-dispatch', {
+    token, body: { client: 'Multi', stockReceivedType: multi.stockReceivedType, stockReceivedQty: '6',
+      stockDispatchedType: 'Individual Item: 65 @ $5', stockDispatchedQty: '65' },
+  });
+  assert.equal(data.entry.feeReceived, 62); // 2×25 + 4×3
+  assert.equal(data.entry.feeDispatched, 325); // 65×5, no Rate column needed
+  assert.equal(data.entry.fee, 387);
+});
