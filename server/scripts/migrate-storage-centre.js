@@ -19,7 +19,7 @@
 // in the Apps Script project (File > Project Settings > Script Properties) —
 // this is what the exportForMigration action checks before releasing any data.
 
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 const { db } = require('../db');
 
 const BASE_URL = process.env.STORAGE_CENTRE_URL;
@@ -44,8 +44,8 @@ async function main() {
     process.exit(1);
   }
 
-  const { items = [], pallets = [], clients = [], clientLogins = [], orders = [] } = data;
-  console.log(`Fetched ${items.length} items, ${pallets.length} pallets, ${clients.length} clients, ${orders.length} orders.`);
+  const { items = [], pallets = [], clients = [], clientLogins = [], orders = [], receivingDispatch = [] } = data;
+  console.log(`Fetched ${items.length} items, ${pallets.length} pallets, ${clients.length} clients, ${orders.length} orders, ${receivingDispatch.length} receiving/dispatch entries.`);
 
   let itemsInserted = 0, itemsSkipped = 0;
   const insertItem = db.prepare(`INSERT INTO storage_items
@@ -121,6 +121,31 @@ async function main() {
   }
   console.log(`Orders: inserted ${ordersInserted}, skipped ${ordersSkipped} (already present).`);
 
+  // ReceivingDispatch rows have no natural unique id in the old sheet, so a
+  // deterministic hash of every field stands in as the primary key here —
+  // re-running this script hashes the same row to the same id and skips it,
+  // instead of re-importing it as a duplicate.
+  let rdInserted = 0, rdSkipped = 0;
+  const insertRD = db.prepare(`INSERT INTO storage_receiving_dispatch
+    (id, client, date_received, date_dispatched, rate, stock_received_type, stock_received_qty, stock_dispatched_type, stock_dispatched_qty, receiving, dispatch, saved_by, saved_on)
+    VALUES (@id, @client, @dateReceived, @dateDispatched, @rate, @stockReceivedType, @stockReceivedQty, @stockDispatchedType, @stockDispatchedQty, @receiving, @dispatch, @savedBy, @savedOn)`);
+  const findRD = db.prepare('SELECT id FROM storage_receiving_dispatch WHERE id = ?');
+  for (const e of receivingDispatch) {
+    const dateReceived = formatDMY(e.dateReceived);
+    const dateDispatched = formatDMY(e.dateDispatched);
+    const savedOn = formatDMYTime(e.savedOn);
+    const fields = {
+      client: e.client || null, dateReceived, dateDispatched, rate: Number(e.rate) || null,
+      stockReceivedType: null, stockReceivedQty: null, stockDispatchedType: null, stockDispatchedQty: null,
+      receiving: e.receiving || null, dispatch: e.dispatch || null, savedBy: e.savedBy || null, savedOn,
+    };
+    const id = createHash('sha1').update(JSON.stringify(fields)).digest('hex');
+    if (findRD.get(id)) { rdSkipped++; continue; }
+    insertRD.run({ id, ...fields });
+    rdInserted++;
+  }
+  console.log(`Receiving/Dispatch: inserted ${rdInserted}, skipped ${rdSkipped} (already present).`);
+
   console.log('Migration complete.');
 }
 
@@ -132,6 +157,20 @@ function formatDate(v) {
   const s = String(v);
   const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : s;
+}
+
+// getReceivingDispatchLog() in Code.gs formats dates as 'dd/MM/yyyy' (and
+// 'savedOn' as 'dd/MM/yyyy HH:mm') text, not ISO — these convert that to the
+// plain YYYY-MM-DD / YYYY-MM-DD HH:mm this app's date inputs and SQLite expect.
+function formatDMY(v) {
+  if (!v) return null;
+  const m = String(v).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : String(v);
+}
+function formatDMYTime(v) {
+  if (!v) return null;
+  const m = String(v).match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}:\d{2})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}:00` : String(v);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
