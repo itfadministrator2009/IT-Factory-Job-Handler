@@ -1,16 +1,44 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, X, Boxes, Package, Users, FileText, Truck } from 'lucide-react';
+import { Plus, X, Boxes, Package, Users, FileText, Truck, Printer } from 'lucide-react';
 import api from '../api';
 import { openPdf } from '../utils/pdf';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import { dmy } from '../storage/common';
 
-const STATUSES = ['Pending', 'In Progress', 'Delivered', 'Cancelled'];
+// The old app's statuses. "Pending" only shows for orders created before the move.
+const STATUSES = ['In Progress', 'Delivered', 'Cancelled'];
+
+function submittedAt(o) {
+  if (!o.createdAt) return '';
+  const d = new Date(`${o.createdAt.replace(' ', 'T')}Z`);
+  return Number.isNaN(d.getTime()) ? o.createdAt : d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+// Old "Order details" print: every field of the order on one page.
+const orderRows = (o) => [
+  ['Order number', o.orderNumber], ['Submitted', submittedAt(o)], ['Client', o.client], ['Devices', o.devices],
+  ['Delivery address', o.deliveryAddress], ['Site contact name', o.siteContactName], ['Site contact phone number', o.siteContactPhone],
+  ['Date to be delivered', dmy(o.dateToBeDelivered)], ['Configuration information', o.configInformation], ['Additional notes', o.notes],
+  ['Requestor', o.requestor], ['Status', o.status], ['Tracking number', o.trackingNumber],
+];
 
 export default function StorageOrders() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const [orders, setOrders] = useState(null);
+  const [printing, setPrinting] = useState(null);
+
+  useEffect(() => {
+    const off = () => { document.body.classList.remove('printing-order'); setPrinting(null); };
+    window.addEventListener('afterprint', off);
+    return () => { window.removeEventListener('afterprint', off); document.body.classList.remove('printing-order'); };
+  }, []);
+  useEffect(() => {
+    if (!printing) return;
+    document.body.classList.add('printing-order');
+    window.print();
+  }, [printing]);
   const [showForm, setShowForm] = useState(false);
   const [formValues, setFormValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -64,6 +92,12 @@ export default function StorageOrders() {
   }
 
   async function handleStatusChange(order, newStatus) {
+    if (newStatus === '__delete') {
+      if (!confirm(`Delete order ${order.orderNumber}? This cannot be undone.`)) return;
+      try { await api.delete(`/storage/orders/${order.id}`); } catch (err) { alert(err.response?.data?.error || 'Could not delete the order'); }
+      load();
+      return;
+    }
     if (newStatus === 'Delivered') {
       setDeliverModal(order);
       setToEmail('');
@@ -72,7 +106,7 @@ export default function StorageOrders() {
       setDeliverError('');
       return;
     }
-    await api.patch(`/storage/orders/${order.id}`, { status: newStatus });
+    try { await api.patch(`/storage/orders/${order.id}`, { status: newStatus }); } catch (err) { alert(err.response?.data?.error || 'Could not update the status'); }
     load();
   }
 
@@ -135,13 +169,14 @@ export default function StorageOrders() {
                     <td>{o.deliveryAddress}</td>
                     <td>{o.siteContactName}</td>
                     <td>{o.siteContactPhone}</td>
-                    <td>{o.dateToBeDelivered}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{dmy(o.dateToBeDelivered)}</td>
                     <td>{o.configInformation}</td>
                     <td>{o.notes}</td>
                     <td>{o.requestor}</td>
                     <td>
                       <select value={o.status} onChange={(e) => handleStatusChange(o, e.target.value)}>
-                        {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        {(o.status === 'Pending' ? ['Pending', ...STATUSES] : STATUSES).map((s) => <option key={s} value={s}>{s}</option>)}
+                        {isAdmin && <option value="__delete">Delete…</option>}
                       </select>
                     </td>
                     <td>{o.trackingNumber || '—'}</td>
@@ -149,6 +184,9 @@ export default function StorageOrders() {
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Order PDF / delivery docket"
                         onClick={() => openPdf(api, `/storage/orders/${o.id}/pdf`).catch((err) => alert(err.message))}>
                         <FileText size={13} />
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Print order details" onClick={() => setPrinting(o)}>
+                        <Printer size={13} />
                       </button>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Send to dispatch"
                         onClick={() => sendToDispatch(o)}>
@@ -162,6 +200,13 @@ export default function StorageOrders() {
           </div>
         )}
       </div>
+
+      {printing && (
+        <div className="order-print">
+          <h2 style={{ marginBottom: 12 }}>Order {printing.orderNumber}</h2>
+          <table><tbody>{orderRows(printing).map(([l, v]) => <tr key={l}><th>{l}</th><td style={{ whiteSpace: 'pre-wrap' }}>{v || ''}</td></tr>)}</tbody></table>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => !saving && setShowForm(false)}>
@@ -204,16 +249,16 @@ export default function StorageOrders() {
             </div>
             {deliverError && <div className="error-banner">{deliverError}</div>}
             <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
-              Optionally email the customer that their order is on its way, with a tracking number. Enter the recipient's address manually below, or Skip to mark it Delivered without emailing.
+              Optionally email the customer that their order is on its way (with a tracking number if you have one). Enter the recipient's address manually below, or Skip to mark it Delivered without emailing.
             </p>
             <div className="form-grid">
               <div className="field"><label>Customer email address</label><input type="email" value={toEmail} onChange={(e) => setToEmail(e.target.value)} placeholder="customer@example.com" /></div>
-              <div className="field"><label>Tracking number</label><input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} /></div>
+              <div className="field"><label>Tracking number (optional)</label><input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} /></div>
               <div className="field span-2"><label>Message (optional)</label><textarea value={message} onChange={(e) => setMessage(e.target.value)} /></div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button type="button" className="btn btn-ghost" onClick={() => submitDeliver(true)} disabled={deliverBusy} style={{ flex: 1 }}>Skip</button>
-              <button type="button" className="btn btn-accent" onClick={() => submitDeliver(false)} disabled={deliverBusy || !toEmail || !trackingNumber} style={{ flex: 1 }}>
+              <button type="button" className="btn btn-accent" onClick={() => submitDeliver(false)} disabled={deliverBusy || !toEmail} style={{ flex: 1 }}>
                 {deliverBusy ? 'Sending…' : 'Send & mark Delivered'}
               </button>
             </div>

@@ -1,9 +1,40 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Trash2, Pencil, X, Boxes, Package, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, Boxes, Package, ClipboardList, Copy, QrCode as QrIcon } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import QrCode from '../storage/QrCode';
+
+// Old "Get client portal link": the same link for every client — they still
+// sign in with their own username and password. Copy it, or show a QR code to
+// scan or paste into an email.
+function PortalLink() {
+  const url = `${window.location.origin}/portal/login`;
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); } catch {
+      const t = document.createElement('textarea'); t.value = url; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <div className="panel panel-pad" style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Client portal link</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input readOnly value={url} onFocus={(e) => e.target.select()} style={{ flex: '1 1 280px', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+        <button type="button" className="btn btn-ghost btn-sm" onClick={copy}><Copy size={14} /> {copied ? 'Copied!' : 'Copy'}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowQr((v) => !v)}><QrIcon size={14} /> {showQr ? 'Hide QR' : 'QR code'}</button>
+      </div>
+      {showQr && <div style={{ marginTop: 12 }}><QrCode text={url} size={180} title="Client portal QR code" /></div>}
+      <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+        The same link for every client — each signs in with their own portal username and password to see their stock, orders and
+        receiving/dispatch history and to submit orders. Prices and fees are not shown to clients.
+      </p>
+    </div>
+  );
+}
 
 export default function StorageClients() {
   const { user } = useAuth();
@@ -63,10 +94,7 @@ export default function StorageClients() {
         </div>
       </div>
 
-      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
-        Clients with a portal login sign in at <a href={`${window.location.origin}/portal/login`} target="_blank" rel="noreferrer">{window.location.origin}/portal/login</a> to
-        see their stock, orders and receiving/dispatch history and to submit orders. Prices and fees are not shown to clients.
-      </p>
+      <PortalLink />
 
       <div className="panel" style={{ padding: 0 }}>
         {!clients ? (
