@@ -260,6 +260,19 @@ function parseStockShorthand(text) {
   return m ? { type: m[1].trim(), qty: m[2] } : null;
 }
 
+// "Individual Item: 65 @ $5" -> { type: 'Individual Item', qty: '65', rate: 5 }.
+// Returns null unless the text is exactly one such part and its quantity agrees
+// with the Qty column (or the Qty column is empty).
+function singleStockPart(typeText, qtyText) {
+  if (!typeText) return null;
+  const pieces = String(typeText).split(/[;\n]+/).map((s) => s.trim()).filter(Boolean);
+  if (pieces.length !== 1) return null;
+  const m = pieces[0].match(/^(.+?):\s*(\d+(?:\.\d+)?)\s*(?:@\s*\$?\s*(\d+(?:\.\d+)?))?\s*$/);
+  if (!m) return null;
+  if (qtyText != null && qtyText !== '' && Number(qtyText) !== Number(m[2])) return null;
+  return { type: m[1].trim(), qty: m[2], rate: m[3] != null ? Number(m[3]) : null };
+}
+
 function mapReceivingDispatch(e) {
   let stockReceivedType = textOrNull(pick(e, RD_KEYS.stockReceivedType));
   let stockReceivedQty = textOrNull(pick(e, RD_KEYS.stockReceivedQty));
@@ -276,7 +289,22 @@ function mapReceivingDispatch(e) {
   }
 
   const rateRaw = e.rate == null ? '' : String(e.rate).replace(/[^0-9.\-]/g, '');
-  const rate = rateRaw === '' ? null : (Number.isFinite(Number(rateRaw)) ? Number(rateRaw) : null);
+  let rate = rateRaw === '' ? null : (Number.isFinite(Number(rateRaw)) ? Number(rateRaw) : null);
+
+  // The old sheet's Type column usually holds "Type: Qty @ $Rate" (e.g.
+  // "Individual Item: 65 @ $5") with the Rate column empty. Where a side is a
+  // single such part, split it into clean Type / Qty / Rate. A side with
+  // several parts (or rates that disagree) is left as written — the app's fee
+  // calculation reads the parts directly, so the fee is right either way.
+  const recv = singleStockPart(stockReceivedType, stockReceivedQty);
+  const disp = singleStockPart(stockDispatchedType, stockDispatchedQty);
+  const partRates = [recv, disp].filter((p) => p && p.rate != null).map((p) => p.rate);
+  const ratesAgree = partRates.every((r) => r === partRates[0]) && (rate == null || partRates.every((r) => r === rate));
+  if (ratesAgree) {
+    if (partRates.length && rate == null) rate = partRates[0];
+    if (recv) { stockReceivedType = recv.type; stockReceivedQty = recv.qty; }
+    if (disp) { stockDispatchedType = disp.type; stockDispatchedQty = disp.qty; }
+  }
 
   return {
     client: textOrNull(e.client),
@@ -309,10 +337,26 @@ function inspectExport(data) {
     return m.stockReceivedQty != null || m.stockDispatchedQty != null;
   }).length;
   console.log(`\n${withStock} of ${rd.length} receiving/dispatch rows map to a stock quantity.`);
+
+  // Fee each row will get in the app (same rule as rdFees in routes/storage.js).
+  const parts = (t) => String(t || '').split(/[;\n]+/).map((x) => x.trim().match(/^(.+?):\s*(\d+(?:\.\d+)?)\s*(?:@\s*\$?\s*(\d+(?:\.\d+)?))?\s*$/)).filter(Boolean);
+  const side = (t, q, r) => { const ps = parts(t); return ps.length ? ps.reduce((a, m) => a + Number(m[2]) * (m[3] != null ? Number(m[3]) : r), 0) : r * (Number(q) || 0); };
+  let zero = 0, total = 0;
+  console.log('\nFee per row (client | date | received | dispatched | fee):');
+  rd.forEach((e) => {
+    const m = mapReceivingDispatch(e);
+    const r = Number(m.rate) || 0;
+    const fee = side(m.stockReceivedType, m.stockReceivedQty, r) + side(m.stockDispatchedType, m.stockDispatchedQty, r);
+    total += fee;
+    if (!fee) zero++;
+    const lbl = (t, q) => (t || q ? `${t || ''} x${q || ''}` : '-');
+    console.log(`  ${m.client} | ${m.dateReceived || m.dateDispatched || '-'} | ${lbl(m.stockReceivedType, m.stockReceivedQty)} | ${lbl(m.stockDispatchedType, m.stockDispatchedQty)} | $${fee.toFixed(2)}${fee ? '' : '   <-- $0'}`);
+  });
+  console.log(`\nTotal fees: $${total.toFixed(2)}. Rows with a $0 fee: ${zero} of ${rd.length}.`);
 }
 
 if (require.main === module) {
   main().catch((err) => { console.error(err); process.exit(1); });
 }
 
-module.exports = { mapReceivingDispatch, parseStockShorthand };
+module.exports = { mapReceivingDispatch, parseStockShorthand, singleStockPart };
