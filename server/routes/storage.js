@@ -4,12 +4,13 @@ const bcrypt = require('bcryptjs');
 const { db, nextStorageOrderNumber } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole } = require('../permissions');
-const { notifyStorageOrderTracking, notifyStorageOrderSubmitted } = require('../email');
+const { notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived } = require('../email');
 const {
   ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement,
 } = require('../storageBilling');
 const { buildOrderPdf, buildInvoicePdf, invoiceReference } = require('../storagePdf');
 const { buildStorageCentreZip } = require('../storageExport');
+const { sendWeeklyInvoicingReminder, recipients: weeklyRecipients } = require('../storageWeekly');
 
 const router = express.Router();
 router.use(authRequired);
@@ -318,6 +319,8 @@ router.post('/orders', (req, res) => {
     notifyStorageOrderSubmitted({
       toEmails: notifyList, orderNumber, clientName: b.client, devices: b.devices,
       deliveryAddress: b.deliveryAddress, dateToBeDelivered: b.dateToBeDelivered,
+      siteContactName: b.siteContactName, siteContactPhone: b.siteContactPhone,
+      configInformation: b.configInformation, notes: b.notes, requestor: order.requestor,
     }).catch((err) => console.error('[storage] order-submitted notify failed:', err.message));
   }
 
@@ -392,6 +395,62 @@ router.get('/orders/:id/pdf', async (req, res) => {
     console.error('[storage] order PDF failed:', err);
     res.status(500).json({ error: 'Could not generate the order PDF' });
   }
+});
+
+// "Send to dispatch" — the old app's sendOrderToDispatch: marks the order
+// Delivered (no tracking email; that stays a separate step), sets the storage
+// end date on the manifest items whose serial exactly matches one of the
+// order's devices and are still in storage, and returns what the dispatch
+// entry should be pre-filled with. Matching is by exact serial only (case-
+// insensitive), and only within the order's own client, so it can never close
+// out another client's stock.
+function orderDeviceTokens(devices) {
+  return String(devices || '').split(/[,\n]/).map((t) => t.trim())
+    // Portal orders list devices as "SERIAL — Make Model (Location)"; the serial is the first part.
+    .map((t) => t.split(/\s+—\s+/)[0].trim())
+    .filter(Boolean);
+}
+
+router.post('/orders/:id/dispatch', (req, res) => {
+  const order = db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const endDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.endDate || ''))
+    ? req.body.endDate
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
+
+  const tokens = [...new Set(orderDeviceTokens(order.devices))];
+  const findInStorage = db.prepare(`SELECT id, serial FROM storage_items WHERE client = ? AND upper(trim(serial)) = upper(?)
+    AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')`);
+  const findOut = db.prepare("SELECT 1 FROM storage_items WHERE client = ? AND upper(trim(serial)) = upper(?) AND end_date IS NOT NULL AND end_date != ''");
+  const setEnd = db.prepare("UPDATE storage_items SET end_date = ?, last_edited_by = ?, updated_at = datetime('now') WHERE id = ?");
+  const matched = []; const unmatched = [];
+  db.transaction(() => {
+    tokens.forEach((t) => {
+      const rows = findInStorage.all(order.client, t);
+      if (rows.length) { rows.forEach((r) => setEnd.run(endDate, req.user.name, r.id)); matched.push(t); }
+      else unmatched.push(findOut.get(order.client, t) ? `${t} (already out of storage)` : t);
+    });
+    if (order.status !== 'Delivered') {
+      db.prepare("UPDATE storage_orders SET status = 'Delivered', updated_at = datetime('now') WHERE id = ?").run(order.id);
+    }
+  })();
+
+  const notes = [
+    `Dispatched from Order ${order.order_number || ''}`,
+    `Devices: ${order.devices || ''}`,
+    order.delivery_address ? `Delivery address: ${order.delivery_address}` : null,
+    order.site_contact_name ? `Site contact: ${order.site_contact_name}` : null,
+  ].filter(Boolean).join('\n');
+
+  res.json({
+    order: rowToOrder(db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(order.id)),
+    endDate, deviceCount: tokens.length, matched, unmatched,
+    dispatchPrefill: {
+      client: order.client, dateDispatched: endDate,
+      stockDispatchedType: `Individual Item: ${tokens.length || 1} @ $5`, stockDispatchedQty: String(tokens.length || 1),
+      dispatch: notes,
+    },
+  });
 });
 
 router.delete('/orders/:id', (req, res) => {
@@ -540,7 +599,18 @@ router.post('/receiving-dispatch', (req, res) => {
     .run(id, v('client'), v('dateReceived'), v('dateDispatched'), v('rate'),
       v('stockReceivedType'), v('stockReceivedQty'), v('stockDispatchedType'), v('stockDispatchedQty'),
       v('receiving'), v('dispatch'), req.user.name);
-  res.status(201).json({ entry: rowToRD(db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(id)) });
+  const entry = rowToRD(db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(id));
+
+  // Like the old app: email staff when an entry logs stock received (a
+  // dispatch-only entry doesn't). Recipients come from STORAGE_RECEIVING_NOTIFY_EMAILS.
+  // A failed email never fails the save — the entry is already logged.
+  const receivingList = (process.env.STORAGE_RECEIVING_NOTIFY_EMAILS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (receivingList.length && (entry.stockReceivedType || entry.stockReceivedQty || entry.receiving || entry.dateReceived)) {
+    notifyStorageStockReceived({ toEmails: receivingList, entry, loggedBy: req.user.name })
+      .catch((err) => console.error('[storage] stock-received notify failed:', err.message));
+  }
+
+  res.status(201).json({ entry });
 });
 
 router.patch('/receiving-dispatch/:id', (req, res) => {
@@ -557,9 +627,9 @@ router.patch('/receiving-dispatch/:id', (req, res) => {
     params.push(val);
   }
   if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
-  // saved_by / saved_on record the last person to save the entry, as in the old app.
-  sets.push('saved_by = ?', "saved_on = datetime('now')");
-  params.push(req.user.name, req.params.id);
+  // saved_by / saved_on are left alone: they record who originally logged the
+  // entry, exactly as the old app's updateReceivingDispatchEntry did.
+  params.push(req.params.id);
   db.prepare(`UPDATE storage_receiving_dispatch SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   res.json({ entry: rowToRD(db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(req.params.id)) });
 });
@@ -588,6 +658,19 @@ router.get('/reports/statement', (req, res) => {
   if (!client) return res.status(400).json({ error: 'client is required' });
   if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
   res.json(clientStatement(client, from, to));
+});
+
+// Sends last week's invoicing summary now (the Monday email), to the
+// STORAGE_WEEKLY_REMINDER_EMAILS list — handy for checking it after setup.
+router.post('/reports/weekly-reminder', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can send the weekly summary' });
+  if (!weeklyRecipients().length) return res.status(400).json({ error: 'Set STORAGE_WEEKLY_REMINDER_EMAILS on the server first.' });
+  try {
+    res.json(await sendWeeklyInvoicingReminder());
+  } catch (err) {
+    console.error('[storage] weekly reminder (manual) failed:', err);
+    res.status(502).json({ error: 'Could not send the email' });
+  }
 });
 
 router.get('/reports/invoice.pdf', async (req, res) => {

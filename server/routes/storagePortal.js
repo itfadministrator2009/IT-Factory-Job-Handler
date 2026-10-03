@@ -73,21 +73,49 @@ router.post('/change-password', (req, res) => {
 // ---------------------------------------------------------------------------
 // Stock on hand
 // ---------------------------------------------------------------------------
-function portalItem(r) {
+const normLoc = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+function palletLocationKeys() {
+  return new Set(db.prepare('SELECT location_key FROM storage_locations_registry WHERE is_pallet = 1').all().map((r) => r.location_key));
+}
+// Same rule as the old app's computeDerived_: a start date and no end date = In storage.
+function itemStatus(r) {
+  if (!r.start_date) return '';
+  return r.end_date ? 'Out of Storage' : 'In storage';
+}
+
+function portalItem(r, pallets) {
   return {
     id: r.id, item: r.item, make: r.make, model: r.model, serial: r.serial, assetTag: r.asset_tag,
     quantity: r.quantity, condition: r.condition, storageCentre: r.storage_centre, location: r.location,
     jobNumber: r.job_number, referenceNumber: r.reference_number, poNumber: r.po_number, orderNumber: r.order_number,
-    startDate: r.start_date, endDate: r.end_date,
+    startDate: r.start_date, endDate: r.end_date, status: itemStatus(r),
+    // Whether this item sits on a location classified as a pallet (Locations page) —
+    // the order form groups those by pallet, as the old portal did.
+    onPallet: !!(r.location && pallets.has(normLoc(r.location))),
   };
 }
 
-// Current stock by default (no end date); ?include=all adds items that have left.
-router.get('/items', (req, res) => {
-  const all = req.query.include === 'all';
-  const rows = db.prepare(`SELECT * FROM storage_items WHERE client = ? ${all ? '' : "AND (end_date IS NULL OR end_date = '')"} ORDER BY storage_centre, location, item, serial`)
+// Headline counts, as the old portal showed them: items "In storage" and how
+// many distinct pallets they sit on. Only locations classified as pallets on
+// the Locations page count — unclassified or "not a pallet" ones never do.
+router.get('/summary', (req, res) => {
+  const items = db.prepare("SELECT storage_centre, location FROM storage_items WHERE client = ? AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')")
     .all(req.portalClient.client_name);
-  res.json({ items: rows.map(portalItem) });
+  const palletKeys = palletLocationKeys();
+  const pallets = new Set();
+  items.forEach((i) => {
+    if (i.location && palletKeys.has(normLoc(i.location))) pallets.add(`${i.storage_centre || ''}|||${normLoc(i.location)}`);
+  });
+  const total = db.prepare('SELECT COUNT(*) AS c FROM storage_items WHERE client = ?').get(req.portalClient.client_name).c;
+  res.json({ inStorageCount: items.length, palletCount: pallets.size, totalCount: total });
+});
+
+// Every item on record for this client, with its status — as the old portal showed.
+router.get('/items', (req, res) => {
+  const pallets = palletLocationKeys();
+  const rows = db.prepare('SELECT * FROM storage_items WHERE client = ? ORDER BY storage_centre, location, item, serial')
+    .all(req.portalClient.client_name);
+  res.json({ items: rows.map((r) => portalItem(r, pallets)) });
 });
 
 // ---------------------------------------------------------------------------
@@ -108,7 +136,7 @@ router.get('/orders', (req, res) => {
   res.json({ orders: rows.map(portalOrder) });
 });
 
-const ORDER_LIMITS = { devices: 20000, deliveryAddress: 500, siteContactName: 200, siteContactPhone: 60, configInformation: 4000, notes: 4000, requestedBy: 200 };
+const ORDER_LIMITS = { deliveryAddress: 500, siteContactName: 200, siteContactPhone: 60, configInformation: 4000, notes: 4000, requestedBy: 200 };
 
 router.post('/orders', orderLimiter, (req, res) => {
   const b = req.body || {};
@@ -116,26 +144,40 @@ router.post('/orders', orderLimiter, (req, res) => {
   for (const [k, max] of Object.entries(ORDER_LIMITS)) {
     if (clean(k).length > max) return res.status(400).json({ error: `${k} is too long` });
   }
-  if (!clean('devices')) return res.status(400).json({ error: 'List the devices you need delivered' });
+  // Devices are picked from the client's own in-storage stock (as in the old
+  // portal), by item id — so a client can never order someone else's stock.
+  const ids = Array.isArray(b.deviceIds) ? [...new Set(b.deviceIds.map(String))].slice(0, 2000) : [];
+  if (!ids.length) return res.status(400).json({ error: 'Select at least one device before submitting.' });
+  const pick = db.prepare(`SELECT * FROM storage_items WHERE id = ? AND client = ?
+    AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')`);
+  const picked = ids.map((id) => pick.get(id, req.portalClient.client_name)).filter(Boolean);
+  if (picked.length !== ids.length) return res.status(400).json({ error: 'Some selected devices are no longer in storage — refresh the page and try again.' });
+  // Stored the way the old app did (serial, or the item name when there's no
+  // serial), so "Send to dispatch" can match them back to the manifest.
+  const devices = picked.map((i) => (i.serial && i.serial.trim()) || i.item || '').filter(Boolean).join(', ');
+  const deviceLines = picked.map((i) => [i.item, i.make, i.model, i.serial ? `S/N ${i.serial}` : null].filter(Boolean).join(' ')).join('\n');
   if (!clean('deliveryAddress')) return res.status(400).json({ error: 'A delivery address is required' });
   const date = clean('dateToBeDelivered');
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Delivery date must be a valid date' });
 
+  // Portal orders start as "In Progress", as they did in the old app.
   const client = req.portalClient;
   const requestor = clean('requestedBy') ? `${clean('requestedBy')} (client portal)` : `${client.username} (client portal)`;
   const id = randomUUID();
   const orderNumber = nextStorageOrderNumber();
   db.prepare(`INSERT INTO storage_orders
     (id, order_number, client, devices, delivery_address, site_contact_name, site_contact_phone, date_to_be_delivered, config_information, notes, requestor, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`)
-    .run(id, orderNumber, client.client_name, clean('devices'), clean('deliveryAddress'), clean('siteContactName') || null,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'In Progress')`)
+    .run(id, orderNumber, client.client_name, devices, clean('deliveryAddress'), clean('siteContactName') || null,
       clean('siteContactPhone') || null, date || null, clean('configInformation') || null, clean('notes') || null, requestor);
 
   const notifyList = (process.env.STORAGE_NOTIFY_EMAILS || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (notifyList.length) {
     notifyStorageOrderSubmitted({
-      toEmails: notifyList, orderNumber, clientName: client.client_name, devices: clean('devices'),
+      toEmails: notifyList, orderNumber, clientName: client.client_name, devices: deviceLines,
       deliveryAddress: clean('deliveryAddress'), dateToBeDelivered: date, source: 'portal',
+      siteContactName: clean('siteContactName'), siteContactPhone: clean('siteContactPhone'),
+      configInformation: clean('configInformation'), notes: clean('notes'), requestor,
     }).catch((err) => console.error('[storage-portal] order-submitted notify failed:', err.message));
   }
 
