@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Boxes, Package, Users, ClipboardList, Truck, FileText, Download } from 'lucide-react';
+import { Boxes, Package, Users, ClipboardList, Truck, FileText, Download, Mail } from 'lucide-react';
 import api from '../api';
 import { openPdf, downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
@@ -55,6 +55,16 @@ export default function StorageReports() {
             onClick={() => downloadFile(api, '/storage/export.zip', 'storage-centre.zip').catch(() => alert('Could not download the export'))}>
             <Download size={14} /> Download backup
           </button>
+          <button type="button" className="btn btn-ghost btn-sm" title="Email last week's invoicing summary now (the Monday email)"
+            onClick={async () => {
+              if (!confirm("Email last week's invoicing summary now?")) return;
+              try {
+                const { data } = await api.post('/storage/reports/weekly-reminder');
+                alert(`Sent to ${data.sentTo.join(', ')} — ${data.clients} client(s), $${data.grandTotal.toFixed(2)}.`);
+              } catch (err) { alert(err.response?.data?.error || 'Could not send'); }
+            }}>
+            <Mail size={14} /> Email weekly summary
+          </button>
         </div>
       </div>
 
@@ -69,13 +79,14 @@ export default function StorageReports() {
       {report && (
         <div className="panel" style={{ padding: 0 }}>
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Storage Cost</th><th>Receiving/Dispatch Fees</th><th>Total</th><th></th></tr></thead>
+            <thead><tr><th>Client</th><th>Storage Cost</th><th>Receiving</th><th>Dispatch</th><th>Total</th><th></th></tr></thead>
             <tbody>
               {report.summary.map((s) => (
                 <tr key={s.client}>
                   <td>{s.client}</td>
                   <td>${s.storageCost.toFixed(2)}</td>
-                  <td>${s.receivingDispatchFees.toFixed(2)}</td>
+                  <td>${(s.receivingFees ?? 0).toFixed(2)}</td>
+                  <td>${(s.dispatchFees ?? 0).toFixed(2)}</td>
                   <td style={{ fontWeight: 700 }}>${s.total.toFixed(2)}</td>
                   <td>
                     <button type="button" className="btn btn-ghost btn-sm" title="Invoice PDF for this client and period"
@@ -86,12 +97,12 @@ export default function StorageReports() {
                 </tr>
               ))}
               {report.summary.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No clients with storage items.</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No clients with storage items.</td></tr>
               )}
             </tbody>
             {report.summary.length > 0 && (
               <tfoot>
-                <tr><td colSpan={3} style={{ textAlign: 'right', fontWeight: 700 }}>Grand total</td><td style={{ fontWeight: 700 }}>${report.grandTotal.toFixed(2)}</td><td></td></tr>
+                <tr><td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>Grand total</td><td style={{ fontWeight: 700 }}>${report.grandTotal.toFixed(2)}</td><td></td></tr>
               </tfoot>
             )}
           </table>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, X, Boxes, Package, Users, FileText } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Plus, X, Boxes, Package, Users, FileText, Truck } from 'lucide-react';
 import api from '../api';
 import { openPdf } from '../utils/pdf';
 import Layout from '../components/Layout';
@@ -26,6 +26,24 @@ export default function StorageOrders() {
   const [deliverError, setDeliverError] = useState('');
 
   function load() { api.get('/storage/orders').then((res) => setOrders(res.data.orders)); }
+
+  // "Send to dispatch", as in the old app: marks the order Delivered, closes out
+  // the matching serials on the manifest, then opens a pre-filled dispatch entry.
+  const navigate = useNavigate();
+  async function sendToDispatch(o) {
+    if (!confirm(`Send order ${o.orderNumber} to dispatch?\n\nThis marks it Delivered (no tracking email) and sets today as the storage end date for its devices on the manifest.`)) return;
+    try {
+      const { data } = await api.post(`/storage/orders/${o.id}/dispatch`, {});
+      navigate('/storage/receiving', {
+        state: {
+          dispatchPrefill: data.dispatchPrefill,
+          matchSummary: { matched: data.matched, unmatched: data.unmatched, deviceCount: data.deviceCount, endDate: data.endDate },
+        },
+      });
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not send to dispatch');
+    }
+  }
   useEffect(() => { load(); }, []);
 
   function openAdd() { setFormValues({}); setError(''); setShowForm(true); }
@@ -127,10 +145,14 @@ export default function StorageOrders() {
                       </select>
                     </td>
                     <td>{o.trackingNumber || '—'}</td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Order PDF / delivery docket"
                         onClick={() => openPdf(api, `/storage/orders/${o.id}/pdf`).catch((err) => alert(err.message))}>
                         <FileText size={13} />
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Send to dispatch"
+                        onClick={() => sendToDispatch(o)}>
+                        <Truck size={13} />
                       </button>
                     </td>
                   </tr>

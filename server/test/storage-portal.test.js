@@ -159,11 +159,11 @@ test('portal and staff tokens cannot cross over', async () => {
 });
 
 test('portal only shows the signed-in client’s data, without prices', async () => {
-  const { data: cur } = await client.get('/api/storage-portal/items', { token: acmeToken });
-  assert.deepEqual(cur.items.map((i) => i.serial).sort(), ['SER-A1', 'SER-A3'], 'current stock only, Acme only');
-  assert.ok(cur.items.every((i) => !('priceWeek' in i) && !('price_week' in i)));
-  const { data: all } = await client.get('/api/storage-portal/items?include=all', { token: acmeToken });
-  assert.equal(all.items.length, 3);
+  const { data: all } = await client.get('/api/storage-portal/items', { token: acmeToken });
+  assert.deepEqual(all.items.map((i) => i.serial).sort(), ['SER-A1', 'SER-A2', 'SER-A3'], 'every Acme item, no one else\u2019s');
+  assert.ok(all.items.every((i) => !('priceWeek' in i) && !('price_week' in i)));
+  assert.equal(all.items.find((i) => i.serial === 'SER-A2').status, 'Out of Storage');
+  assert.equal(all.items.find((i) => i.serial === 'SER-A1').status, 'In storage');
 
   const { data: orders } = await client.get('/api/storage-portal/orders', { token: acmeToken });
   assert.deepEqual(orders.orders.map((o) => o.orderNumber), ['SC-00001']);
@@ -177,18 +177,39 @@ test('portal only shows the signed-in client’s data, without prices', async ()
   assert.ok(!JSON.stringify(rd).includes('$'), 'no rates or fees');
 });
 
-test('portal order submission creates a Pending order for that client only', async () => {
-  const missing = await client.post('/api/storage-portal/orders', { token: acmeToken, body: { devices: 'SER-A1' } });
-  assert.equal(missing.status, 400);
+test('portal order submission creates an In Progress order for that client only', async () => {
+  const missing = await client.post('/api/storage-portal/orders', { token: acmeToken, body: { deliveryAddress: '1 Test St' } });
+  assert.equal(missing.status, 400, 'no devices picked');
+  const notTheirs = await client.post('/api/storage-portal/orders', { token: acmeToken, body: { deviceIds: ['b1'], deliveryAddress: '1 Test St' } });
+  assert.equal(notTheirs.status, 400, 'cannot order another client\u2019s stock');
+  const gone = await client.post('/api/storage-portal/orders', { token: acmeToken, body: { deviceIds: ['a2'], deliveryAddress: '1 Test St' } });
+  assert.equal(gone.status, 400, 'cannot order stock that has left storage');
   const res = await client.post('/api/storage-portal/orders', {
     token: acmeToken,
-    body: { client: 'Beta', devices: 'SER-A1\nSER-A3', deliveryAddress: '1 Test St', requestedBy: 'Pat', dateToBeDelivered: '2026-10-10' },
+    body: { client: 'Beta', deviceIds: ['a1', 'a3'], deliveryAddress: '1 Test St', requestedBy: 'Pat', dateToBeDelivered: '2026-10-10' },
   });
   assert.equal(res.status, 201);
   const row = db.prepare('SELECT * FROM storage_orders WHERE order_number = ?').get(res.data.order.orderNumber);
   assert.equal(row.client, 'Acme', 'client always comes from the login, never the request body');
-  assert.equal(row.status, 'Pending');
+  assert.equal(row.status, 'In Progress', 'portal orders start In Progress, as in the old app');
   assert.equal(row.requestor, 'Pat (client portal)');
+  assert.equal(row.devices, 'SER-A1, SER-A3', 'stored as serials, like the old app');
+});
+
+test('send to dispatch: Delivered, matching serials closed out, dispatch entry pre-fill', async () => {
+  const order = db.prepare("SELECT * FROM storage_orders WHERE devices = 'SER-A1, SER-A3'").get();
+  db.prepare("INSERT INTO storage_items (id, client, serial, start_date) VALUES ('other', 'Beta', 'SER-A3', '2026-09-01')").run();
+  const { status, data } = await client.post(`/api/storage/orders/${order.id}/dispatch`, { token: staff.token, body: { endDate: '2026-10-11' } });
+  assert.equal(status, 200);
+  assert.equal(data.order.status, 'Delivered');
+  assert.deepEqual(data.matched.sort(), ['SER-A1', 'SER-A3']);
+  assert.equal(db.prepare("SELECT end_date FROM storage_items WHERE id = 'a1'").get().end_date, '2026-10-11');
+  assert.equal(db.prepare("SELECT end_date FROM storage_items WHERE id = 'other'").get().end_date, null, 'another client\u2019s identical serial is untouched');
+  assert.equal(data.dispatchPrefill.stockDispatchedType, 'Individual Item: 2 @ $5');
+  assert.match(data.dispatchPrefill.dispatch, /^Dispatched from Order SC-\d{5}\nDevices: SER-A1, SER-A3\nDelivery address: 1 Test St/);
+  // Running it again: both serials are now out of storage.
+  const again = await client.post(`/api/storage/orders/${order.id}/dispatch`, { token: staff.token, body: {} });
+  assert.deepEqual(again.data.unmatched.sort(), ['SER-A1 (already out of storage)', 'SER-A3 (already out of storage)']);
 });
 
 test('change password, then removed access takes effect immediately', async () => {

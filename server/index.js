@@ -17,6 +17,7 @@ const assetRoutes = require('./routes/assets');
 const storageRoutes = require('./routes/storage');
 const storagePortalRoutes = require('./routes/storagePortal');
 const { startBackupScheduler } = require('./backup');
+const { startStorageWeeklyScheduler } = require('./storageWeekly');
 
 const app = express();
 // Render sits in front of the app as a reverse proxy, adding an X-Forwarded-For
@@ -64,4 +65,5 @@ process.on('unhandledRejection', (err) => {
 });
 
 startBackupScheduler();
+startStorageWeeklyScheduler();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));

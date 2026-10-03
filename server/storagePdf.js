@@ -217,7 +217,7 @@ function buildInvoicePdf(statement) {
   const gst = GST_RATE ? Math.round(subtotal * GST_RATE) / 100 : 0;
   const total = Math.round((subtotal + gst) * 100) / 100;
   return toBuffer((doc) => {
-    let y = header(doc, GST_RATE ? 'TAX INVOICE — STORAGE' : 'INVOICE — STORAGE', [
+    let y = header(doc, GST_RATE ? 'TAX INVOICE — STORAGE' : 'STORAGE INVOICE', [
       ['INVOICE REF:', invoiceReference(statement)],
       ['INVOICE DATE:', dmy(todaySydney())],
       ['PERIOD:', `${dmy(statement.from)} – ${dmy(statement.to)}`],
@@ -270,9 +270,16 @@ function buildInvoicePdf(statement) {
     });
     doc.rect(boxX, y + 2, boxW, 24).fill(TEAL);
     doc.fontSize(10.5).font('Helvetica-Bold').fillColor('white')
-      .text(GST_RATE ? 'TOTAL (inc GST)' : 'TOTAL', boxX + 8, y + 9, { width: 140 })
+      .text(GST_RATE ? 'TOTAL (inc GST)' : 'TOTAL (ex GST)', boxX + 8, y + 9, { width: 140 })
       .text(money(total), boxX + 150, y + 9, { width: boxW - 158, align: 'right' });
-    y += 40;
+    y += 32;
+    if (!GST_RATE) {
+      // Same note as the old app's invoices.
+      doc.fontSize(8.5).font('Helvetica').fillColor(MUTED)
+        .text('This total excludes GST. Please add GST as applicable.', boxX, y, { width: boxW, align: 'right' });
+      y += 14;
+    }
+    y += 8;
 
     if (PAYMENT_LINES.length) {
       y = sectionTitle(doc, 'PAYMENT DETAILS', y);

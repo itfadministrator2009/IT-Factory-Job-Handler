@@ -108,6 +108,7 @@ export default function StorageLocations() {
       <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16, maxWidth: 760 }}>
         Mark each location as a real <strong>pallet</strong> or <strong>not a pallet</strong> (a shelf, cage, floor area or placeholder).
         Locations in use on the manifest or pallet records show up here automatically.
+        Only locations marked as pallets count towards a client&apos;s pallet total in the client portal; unclassified ones don&apos;t.
       </p>
 
       <form onSubmit={handleAdd} className="panel" style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
