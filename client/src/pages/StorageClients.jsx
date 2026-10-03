@@ -40,6 +40,8 @@ export default function StorageClients() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const [clients, setClients] = useState(null);
+  const [unlisted, setUnlisted] = useState([]);
+  const [adding, setAdding] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [clientName, setClientName] = useState('');
@@ -48,7 +50,21 @@ export default function StorageClients() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  function load() { api.get('/storage/clients').then((res) => setClients(res.data.clients)); }
+  function load() {
+    api.get('/storage/clients').then((res) => { setClients(res.data.clients); setUnlisted(res.data.unlisted || []); });
+  }
+
+  // Adds names found on items/orders/etc. to the client list (no portal login).
+  async function addToList(names) {
+    setAdding(true);
+    const failed = [];
+    for (const name of names) {
+      try { await api.post('/storage/clients', { clientName: name }); } catch (err) { failed.push(`${name}: ${err.response?.data?.error || 'failed'}`); }
+    }
+    setAdding(false);
+    if (failed.length) alert(`Some clients weren't added:\n${failed.join('\n')}`);
+    load();
+  }
   useEffect(() => { load(); }, []);
 
   function openAdd() { setEditing(null); setClientName(''); setUsername(''); setPassword(''); setError(''); setShowForm(true); }
@@ -84,7 +100,7 @@ export default function StorageClients() {
       <div className="page-header">
         <div>
           <h1>Storage Centre — Clients</h1>
-          <div className="subtitle">{clients ? `${clients.length} client${clients.length === 1 ? '' : 's'}` : 'Loading…'}</div>
+          <div className="subtitle">{clients ? `${clients.length} on the client list${unlisted.length ? ` · ${unlisted.length} more found on records` : ''}` : 'Loading…'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Link to="/storage" className="btn btn-ghost btn-sm"><Boxes size={14} /> Manifest</Link>
@@ -103,11 +119,12 @@ export default function StorageClients() {
           <div className="empty-state"><h3>No clients yet</h3></div>
         ) : (
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
+            <thead><tr><th>Client</th><th style={{ textAlign: 'right' }}>In storage</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
             <tbody>
               {clients.map((c) => (
                 <tr key={c.id} className="clickable" onClick={() => openEdit(c)}>
                   <td>{c.clientName}</td>
+                  <td style={{ textAlign: 'right', color: c.inStorageCount ? undefined : 'var(--muted)' }} title={`${c.itemCount} item(s) on record`}>{c.inStorageCount}</td>
                   <td>{c.username || '—'}</td>
                   <td>{c.hasPortalLogin ? 'Enabled' : '—'}</td>
                   <td style={{ color: 'var(--muted)' }}>{c.addedBy || '—'}</td>
@@ -125,6 +142,34 @@ export default function StorageClients() {
           </table>
         )}
       </div>
+
+      {unlisted.length > 0 && (
+        <div className="panel" style={{ padding: 0, marginTop: 16 }}>
+          <div className="panel-pad" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: 15 }}>Not on the client list yet ({unlisted.length})</h3>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>These client names are used on items, pallet rates, orders or receiving/dispatch entries but were never added to the client list. Add them to give them a portal login.</div>
+            </div>
+            <button type="button" className="btn btn-accent btn-sm" disabled={adding}
+              onClick={() => { if (confirm(`Add all ${unlisted.length} to the client list?`)) addToList(unlisted.map((u) => u.clientName)); }}>
+              <Plus size={14} /> {adding ? 'Adding…' : 'Add all'}
+            </button>
+          </div>
+          <table className="ticket-table">
+            <thead><tr><th>Client</th><th style={{ textAlign: 'right' }}>In storage</th><th>Found on</th><th></th></tr></thead>
+            <tbody>
+              {unlisted.map((u) => (
+                <tr key={u.clientName}>
+                  <td>{u.clientName}</td>
+                  <td style={{ textAlign: 'right' }} title={`${u.itemCount} item(s) on record`}>{u.inStorageCount}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 13 }}>{u.sources.join(', ')}</td>
+                  <td><button type="button" className="btn btn-ghost btn-sm" disabled={adding} onClick={() => addToList([u.clientName])}><Plus size={13} /> Add</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => !saving && setShowForm(false)}>
