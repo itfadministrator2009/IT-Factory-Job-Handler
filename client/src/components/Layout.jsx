@@ -70,6 +70,14 @@ export default function Layout({ children }) {
               <NavLink to="/storage/orders" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
                 Client Orders
               </NavLink>
+              <NavLink to="/storage/receiving" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Receiving / Dispatch
+              </NavLink>
+              {isAdmin && (
+                <NavLink to="/storage/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                  Reports
+                </NavLink>
+              )}
             </div>
           )}
           {isAdmin && (
