@@ -15,6 +15,7 @@ const backupRoutes = require('./routes/backup');
 const projectRoutes = require('./routes/projects');
 const assetRoutes = require('./routes/assets');
 const storageRoutes = require('./routes/storage');
+const storagePortalRoutes = require('./routes/storagePortal');
 const { startBackupScheduler } = require('./backup');
 
 const app = express();
@@ -45,6 +46,8 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/storage', storageRoutes);
+// Client-facing Storage Centre portal — its own login, separate from staff accounts.
+app.use('/api/storage-portal', storagePortalRoutes);
 
 const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {

@@ -5,6 +5,11 @@ const { db, nextStorageOrderNumber } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole } = require('../permissions');
 const { notifyStorageOrderTracking, notifyStorageOrderSubmitted } = require('../email');
+const {
+  ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement,
+} = require('../storageBilling');
+const { buildOrderPdf, buildInvoicePdf, invoiceReference } = require('../storagePdf');
+const { buildStorageCentreZip } = require('../storageExport');
 
 const router = express.Router();
 router.use(authRequired);
@@ -210,11 +215,29 @@ router.get('/clients', (req, res) => {
   res.json({ clients: db.prepare('SELECT * FROM storage_clients ORDER BY client_name').all().map(rowToClient) });
 });
 
+const PORTAL_MIN_PASSWORD = 8;
+
+// Usernames are matched case-insensitively at portal login, so they must be
+// unique ignoring case. Returns an error message, or null if OK.
+function checkPortalLogin(username, password, exceptId) {
+  if (username) {
+    if (!/^[A-Za-z0-9._@-]{3,64}$/.test(username)) return 'Usernames are 3–64 characters: letters, numbers, . _ @ -';
+    const clash = db.prepare('SELECT id FROM storage_clients WHERE lower(username) = lower(?) AND id != ?').get(username, exceptId || '');
+    if (clash) return 'That username is already used by another client';
+  }
+  if (password && password.length < PORTAL_MIN_PASSWORD) return `Portal passwords must be at least ${PORTAL_MIN_PASSWORD} characters`;
+  return null;
+}
+
 router.post('/clients', (req, res) => {
-  const { clientName, username, password } = req.body;
+  const { clientName, password } = req.body;
+  const username = req.body.username ? String(req.body.username).trim() : null;
   if (!clientName || !clientName.trim()) return res.status(400).json({ error: 'A client name is required' });
   const existing = db.prepare('SELECT id FROM storage_clients WHERE client_name = ?').get(clientName.trim());
   if (existing) return res.status(400).json({ error: 'A client with this name already exists' });
+  if (password && !username) return res.status(400).json({ error: 'Set a username to go with the portal password' });
+  const problem = checkPortalLogin(username, password);
+  if (problem) return res.status(400).json({ error: problem });
   const id = randomUUID();
   const passwordHash = password ? bcrypt.hashSync(password, 10) : null;
   db.prepare('INSERT INTO storage_clients (id, client_name, username, password_hash, added_by) VALUES (?, ?, ?, ?, ?)')
@@ -225,12 +248,23 @@ router.post('/clients', (req, res) => {
 router.patch('/clients/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM storage_clients WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Client not found' });
-  const { clientName, username, password } = req.body;
+  const { clientName, password, removePortalAccess } = req.body;
+  const username = req.body.username === undefined ? undefined : (req.body.username ? String(req.body.username).trim() : null);
+  const problem = checkPortalLogin(username, password, existing.id);
+  if (problem) return res.status(400).json({ error: problem });
+  const finalUsername = username === undefined ? existing.username : username;
+  if (password && !finalUsername) return res.status(400).json({ error: 'Set a username to go with the portal password' });
   const sets = [];
   const vals = [];
-  if (clientName !== undefined) { sets.push('client_name = ?'); vals.push(clientName); }
+  if (clientName !== undefined) {
+    if (!String(clientName).trim()) return res.status(400).json({ error: 'A client name is required' });
+    const clash = db.prepare('SELECT id FROM storage_clients WHERE client_name = ? AND id != ?').get(String(clientName).trim(), existing.id);
+    if (clash) return res.status(400).json({ error: 'A client with this name already exists' });
+    sets.push('client_name = ?'); vals.push(String(clientName).trim());
+  }
   if (username !== undefined) { sets.push('username = ?'); vals.push(username); }
-  if (password) { sets.push('password_hash = ?'); vals.push(bcrypt.hashSync(password, 10)); }
+  if (removePortalAccess) { sets.push('password_hash = NULL'); }
+  else if (password) { sets.push('password_hash = ?'); vals.push(bcrypt.hashSync(password, 10)); }
   if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
   vals.push(req.params.id);
   db.prepare(`UPDATE storage_clients SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
@@ -342,6 +376,24 @@ router.post('/orders/:id/deliver', async (req, res) => {
   res.json({ order: rowToOrder(db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(req.params.id)) });
 });
 
+function sendPdf(res, buffer, filename, download) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${filename.replace(/[^A-Za-z0-9._-]+/g, '_')}"`);
+  res.send(buffer);
+}
+
+router.get('/orders/:id/pdf', async (req, res) => {
+  const row = db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Order not found' });
+  try {
+    const order = rowToOrder(row);
+    sendPdf(res, await buildOrderPdf(order), `${order.orderNumber || 'order'}.pdf`, req.query.download === '1');
+  } catch (err) {
+    console.error('[storage] order PDF failed:', err);
+    res.status(500).json({ error: 'Could not generate the order PDF' });
+  }
+});
+
 router.delete('/orders/:id', (req, res) => {
   if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can delete orders' });
   const result = db.prepare('DELETE FROM storage_orders WHERE id = ?').run(req.params.id);
@@ -368,6 +420,59 @@ router.get('/locations-registry', (req, res) => {
   res.json({ locations: rows.map((r) => ({ location: r.location, isPallet: !!r.is_pallet, classifiedBy: r.classified_by, classifiedOn: r.classified_on })) });
 });
 
+// Every location that is classified OR in use (on an item or a pallet record),
+// with how many items currently sit there and for which clients — so staff can
+// see what still needs classifying. "Current" = no end date.
+router.get('/locations-registry/overview', (req, res) => {
+  const byKey = new Map();
+  const entry = (loc) => {
+    const clean = String(loc || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return null;
+    const key = normalizeLocationKey(clean);
+    if (!byKey.has(key)) {
+      byKey.set(key, { location: clean, classified: false, isPallet: false, classifiedBy: null, classifiedOn: null, itemCount: 0, currentItemCount: 0, palletRecords: 0, clients: new Set(), storageCentres: new Set() });
+    }
+    return byKey.get(key);
+  };
+  db.prepare('SELECT * FROM storage_locations_registry').all().forEach((r) => {
+    const e = entry(r.location);
+    if (!e) return;
+    e.location = r.location;
+    Object.assign(e, { classified: true, isPallet: !!r.is_pallet, classifiedBy: r.classified_by, classifiedOn: r.classified_on });
+  });
+  db.prepare("SELECT location, client, storage_centre, end_date FROM storage_items WHERE location IS NOT NULL AND location != ''").all().forEach((r) => {
+    const e = entry(r.location);
+    if (!e) return;
+    e.itemCount += 1;
+    if (!r.end_date) e.currentItemCount += 1;
+    if (r.client) e.clients.add(r.client);
+    if (r.storage_centre) e.storageCentres.add(r.storage_centre);
+  });
+  db.prepare("SELECT location, client, storage_centre FROM storage_pallets WHERE location IS NOT NULL AND location != '' AND location NOT IN (?, ?)")
+    .all(ALL_PALLETS, ALL_PALLETS_AT_CENTRE).forEach((r) => {
+      const e = entry(r.location);
+      if (!e) return;
+      e.palletRecords += 1;
+      if (r.client) e.clients.add(r.client);
+      if (r.storage_centre) e.storageCentres.add(r.storage_centre);
+    });
+  const locations = [...byKey.values()]
+    .map((e) => ({ ...e, clients: [...e.clients].sort(), storageCentres: [...e.storageCentres].sort() }))
+    .sort((a, b) => a.location.localeCompare(b.location, undefined, { numeric: true, sensitivity: 'base' }));
+  res.json({ locations });
+});
+
+// Removes a classification only — items stay where they are; the location just
+// shows as unclassified again.
+router.delete('/locations-registry', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can remove classifications' });
+  const key = normalizeLocationKey(req.query.location);
+  if (!key) return res.status(400).json({ error: 'location is required' });
+  const result = db.prepare('DELETE FROM storage_locations_registry WHERE location_key = ?').run(key);
+  if (result.changes === 0) return res.status(404).json({ error: 'That location is not classified' });
+  res.json({ ok: true });
+});
+
 router.post('/locations-registry', (req, res) => {
   const { location, isPallet } = req.body;
   const clean = String(location || '').trim().replace(/\s+/g, ' ');
@@ -388,44 +493,8 @@ router.post('/locations-registry', (req, res) => {
 // Receiving / Dispatch log
 // ---------------------------------------------------------------------------
 
-// Fee for one entry, matching the old app: the entry's single rate applies to
-// both the received quantity and the dispatched quantity.
-//   receivedFee   = rate × stockReceivedQty
-//   dispatchedFee = rate × stockDispatchedQty
-// Quantities are stored as TEXT (the old sheet allowed free entry), so they are
-// parsed leniently; anything non-numeric counts as 0.
-function toQty(v) {
-  if (v == null || v === '') return 0;
-  const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
-}
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
-
-// The old app wrote the stock Type column as "Type: Qty @ $Rate" (several parts
-// separated by ";" or new lines), e.g. "Individual Item: 65 @ $5", and often left
-// the Rate column empty. When the type text has that shape, the fee comes from
-// its own parts (each part's rate, falling back to the entry's rate). Otherwise
-// it's the entry's rate × the Qty column.
-function parseStockParts(text) {
-  if (!text) return [];
-  const parts = [];
-  for (const piece of String(text).split(/[;\n]+/)) {
-    const m = piece.trim().match(/^(.+?):\s*(\d+(?:\.\d+)?)\s*(?:@\s*\$?\s*(\d+(?:\.\d+)?))?\s*$/);
-    if (m) parts.push({ type: m[1].trim(), qty: Number(m[2]), rate: m[3] != null ? Number(m[3]) : null });
-  }
-  return parts;
-}
-function sideFee(typeText, qty, rate) {
-  const parts = parseStockParts(typeText);
-  if (parts.length) return parts.reduce((t, p) => t + p.qty * (p.rate != null ? p.rate : rate), 0);
-  return rate * toQty(qty);
-}
-function rdFees(row) {
-  const rate = Number(row.rate) || 0;
-  const received = round2(sideFee(row.stock_received_type, row.stock_received_qty, rate));
-  const dispatched = round2(sideFee(row.stock_dispatched_type, row.stock_dispatched_qty, rate));
-  return { received, dispatched, total: round2(received + dispatched) };
-}
+// Fees (rate x qty, or the old app's "Type: Qty @ $Rate" text) come from
+// storageBilling.js so Reports, invoices and the client portal agree.
 
 function rowToRD(row) {
   if (!row) return row;
@@ -503,104 +572,52 @@ router.delete('/receiving-dispatch/:id', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Reports — storage cost per client over a date range, mirroring the old
-// app's computeStorageCostForClient_ (3-tier pallet-rate lookup: exact pallet
-// > any pallet at that storage centre > any pallet for that client).
+// Reports — storage cost per client over a date range (rules in storageBilling.js,
+// mirroring the old app's computeStorageCostForClient_) plus receiving/dispatch fees.
 // ---------------------------------------------------------------------------
-
-const ALL_PALLETS = '__ALL__';
-const ALL_PALLETS_AT_CENTRE = '__ALL_AT_CENTRE__';
-
-function getPalletRate(pallets, client, storageCentre, location) {
-  if (!location) return null;
-  const c = String(client || '').trim().toLowerCase();
-  const s = String(storageCentre || '').trim().toLowerCase();
-  const l = String(location || '').trim().toLowerCase();
-  const exact = pallets.find((p) => String(p.client || '').trim().toLowerCase() === c
-    && String(p.storageCentre || '').trim().toLowerCase() === s && String(p.location || '').trim().toLowerCase() === l);
-  if (exact) return exact;
-  const centreWildcard = pallets.find((p) => String(p.client || '').trim().toLowerCase() === c
-    && String(p.storageCentre || '').trim().toLowerCase() === s && p.location === ALL_PALLETS_AT_CENTRE);
-  if (centreWildcard) return centreWildcard;
-  return pallets.find((p) => String(p.client || '').trim().toLowerCase() === c && p.location === ALL_PALLETS) || null;
-}
-
-function overlapDays(item, from, to) {
-  if (!item.startDate) return 0;
-  const itemStart = new Date(item.startDate + 'T00:00:00');
-  const itemEnd = item.endDate ? new Date(item.endDate + 'T00:00:00') : new Date();
-  const start = itemStart > from ? itemStart : from;
-  const end = itemEnd < to ? itemEnd : to;
-  if (start > end) return 0;
-  const startMs = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
-  const endMs = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-  return Math.floor((endMs - startMs) / 86400000) + 1;
-}
-
-function computeStorageCostForClient(client, allItems, pallets, from, to) {
-  const clientItems = allItems.filter((i) => i.client === client);
-  const byPallet = {};
-  clientItems.forEach((i) => {
-    const key = `${i.storageCentre || ''}|||${i.location || ''}`;
-    if (!byPallet[key]) byPallet[key] = { storageCentre: i.storageCentre || '', location: i.location || '', items: [] };
-    byPallet[key].items.push(i);
-  });
-  let total = 0;
-  Object.values(byPallet).forEach((g) => {
-    const palletRecord = g.location ? getPalletRate(pallets, client, g.storageCentre, g.location) : null;
-    if (palletRecord) {
-      const days = palletRecord.startDate ? overlapDays(palletRecord, from, to) : Math.floor((to - from) / 86400000) + 1;
-      total += ((Number(palletRecord.priceWeek) || 0) / 7) * Math.max(days, 0);
-    } else {
-      g.items.forEach((i) => {
-        const days = overlapDays(i, from, to);
-        if (days > 0) total += ((Number(i.priceWeek) || 0) / 7) * days;
-      });
-    }
-  });
-  return total;
-}
 
 router.get('/reports/summary', (req, res) => {
   const { from, to } = req.query;
-  if (!from || !to) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required' });
-  const fromDate = new Date(`${from}T00:00:00`);
-  const toDate = new Date(`${to}T23:59:59`);
+  if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
+  res.json(billingSummary(from, to));
+});
 
-  const allItems = db.prepare('SELECT * FROM storage_items').all().map(rowToItem);
-  const pallets = db.prepare('SELECT * FROM storage_pallets').all().map(rowToPallet);
+// Line-by-line charges for one client — what the invoice PDF prints.
+router.get('/reports/statement', (req, res) => {
+  const { client, from, to } = req.query;
+  if (!client) return res.status(400).json({ error: 'client is required' });
+  if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
+  res.json(clientStatement(client, from, to));
+});
 
-  // Receiving/dispatch fees = rate × qty (see rdFees). Each half is charged in
-  // the period its own date falls in: the received fee by date_received, the
-  // dispatched fee by date_dispatched. An entry with neither date falls back to
-  // the day it was saved, so it is still billed somewhere.
-  const inRange = (d) => !!d && d >= from && d <= to;
-  const feesByClient = {};
-  db.prepare('SELECT * FROM storage_receiving_dispatch').all().forEach((row) => {
-    if (!row.client) return;
-    const fees = rdFees(row);
-    const savedDay = row.saved_on ? String(row.saved_on).slice(0, 10) : null;
-    let fee = 0;
-    if (!row.date_received && !row.date_dispatched) {
-      if (inRange(savedDay)) fee = fees.total;
-    } else {
-      if (inRange(row.date_received)) fee += fees.received;
-      if (inRange(row.date_dispatched)) fee += fees.dispatched;
-    }
-    if (fee) feesByClient[row.client] = (feesByClient[row.client] || 0) + fee;
-  });
+router.get('/reports/invoice.pdf', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can generate invoices' });
+  const { client, from, to } = req.query;
+  if (!client) return res.status(400).json({ error: 'client is required' });
+  if (!parsePeriod(from, to)) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) are required, with from on or before to' });
+  try {
+    const statement = clientStatement(client, from, to);
+    sendPdf(res, await buildInvoicePdf(statement), `${invoiceReference(statement)}.pdf`, req.query.download === '1');
+  } catch (err) {
+    console.error('[storage] invoice PDF failed:', err);
+    res.status(500).json({ error: 'Could not generate the invoice PDF' });
+  }
+});
 
-  // Include clients that only have receiving/dispatch fees in the period, not
-  // just clients with stored items.
-  const clients = [...new Set([...allItems.map((i) => i.client), ...Object.keys(feesByClient)].filter(Boolean))].sort();
-
-  const summary = clients.map((client) => {
-    const storageCost = round2(computeStorageCostForClient(client, allItems, pallets, fromDate, toDate));
-    const receivingDispatchFees = round2(feesByClient[client] || 0);
-    return { client, storageCost, receivingDispatchFees, total: round2(storageCost + receivingDispatchFees) };
-  });
-
-  res.json({ from, to, summary, grandTotal: Math.round(summary.reduce((t, s) => t + s.total, 0) * 100) / 100 });
+// Download every Storage Centre table as CSVs in a zip (the same file the nightly
+// backup uploads to OneDrive), so admins can keep a copy without OneDrive.
+router.get('/export.zip', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can download the Storage Centre export' });
+  try {
+    const { buffer } = await buildStorageCentreZip();
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="storage-centre-${day}.zip"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('[storage] export failed:', err);
+    res.status(500).json({ error: 'Could not build the export' });
+  }
 });
 
 router.get('/lists', (req, res) => {

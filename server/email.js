@@ -385,17 +385,24 @@ function notifyStorageOrderTracking({ toEmail, orderNumber, clientName, tracking
 
 // Sent to internal staff when a client submits a new Storage Centre order via the
 // client portal, so dispatch knows to action it.
-function notifyStorageOrderSubmitted({ toEmails, orderNumber, clientName, devices, deliveryAddress, dateToBeDelivered }) {
+// Order details can now come from the client portal (outside users), so every
+// value is escaped before it goes into the HTML email.
+function escapeEmailHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function notifyStorageOrderSubmitted({ toEmails, orderNumber, clientName, devices, deliveryAddress, dateToBeDelivered, source }) {
+  const e = escapeEmailHtml;
   const html = brandedEmail({
     title: 'New Storage Centre order',
     bodyHtml: `
       <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
-        <strong>${clientName}</strong> submitted order <strong>${orderNumber}</strong>.
+        <strong>${e(clientName)}</strong> submitted order <strong>${e(orderNumber)}</strong>${source === 'portal' ? ' through the client portal' : ''}.
       </p>
       <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 16px; font-size:13px; color:#333; line-height:1.6;">
-        <div><strong>Devices:</strong> ${devices || '—'}</div>
-        <div><strong>Deliver to:</strong> ${deliveryAddress || '—'}</div>
-        <div><strong>Requested date:</strong> ${dateToBeDelivered || '—'}</div>
+        <div><strong>Devices:</strong> ${e(devices || '—').replace(/\r?\n/g, '<br>')}</div>
+        <div><strong>Deliver to:</strong> ${e(deliveryAddress || '—')}</div>
+        <div><strong>Requested date:</strong> ${e(dateToBeDelivered || '—')}</div>
       </div>
     `,
   });

@@ -73,6 +73,9 @@ export default function Layout({ children }) {
               <NavLink to="/storage/receiving" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
                 Receiving / Dispatch
               </NavLink>
+              <NavLink to="/storage/locations" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Locations
+              </NavLink>
               {isAdmin && (
                 <NavLink to="/storage/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
                   Reports

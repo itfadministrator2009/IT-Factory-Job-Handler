@@ -1,7 +1,10 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const archiver = require('archiver');
 const { getAccessToken, configured: graphConfigured } = require('./calendar');
+const { db } = require('./db');
+const { buildStorageCentreZip } = require('./storageExport');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
 // Same folder every uploaded photo (job attachments and project entry photos alike)
@@ -93,7 +96,7 @@ async function runBackup(filenameOverride) {
   if (!fs.existsSync(DB_PATH)) return { ok: false, reason: 'db_not_found' };
 
   try {
-    const buffer = fs.readFileSync(DB_PATH);
+    const buffer = await snapshotDatabase();
     const dateStr = currentDateInTimezone(BACKUP_TIMEZONE);
     const filename = filenameOverride || `helpdesk-backup-${dateStr}.db`;
     await uploadBackupToOneDrive(buffer, filename);
@@ -117,11 +120,39 @@ async function runBackup(filenameOverride) {
       }
     }
 
-    console.log(`[backup] Uploaded ${filename}${uploadsFilename ? ` and ${uploadsFilename}` : ''} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
-    return { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename };
+    // Storage Centre tables as CSVs, readable in Excel. Same rule as photos: a
+    // failure here doesn't undo the database backup that already succeeded.
+    let storageFilename = null;
+    try {
+      const { buffer: zipBuffer } = await buildStorageCentreZip();
+      storageFilename = filenameOverride
+        ? filenameOverride.replace(/\.db$/, '-storage-centre.zip')
+        : `storage-centre-${dateStr}.zip`;
+      await uploadBackupToOneDrive(zipBuffer, storageFilename);
+    } catch (err) {
+      console.error('[backup] Database backed up, but the Storage Centre export failed:', err.message);
+      storageFilename = null;
+    }
+
+    console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
+    return { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename };
   } catch (err) {
     console.error('[backup] Failed:', err.message);
     return { ok: false, reason: 'upload_failed', error: err.message };
+  }
+}
+
+// A consistent copy of the live database. The database runs in WAL mode, so the
+// newest changes can sit in the -wal file rather than the main file — copying the
+// main file alone could miss them (or catch it mid-write). SQLite's online backup
+// API copies a complete, consistent snapshot while the app keeps running.
+async function snapshotDatabase() {
+  const tmp = path.join(os.tmpdir(), `workdesk-snapshot-${process.pid}-${Date.now()}.db`);
+  try {
+    await db.backup(tmp);
+    return fs.readFileSync(tmp);
+  } finally {
+    try { fs.unlinkSync(tmp); } catch (e) { /* already gone */ }
   }
 }
 
@@ -177,4 +208,4 @@ function startBackupScheduler() {
   }, 60 * 60 * 1000);
 }
 
-module.exports = { runBackup, listBackups, downloadBackup, startBackupScheduler, DB_PATH };
+module.exports = { runBackup, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH };

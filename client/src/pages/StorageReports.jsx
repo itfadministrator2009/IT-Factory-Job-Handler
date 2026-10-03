@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Boxes, Package, Users, ClipboardList, Truck } from 'lucide-react';
+import { Boxes, Package, Users, ClipboardList, Truck, FileText, Download } from 'lucide-react';
 import api from '../api';
+import { openPdf, downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
 
 function lastWeekRange() {
@@ -50,6 +51,10 @@ export default function StorageReports() {
           <Link to="/storage/clients" className="btn btn-ghost btn-sm"><Users size={14} /> Clients</Link>
           <Link to="/storage/orders" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Orders</Link>
           <Link to="/storage/receiving" className="btn btn-ghost btn-sm"><Truck size={14} /> Receiving/Dispatch</Link>
+          <button type="button" className="btn btn-ghost btn-sm" title="All Storage Centre data as CSV files (opens in Excel)"
+            onClick={() => downloadFile(api, '/storage/export.zip', 'storage-centre.zip').catch(() => alert('Could not download the export'))}>
+            <Download size={14} /> Download backup
+          </button>
         </div>
       </div>
 
@@ -64,7 +69,7 @@ export default function StorageReports() {
       {report && (
         <div className="panel" style={{ padding: 0 }}>
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Storage Cost</th><th>Receiving/Dispatch Fees</th><th>Total</th></tr></thead>
+            <thead><tr><th>Client</th><th>Storage Cost</th><th>Receiving/Dispatch Fees</th><th>Total</th><th></th></tr></thead>
             <tbody>
               {report.summary.map((s) => (
                 <tr key={s.client}>
@@ -72,15 +77,21 @@ export default function StorageReports() {
                   <td>${s.storageCost.toFixed(2)}</td>
                   <td>${s.receivingDispatchFees.toFixed(2)}</td>
                   <td style={{ fontWeight: 700 }}>${s.total.toFixed(2)}</td>
+                  <td>
+                    <button type="button" className="btn btn-ghost btn-sm" title="Invoice PDF for this client and period"
+                      onClick={() => openPdf(api, '/storage/reports/invoice.pdf', { client: s.client, from: report.from, to: report.to }).catch((err) => alert(err.message))}>
+                      <FileText size={13} /> Invoice
+                    </button>
+                  </td>
                 </tr>
               ))}
               {report.summary.length === 0 && (
-                <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No clients with storage items.</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No clients with storage items.</td></tr>
               )}
             </tbody>
             {report.summary.length > 0 && (
               <tfoot>
-                <tr><td colSpan={3} style={{ textAlign: 'right', fontWeight: 700 }}>Grand total</td><td style={{ fontWeight: 700 }}>${report.grandTotal.toFixed(2)}</td></tr>
+                <tr><td colSpan={3} style={{ textAlign: 'right', fontWeight: 700 }}>Grand total</td><td style={{ fontWeight: 700 }}>${report.grandTotal.toFixed(2)}</td><td></td></tr>
               </tfoot>
             )}
           </table>
