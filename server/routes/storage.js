@@ -400,10 +400,30 @@ function toQty(v) {
   return Number.isFinite(n) ? n : 0;
 }
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+// The old app wrote the stock Type column as "Type: Qty @ $Rate" (several parts
+// separated by ";" or new lines), e.g. "Individual Item: 65 @ $5", and often left
+// the Rate column empty. When the type text has that shape, the fee comes from
+// its own parts (each part's rate, falling back to the entry's rate). Otherwise
+// it's the entry's rate × the Qty column.
+function parseStockParts(text) {
+  if (!text) return [];
+  const parts = [];
+  for (const piece of String(text).split(/[;\n]+/)) {
+    const m = piece.trim().match(/^(.+?):\s*(\d+(?:\.\d+)?)\s*(?:@\s*\$?\s*(\d+(?:\.\d+)?))?\s*$/);
+    if (m) parts.push({ type: m[1].trim(), qty: Number(m[2]), rate: m[3] != null ? Number(m[3]) : null });
+  }
+  return parts;
+}
+function sideFee(typeText, qty, rate) {
+  const parts = parseStockParts(typeText);
+  if (parts.length) return parts.reduce((t, p) => t + p.qty * (p.rate != null ? p.rate : rate), 0);
+  return rate * toQty(qty);
+}
 function rdFees(row) {
   const rate = Number(row.rate) || 0;
-  const received = round2(rate * toQty(row.stock_received_qty));
-  const dispatched = round2(rate * toQty(row.stock_dispatched_qty));
+  const received = round2(sideFee(row.stock_received_type, row.stock_received_qty, rate));
+  const dispatched = round2(sideFee(row.stock_dispatched_type, row.stock_dispatched_qty, rate));
   return { received, dispatched, total: round2(received + dispatched) };
 }
 
