@@ -512,10 +512,16 @@ if (storageOrderSeqRow.c === 0) {
   db.prepare('INSERT INTO storage_order_number_seq (n) VALUES (0)').run();
 }
 
+// Skips any number already taken (e.g. by imported or hand-entered orders), so a
+// new order can never fail on the order_number UNIQUE constraint.
 function nextStorageOrderNumber() {
-  db.prepare('UPDATE storage_order_number_seq SET n = n + 1').run();
-  const n = db.prepare('SELECT n FROM storage_order_number_seq').get().n;
-  return `SC-${String(n).padStart(5, '0')}`;
+  const taken = db.prepare('SELECT 1 FROM storage_orders WHERE order_number = ?');
+  for (;;) {
+    db.prepare('UPDATE storage_order_number_seq SET n = n + 1').run();
+    const n = db.prepare('SELECT n FROM storage_order_number_seq').get().n;
+    const orderNumber = `SC-${String(n).padStart(5, '0')}`;
+    if (!taken.get(orderNumber)) return orderNumber;
+  }
 }
 
 module.exports = { db, nextJobNumber, peekNextJobNumber, nextStorageOrderNumber };
