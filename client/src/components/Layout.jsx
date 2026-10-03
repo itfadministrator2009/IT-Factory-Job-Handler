@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban, Boxes } from 'lucide-react';
+import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban, Boxes, Warehouse } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
@@ -7,6 +7,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const onAssetsSection = location.pathname.startsWith('/assets');
+  const onStorageSection = location.pathname.startsWith('/storage');
 
   return (
     <div className="app-shell">
@@ -50,6 +51,25 @@ export default function Layout({ children }) {
                   Manage Fields
                 </NavLink>
               )}
+            </div>
+          )}
+          <NavLink to="/storage" end className={() => 'sidebar-link' + (onStorageSection ? ' active' : '')}>
+            <Warehouse size={16} /> Storage Centre
+          </NavLink>
+          {onStorageSection && (
+            <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
+              <NavLink to="/storage" end className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Manifest
+              </NavLink>
+              <NavLink to="/storage/pallets" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Pallets
+              </NavLink>
+              <NavLink to="/storage/clients" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Clients
+              </NavLink>
+              <NavLink to="/storage/orders" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Client Orders
+              </NavLink>
             </div>
           )}
           {isAdmin && (
