@@ -228,6 +228,101 @@ CREATE TABLE IF NOT EXISTS asset_audit (
   FOREIGN KEY (changed_by) REFERENCES users(id)
 );
 -- ================= end Asset Tracker feature =================
+
+-- ================= Storage Centre feature =================
+-- Mirrors the "Items" sheet from the standalone Storage Centre Google Apps Script
+-- app (HEADERS/KEY_MAP there) field-for-field, so the one-time migration script can
+-- map columns straight across with no reshaping.
+CREATE TABLE IF NOT EXISTS storage_items (
+  id TEXT PRIMARY KEY,
+  client TEXT,
+  job_number TEXT,
+  reference_number TEXT,
+  storage_centre TEXT,
+  location TEXT,
+  quantity TEXT,
+  condition TEXT,
+  photo TEXT,
+  item TEXT,
+  make TEXT,
+  model TEXT,
+  serial TEXT,
+  price_week REAL,
+  start_date TEXT,
+  end_date TEXT,
+  added_by TEXT,
+  last_edited_by TEXT,
+  asset_tag TEXT,
+  po_number TEXT,
+  order_number TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_storage_items_client ON storage_items(client);
+CREATE INDEX IF NOT EXISTS idx_storage_items_serial ON storage_items(serial);
+
+CREATE TABLE IF NOT EXISTS storage_item_notes (
+  id TEXT PRIMARY KEY,
+  item_key TEXT NOT NULL,
+  note TEXT NOT NULL,
+  author TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_storage_item_notes_key ON storage_item_notes(item_key);
+
+-- Mirrors the "Pallets" sheet (PALLETS_HEADERS/PALLETS_KEY_MAP).
+CREATE TABLE IF NOT EXISTS storage_pallets (
+  id TEXT PRIMARY KEY,
+  client TEXT,
+  storage_centre TEXT,
+  location TEXT,
+  price_week REAL,
+  start_date TEXT,
+  end_date TEXT,
+  notes TEXT,
+  added_by TEXT,
+  last_edited_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Mirrors the "Clients" sheet (CLIENTS_HEADERS). Client portal login (username/
+-- password) is kept here rather than in Work Desk's own users table, since a
+-- storage client is not a Work Desk staff account — it reuses Work Desk's JWT
+-- *mechanism* (same signing + authRequired-style middleware) via a separate
+-- "storage client" token type, not the staff users table itself.
+CREATE TABLE IF NOT EXISTS storage_clients (
+  id TEXT PRIMARY KEY,
+  client_name TEXT NOT NULL UNIQUE,
+  username TEXT UNIQUE,
+  password_hash TEXT,
+  added_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Mirrors the "ClientOrders" sheet (CLIENT_ORDERS_HEADERS).
+CREATE TABLE IF NOT EXISTS storage_orders (
+  id TEXT PRIMARY KEY,
+  order_number TEXT UNIQUE,
+  client TEXT,
+  devices TEXT,
+  delivery_address TEXT,
+  site_contact_name TEXT,
+  site_contact_phone TEXT,
+  date_to_be_delivered TEXT,
+  config_information TEXT,
+  notes TEXT,
+  requestor TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  tracking_number TEXT,
+  tracking_email_sent_to TEXT,
+  tracking_email_sent_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS storage_order_number_seq (n INTEGER);
+-- ================= end Storage Centre feature =================
 `);
 
 // Seeds the built-in Asset Tracker fields once, matching the columns and dropdown
@@ -383,4 +478,15 @@ function peekNextJobNumber() {
   return (row?.n || 0) + 1;
 }
 
-module.exports = { db, nextJobNumber, peekNextJobNumber };
+const storageOrderSeqRow = db.prepare('SELECT COUNT(*) as c FROM storage_order_number_seq').get();
+if (storageOrderSeqRow.c === 0) {
+  db.prepare('INSERT INTO storage_order_number_seq (n) VALUES (0)').run();
+}
+
+function nextStorageOrderNumber() {
+  db.prepare('UPDATE storage_order_number_seq SET n = n + 1').run();
+  const n = db.prepare('SELECT n FROM storage_order_number_seq').get().n;
+  return `SC-${String(n).padStart(5, '0')}`;
+}
+
+module.exports = { db, nextJobNumber, peekNextJobNumber, nextStorageOrderNumber };

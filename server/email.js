@@ -358,8 +358,59 @@ function notifyAssetReport({ toEmails, count, csvBuffer }) {
   });
 }
 
+// Sent when a Storage Centre order's status is changed to Delivered, carrying the
+// courier tracking number — mirrors the "email the customer their order is on its
+// way" step from the original Apps Script app's status-change workflow.
+function notifyStorageOrderTracking({ toEmail, orderNumber, clientName, trackingNumber, message }) {
+  const html = brandedEmail({
+    title: 'Your order is on its way',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        Hi${clientName ? ` ${clientName}` : ''}, your order <strong>${orderNumber}</strong> is on its way.
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 16px; font-size:14px; color:#333;">
+        <strong>Tracking number:</strong> ${trackingNumber}
+      </div>
+      ${message ? `<p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px; white-space:pre-wrap;">${message}</p>` : ''}
+    `,
+  });
+
+  return sendMail({
+    to: toEmail,
+    subject: `Order ${orderNumber} is on its way — tracking ${trackingNumber}`,
+    text: `Your order ${orderNumber} is on its way.\nTracking number: ${trackingNumber}\n${message || ''}`,
+    html,
+  });
+}
+
+// Sent to internal staff when a client submits a new Storage Centre order via the
+// client portal, so dispatch knows to action it.
+function notifyStorageOrderSubmitted({ toEmails, orderNumber, clientName, devices, deliveryAddress, dateToBeDelivered }) {
+  const html = brandedEmail({
+    title: 'New Storage Centre order',
+    bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
+        <strong>${clientName}</strong> submitted order <strong>${orderNumber}</strong>.
+      </p>
+      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 16px; font-size:13px; color:#333; line-height:1.6;">
+        <div><strong>Devices:</strong> ${devices || '—'}</div>
+        <div><strong>Deliver to:</strong> ${deliveryAddress || '—'}</div>
+        <div><strong>Requested date:</strong> ${dateToBeDelivered || '—'}</div>
+      </div>
+    `,
+  });
+
+  return sendMail({
+    to: toEmails.join(','),
+    subject: `New Storage Centre order ${orderNumber} — ${clientName}`,
+    text: `${clientName} submitted order ${orderNumber}.\nDevices: ${devices || '—'}\nDeliver to: ${deliveryAddress || '—'}\nRequested date: ${dateToBeDelivered || '—'}`,
+    html,
+  });
+}
+
 module.exports = {
   sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete,
   notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, notifyProjectEntryAssigned,
   notifyAssetReport, sendPasswordReset, sendJobSheetEmail, hasSmtp,
+  notifyStorageOrderTracking, notifyStorageOrderSubmitted,
 };
