@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban, Boxes, Warehouse } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import WhoIsOnline from './WhoIsOnline';
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
@@ -58,6 +59,9 @@ export default function Layout({ children }) {
           </NavLink>
           {onStorageSection && (
             <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
+              <NavLink to="/storage/dashboard" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Dashboard
+              </NavLink>
               <NavLink to="/storage" end className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
                 Manifest
               </NavLink>
@@ -75,6 +79,12 @@ export default function Layout({ children }) {
               </NavLink>
               <NavLink to="/storage/locations" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
                 Locations
+              </NavLink>
+              <NavLink to="/storage/labels" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Pallet Labels
+              </NavLink>
+              <NavLink to="/storage/calculator" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
+                Calculator
               </NavLink>
               {isAdmin && (
                 <NavLink to="/storage/reports" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} style={{ fontSize: 13, padding: '6px 12px' }}>
@@ -103,7 +113,7 @@ export default function Layout({ children }) {
           )}
         </nav>
         <div className="sidebar-footer">
-          <div>{user?.name}</div>
+          <WhoIsOnline me={user?.name} />
           <button onClick={logout}><LogOut size={12} style={{ verticalAlign: -1, marginRight: 4 }} />Log out</button>
         </div>
       </aside>
