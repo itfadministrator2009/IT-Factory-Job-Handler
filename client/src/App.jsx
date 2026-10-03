@@ -20,6 +20,10 @@ import ProjectEntryForm from './pages/ProjectEntryForm';
 import AssetTracker from './pages/AssetTracker';
 import AssetReports from './pages/AssetReports';
 import AssetFields from './pages/AssetFields';
+import StorageManifest from './pages/StorageManifest';
+import StoragePallets from './pages/StoragePallets';
+import StorageClients from './pages/StorageClients';
+import StorageOrders from './pages/StorageOrders';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -67,6 +71,11 @@ function AppRoutes() {
       <Route path="/assets" element={<RequireAuth><AssetTracker /></RequireAuth>} />
       <Route path="/assets/reports" element={<RequireAdmin><AssetReports /></RequireAdmin>} />
       <Route path="/assets/fields" element={<RequireAdmin><AssetFields /></RequireAdmin>} />
+
+      <Route path="/storage" element={<RequireAuth><StorageManifest /></RequireAuth>} />
+      <Route path="/storage/pallets" element={<RequireAuth><StoragePallets /></RequireAuth>} />
+      <Route path="/storage/clients" element={<RequireAuth><StorageClients /></RequireAuth>} />
+      <Route path="/storage/orders" element={<RequireAuth><StorageOrders /></RequireAuth>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
