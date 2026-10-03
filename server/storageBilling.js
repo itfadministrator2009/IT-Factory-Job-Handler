@@ -61,20 +61,13 @@ function stockText(type, qty) {
 
 // Receiving/dispatch charges falling in [from, to] (YYYY-MM-DD strings). Each half
 // of an entry is charged in the period its own date falls in: the received fee by
-// date_received, the dispatched fee by date_dispatched. An entry with neither date
-// falls back to the day it was saved, so it is still billed somewhere.
+// date_received, the dispatched fee by date_dispatched — exactly as the old app's
+// weekly invoicing did. An entry with no date on a side is not billed for that side.
 function rdLinesInPeriod(rows, from, to) {
   const inRange = (d) => !!d && d >= from && d <= to;
   const lines = [];
   rows.forEach((row) => {
     const fees = rdFees(row);
-    const savedDay = row.saved_on ? String(row.saved_on).slice(0, 10) : null;
-    if (!row.date_received && !row.date_dispatched) {
-      if (inRange(savedDay) && fees.total) {
-        lines.push({ client: row.client, date: savedDay, kind: 'Receiving/Dispatch', description: [stockText(row.stock_received_type, row.stock_received_qty), stockText(row.stock_dispatched_type, row.stock_dispatched_qty)].filter(Boolean).join(' / '), rate: row.rate, amount: fees.total });
-      }
-      return;
-    }
     if (inRange(row.date_received) && (fees.received || row.stock_received_type || row.stock_received_qty)) {
       lines.push({ client: row.client, date: row.date_received, kind: 'Receiving', description: stockText(row.stock_received_type, row.stock_received_qty), rate: row.rate, amount: fees.received });
     }
@@ -186,13 +179,18 @@ function summary(from, to, data = loadBillingData()) {
   if (!period) throw new Error('from and to must be YYYY-MM-DD with from <= to');
   const feesByClient = {};
   rdLinesInPeriod(data.rdRows, from, to).forEach((l) => {
-    if (l.client) feesByClient[l.client] = (feesByClient[l.client] || 0) + l.amount;
+    if (!l.client) return;
+    const f = feesByClient[l.client] || (feesByClient[l.client] = { receiving: 0, dispatch: 0 });
+    if (l.kind === 'Receiving') f.receiving += l.amount; else f.dispatch += l.amount;
   });
   const clients = [...new Set([...data.allItems.map((i) => i.client), ...Object.keys(feesByClient)].filter(Boolean))].sort();
   const rows = clients.map((client) => {
     const storageCost = round2(computeStorageCostForClient(client, data.allItems, data.pallets, period.fromDate, period.toDate));
-    const receivingDispatchFees = round2(feesByClient[client] || 0);
-    return { client, storageCost, receivingDispatchFees, total: round2(storageCost + receivingDispatchFees) };
+    const f = feesByClient[client] || { receiving: 0, dispatch: 0 };
+    const receivingFees = round2(f.receiving);
+    const dispatchFees = round2(f.dispatch);
+    const receivingDispatchFees = round2(f.receiving + f.dispatch);
+    return { client, storageCost, receivingFees, dispatchFees, receivingDispatchFees, total: round2(storageCost + receivingDispatchFees) };
   });
   return { from, to, summary: rows, grandTotal: round2(rows.reduce((t, s) => t + s.total, 0)) };
 }
