@@ -171,3 +171,24 @@ test('presence: heartbeat lists who is online; sign-out clears it', async () => 
   const after2 = (await client.get('/api/presence', { token: admin.token })).data;
   assert.deepEqual(after2.users.map((u) => u.name), ['Admin Person']);
 });
+
+test('clients page also lists client names that are only on records', async () => {
+  db.prepare("INSERT INTO storage_clients (id, client_name) VALUES ('cl1', 'Listed Co')").run();
+  const ins = db.prepare('INSERT INTO storage_items (id, client, start_date, end_date) VALUES (?,?,?,?)');
+  ins.run('hp1', 'HP', '2026-01-01', null);
+  ins.run('hp2', 'hp ', '2026-01-01', '2026-02-01'); // same client, different case/spacing
+  ins.run('lc1', 'listed co', '2026-01-01', null); // already on the list (case-insensitive)
+  db.prepare("INSERT INTO storage_orders (id, order_number, client, status) VALUES ('oz', 'SC-90009', 'Zeta Pty', 'In Progress')").run();
+  const { data } = await client.get('/api/storage/clients', { token: staff.token });
+  const hp = data.unlisted.find((u) => u.clientName.toLowerCase() === 'hp');
+  assert.ok(hp, 'HP is listed as not on the client list');
+  assert.deepEqual([hp.itemCount, hp.inStorageCount], [2, 1]);
+  assert.ok(data.unlisted.find((u) => u.clientName === 'Zeta Pty').sources.includes('orders'));
+  assert.ok(!data.unlisted.find((u) => u.clientName.toLowerCase() === 'listed co'));
+  assert.equal(data.clients.find((c) => c.clientName === 'Listed Co').inStorageCount, 1);
+  // Adding it moves it onto the list; a second add with different case is refused.
+  assert.equal((await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'HP' } })).status, 201);
+  assert.equal((await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'hp' } })).status, 400);
+  const after3 = (await client.get('/api/storage/clients', { token: staff.token })).data;
+  assert.ok(!after3.unlisted.find((u) => u.clientName.toLowerCase() === 'hp'));
+});
