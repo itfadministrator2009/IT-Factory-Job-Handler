@@ -285,8 +285,40 @@ function rowToClient(row) {
   return { id: row.id, clientName: row.client_name, username: row.username, hasPortalLogin: !!row.password_hash, addedBy: row.added_by, createdAt: row.created_at };
 }
 
+// The client list (like the old app's Clients sheet) plus, under `unlisted`,
+// every other client name used on items, pallets, orders or receiving/dispatch
+// entries, so nobody is missing from the page just because they were never
+// added to the list. Names are compared ignoring case and extra spaces.
 router.get('/clients', (req, res) => {
-  res.json({ clients: db.prepare('SELECT * FROM storage_clients ORDER BY client_name').all().map(rowToClient) });
+  const key = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const itemCounts = {};
+  db.prepare("SELECT client, COUNT(*) AS total, SUM(CASE WHEN start_date IS NOT NULL AND end_date IS NULL THEN 1 ELSE 0 END) AS in_storage FROM storage_items WHERE client IS NOT NULL AND trim(client) != '' GROUP BY client").all()
+    .forEach((r) => {
+      const k = key(r.client);
+      const c = itemCounts[k] || (itemCounts[k] = { names: new Set(), total: 0, inStorage: 0 });
+      c.names.add(r.client.trim()); c.total += r.total; c.inStorage += r.in_storage || 0;
+    });
+  const listed = db.prepare('SELECT * FROM storage_clients ORDER BY client_name COLLATE NOCASE').all();
+  const listedKeys = new Set(listed.map((c) => key(c.client_name)));
+  const clients = listed.map((c) => ({ ...rowToClient(c), itemCount: itemCounts[key(c.client_name)]?.total || 0, inStorageCount: itemCounts[key(c.client_name)]?.inStorage || 0 }));
+
+  const others = new Map();
+  const note = (name, source) => {
+    const clean = String(name || '').trim().replace(/\s+/g, ' ');
+    const k = key(clean);
+    if (!k || listedKeys.has(k)) return;
+    if (!others.has(k)) others.set(k, { clientName: clean, sources: new Set() });
+    others.get(k).sources.add(source);
+  };
+  Object.values(itemCounts).forEach((c) => c.names.forEach((n) => note(n, 'items')));
+  db.prepare("SELECT DISTINCT client FROM storage_pallets WHERE client IS NOT NULL").all().forEach((r) => note(r.client, 'pallet rates'));
+  db.prepare("SELECT DISTINCT client FROM storage_orders WHERE client IS NOT NULL").all().forEach((r) => note(r.client, 'orders'));
+  db.prepare("SELECT DISTINCT client FROM storage_receiving_dispatch WHERE client IS NOT NULL").all().forEach((r) => note(r.client, 'receiving/dispatch'));
+  const unlisted = [...others.entries()].map(([k, o]) => ({
+    clientName: o.clientName, sources: [...o.sources], itemCount: itemCounts[k]?.total || 0, inStorageCount: itemCounts[k]?.inStorage || 0,
+  })).sort((a, b) => a.clientName.localeCompare(b.clientName, undefined, { sensitivity: 'base' }));
+
+  res.json({ clients, unlisted });
 });
 
 const PORTAL_MIN_PASSWORD = 8;
@@ -307,7 +339,7 @@ router.post('/clients', (req, res) => {
   const { clientName, password } = req.body;
   const username = req.body.username ? String(req.body.username).trim() : null;
   if (!clientName || !clientName.trim()) return res.status(400).json({ error: 'A client name is required' });
-  const existing = db.prepare('SELECT id FROM storage_clients WHERE client_name = ?').get(clientName.trim());
+  const existing = db.prepare('SELECT id FROM storage_clients WHERE lower(trim(client_name)) = lower(?)').get(clientName.trim());
   if (existing) return res.status(400).json({ error: 'A client with this name already exists' });
   if (password && !username) return res.status(400).json({ error: 'Set a username to go with the portal password' });
   const problem = checkPortalLogin(username, password);
