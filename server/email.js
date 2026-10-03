@@ -391,33 +391,109 @@ function escapeEmailHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function notifyStorageOrderSubmitted({ toEmails, orderNumber, clientName, devices, deliveryAddress, dateToBeDelivered, source }) {
+function emailDmy(d) {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (d || '');
+}
+
+// Label/value rows, same look as the old Storage Centre emails. Values escaped.
+function storageDetailRows(rows) {
   const e = escapeEmailHtml;
+  return `<table style="border-collapse:collapse; width:100%; margin:0 0 16px;">${rows.map(([label, value]) => `
+    <tr>
+      <td style="padding:6px 10px 6px 0; color:#6b7570; font-size:11px; text-transform:uppercase; letter-spacing:0.03em; white-space:nowrap; vertical-align:top;">${e(label)}</td>
+      <td style="padding:6px 0; color:#16241f; font-size:13px; line-height:1.5;">${e(value || '(not provided)').replace(/\r?\n/g, '<br>')}</td>
+    </tr>`).join('')}</table>`;
+}
+
+function storageAppButton(path, label) {
+  return `<p style="margin:8px 0 16px;"><a href="${FRONTEND_URL}${path}" style="background:#1e4d4b; color:#fff; text-decoration:none; padding:10px 18px; border-radius:6px; font-size:13px; display:inline-block;">${label}</a></p>`;
+}
+
+function notifyStorageOrderSubmitted({
+  toEmails, orderNumber, clientName, devices, deliveryAddress, dateToBeDelivered, source,
+  siteContactName, siteContactPhone, configInformation, notes, requestor,
+}) {
+  const e = escapeEmailHtml;
+  const rows = [
+    ['Order number', orderNumber], ['Client', clientName], ['Devices', devices],
+    ['Delivery address', deliveryAddress], ['Site contact', siteContactName], ['Site contact phone', siteContactPhone],
+    ['Date to be delivered', emailDmy(dateToBeDelivered)], ['Configuration', configInformation],
+    ['Notes', notes], ['Requestor', requestor],
+  ];
   const html = brandedEmail({
     title: 'New Storage Centre order',
     bodyHtml: `
       <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
         <strong>${e(clientName)}</strong> submitted order <strong>${e(orderNumber)}</strong>${source === 'portal' ? ' through the client portal' : ''}.
       </p>
-      <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 16px; font-size:13px; color:#333; line-height:1.6;">
-        <div><strong>Devices:</strong> ${e(devices || '—').replace(/\r?\n/g, '<br>')}</div>
-        <div><strong>Deliver to:</strong> ${e(deliveryAddress || '—')}</div>
-        <div><strong>Requested date:</strong> ${e(dateToBeDelivered || '—')}</div>
-      </div>
+      ${storageDetailRows(rows)}
+      ${storageAppButton('/storage/orders', 'Open Client Orders')}
     `,
   });
 
   return sendMail({
     to: toEmails.join(','),
-    subject: `New Storage Centre order ${orderNumber} — ${clientName}`,
-    text: `${clientName} submitted order ${orderNumber}.\nDevices: ${devices || '—'}\nDeliver to: ${deliveryAddress || '—'}\nRequested date: ${dateToBeDelivered || '—'}`,
+    subject: `New order request ${orderNumber} — ${clientName}`,
+    text: `${clientName} submitted order ${orderNumber}${source === 'portal' ? ' through the client portal' : ''}.\n\n${rows.map(([l, v]) => `${l}: ${v || '(not provided)'}`).join('\n')}`,
     html,
   });
+}
+
+// Sent to staff when stock is logged as received (the old app's
+// sendReceivingNotificationEmail_). `entry` is the API shape from rowToRD.
+function notifyStorageStockReceived({ toEmails, entry, loggedBy }) {
+  const stock = entry.stockReceivedType
+    ? (/@/.test(entry.stockReceivedType) || !entry.stockReceivedQty ? entry.stockReceivedType : `${entry.stockReceivedType} x ${entry.stockReceivedQty}`)
+    : (entry.stockReceivedQty ? `Qty ${entry.stockReceivedQty}` : '');
+  const rows = [
+    ['Client', entry.client], ['Date received', emailDmy(entry.dateReceived)], ['Stock received', stock],
+    ['Notes', entry.receiving], ['Logged by', loggedBy],
+  ];
+  const html = brandedEmail({
+    title: 'Stock received',
+    bodyHtml: `${storageDetailRows(rows)}${storageAppButton('/storage/receiving', 'Open Receiving / Dispatch')}`,
+  });
+  return sendMail({
+    to: toEmails.join(','),
+    subject: `Stock received — ${entry.client}`,
+    text: `Stock received for ${entry.client}\n\n${rows.map(([l, v]) => `${l}: ${v || '(not provided)'}`).join('\n')}`,
+    html,
+  });
+}
+
+// The old app's Monday-morning "Weekly invoicing reminder": last week's storage,
+// receiving and dispatch fees per client. `rows` come from storageBilling.summary.
+function notifyStorageWeeklyInvoicing({ toEmails, fromLabel, toLabel, rows, grandTotal }) {
+  const e = escapeEmailHtml;
+  const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+  const period = `${fromLabel} – ${toLabel}`;
+  const cell = 'padding:7px 8px; font-size:12.5px; text-align:right;';
+  const table = rows.length === 0
+    ? '<p style="font-size:14px; color:#333;">No billable storage or receiving/dispatch activity found for this period.</p>'
+    : `<table style="border-collapse:collapse; width:100%; margin:0 0 16px;">
+        <thead><tr style="background:#1e4d4b; color:#fff;">
+          <th style="${cell} text-align:left;">Client</th><th style="${cell}">Storage</th><th style="${cell}">Receiving</th><th style="${cell}">Dispatch</th><th style="${cell}">Total</th>
+        </tr></thead>
+        <tbody>${rows.map((r) => `<tr style="border-bottom:1px solid #e2e0d8;">
+          <td style="${cell} text-align:left;">${e(r.client)}</td><td style="${cell}">${money(r.storageCost)}</td><td style="${cell}">${money(r.receivingFees)}</td><td style="${cell}">${money(r.dispatchFees)}</td><td style="${cell} font-weight:700;">${money(r.total)}</td>
+        </tr>`).join('')}
+        <tr><td style="${cell} text-align:left; font-weight:700;" colspan="4">Grand total</td><td style="${cell} font-weight:700;">${money(grandTotal)}</td></tr>
+        </tbody></table>`;
+  const html = brandedEmail({
+    title: 'Weekly invoicing reminder',
+    bodyHtml: `<p style="font-size:13px; color:#6b7570; margin:0 0 16px;">${e(period)}</p>${table}${storageAppButton('/storage/reports', 'Open Storage Centre Reports')}`,
+    footerNote: 'Amounts exclude GST.',
+  });
+  const text = rows.length === 0
+    ? `Weekly invoicing reminder for ${period}\n\nNo billable storage or receiving/dispatch activity found for this period.`
+    : `Weekly invoicing reminder for ${period}\n\n${rows.map((r) => `${r.client}\n  Storage: ${money(r.storageCost)}\n  Receiving: ${money(r.receivingFees)}\n  Dispatch: ${money(r.dispatchFees)}\n  Total: ${money(r.total)}`).join('\n\n')}\n\nGRAND TOTAL: ${money(grandTotal)}`;
+  return sendMail({ to: toEmails.join(','), subject: `Weekly invoicing reminder — ${period}`, text, html });
 }
 
 module.exports = {
   sendMail, notifyNewReply, notifyStatusChange, notifyTicketCreated, notifyJobComplete,
   notifyJobClosed, notifyJobAssigned, notifyProjectEntryComplete, notifyProjectEntryAssigned,
   notifyAssetReport, sendPasswordReset, sendJobSheetEmail, hasSmtp,
-  notifyStorageOrderTracking, notifyStorageOrderSubmitted,
+  notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived, notifyStorageWeeklyInvoicing,
 };
