@@ -7,17 +7,33 @@ import { useAuth } from '../context/AuthContext';
 
 const ALL = '__all__';
 
-// Same fee rule as the server (rdFees in server/routes/storage.js): the entry's
-// rate applies to both the received and the dispatched quantity.
+// Same fee rule as the server (rdFees in server/routes/storage.js). Entries
+// migrated from the old app may hold the whole "Type: Qty @ $Rate" text in the
+// Type field (e.g. "Individual Item: 65 @ $5"); then the fee comes from those
+// parts. Otherwise it's the entry's rate × the Qty field.
 function toQty(v) {
   if (v == null || v === '') return 0;
   const n = Number(String(v).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
+function parseStockParts(text) {
+  if (!text) return [];
+  const parts = [];
+  for (const piece of String(text).split(/[;\n]+/)) {
+    const m = piece.trim().match(/^(.+?):\s*(\d+(?:\.\d+)?)\s*(?:@\s*\$?\s*(\d+(?:\.\d+)?))?\s*$/);
+    if (m) parts.push({ type: m[1].trim(), qty: Number(m[2]), rate: m[3] != null ? Number(m[3]) : null });
+  }
+  return parts;
+}
+function sideFee(typeText, qty, rate) {
+  const parts = parseStockParts(typeText);
+  if (parts.length) return parts.reduce((t, p) => t + p.qty * (p.rate != null ? p.rate : rate), 0);
+  return rate * toQty(qty);
+}
 function feesFor(v) {
   const rate = Number(v.rate) || 0;
-  const received = rate * toQty(v.stockReceivedQty);
-  const dispatched = rate * toQty(v.stockDispatchedQty);
+  const received = sideFee(v.stockReceivedType, v.stockReceivedQty, rate);
+  const dispatched = sideFee(v.stockDispatchedType, v.stockDispatchedQty, rate);
   return { received, dispatched, total: received + dispatched };
 }
 
@@ -28,6 +44,8 @@ function money(n) {
 // "Pallets: 3 @ $25.00" — the old app's display format. Blank when there's no stock.
 function stockLabel(type, qty, rate) {
   if (!type && (qty == null || qty === '')) return '';
+  // Already written in the old app's "Type: Qty @ $Rate" form — show it as-is.
+  if (parseStockParts(type).length) return String(type).split(/[;\n]+/).map((s) => s.trim()).filter(Boolean).join('; ');
   const r = rate != null && rate !== '' ? ` @ ${money(rate)}` : '';
   return `${type || 'Stock'}: ${qty ?? 0}${r}`;
 }
@@ -282,6 +300,9 @@ export default function StorageReceiving() {
 
               <div style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
                 Fee: received {money(preview.received)} + dispatched {money(preview.dispatched)} = <strong style={{ color: 'var(--text, inherit)' }}>{money(preview.total)}</strong>
+                {(parseStockParts(formValues.stockReceivedType).length > 0 || parseStockParts(formValues.stockDispatchedType).length > 0) && (
+                  <div style={{ marginTop: 4 }}>A Type written as <code>Type: Qty @ $Rate</code> (from the old app) sets its own fee — the Qty and Rate fields don&apos;t change it.</div>
+                )}
               </div>
 
               <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 16 }}>{saving ? 'Saving…' : 'Save'}</button>
