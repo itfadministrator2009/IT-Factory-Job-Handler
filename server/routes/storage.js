@@ -388,31 +388,91 @@ router.post('/locations-registry', (req, res) => {
 // Receiving / Dispatch log
 // ---------------------------------------------------------------------------
 
+// Fee for one entry, matching the old app: the entry's single rate applies to
+// both the received quantity and the dispatched quantity.
+//   receivedFee   = rate × stockReceivedQty
+//   dispatchedFee = rate × stockDispatchedQty
+// Quantities are stored as TEXT (the old sheet allowed free entry), so they are
+// parsed leniently; anything non-numeric counts as 0.
+function toQty(v) {
+  if (v == null || v === '') return 0;
+  const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+function rdFees(row) {
+  const rate = Number(row.rate) || 0;
+  const received = round2(rate * toQty(row.stock_received_qty));
+  const dispatched = round2(rate * toQty(row.stock_dispatched_qty));
+  return { received, dispatched, total: round2(received + dispatched) };
+}
+
 function rowToRD(row) {
   if (!row) return row;
+  const fees = rdFees(row);
   return {
     id: row.id, client: row.client, dateReceived: row.date_received, dateDispatched: row.date_dispatched,
     rate: row.rate, stockReceivedType: row.stock_received_type, stockReceivedQty: row.stock_received_qty,
     stockDispatchedType: row.stock_dispatched_type, stockDispatchedQty: row.stock_dispatched_qty,
     receiving: row.receiving, dispatch: row.dispatch, savedBy: row.saved_by, savedOn: row.saved_on,
+    feeReceived: fees.received, feeDispatched: fees.dispatched, fee: fees.total,
   };
 }
 
+// Body field -> column, for POST and PATCH. Empty strings become NULL.
+const RD_FIELDS = {
+  client: 'client', dateReceived: 'date_received', dateDispatched: 'date_dispatched', rate: 'rate',
+  stockReceivedType: 'stock_received_type', stockReceivedQty: 'stock_received_qty',
+  stockDispatchedType: 'stock_dispatched_type', stockDispatchedQty: 'stock_dispatched_qty',
+  receiving: 'receiving', dispatch: 'dispatch',
+};
+function rdValue(field, v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (field === 'rate') { const n = Number(v); return Number.isFinite(n) ? n : null; }
+  return String(v).trim() || null;
+}
+
 router.get('/receiving-dispatch', (req, res) => {
-  res.json({ entries: db.prepare('SELECT * FROM storage_receiving_dispatch ORDER BY saved_on DESC').all().map(rowToRD) });
+  const { client } = req.query;
+  const rows = client
+    ? db.prepare('SELECT * FROM storage_receiving_dispatch WHERE client = ? ORDER BY saved_on DESC').all(client)
+    : db.prepare('SELECT * FROM storage_receiving_dispatch ORDER BY saved_on DESC').all();
+  res.json({ entries: rows.map(rowToRD) });
 });
 
 router.post('/receiving-dispatch', (req, res) => {
   const b = req.body || {};
-  if (!b.client) return res.status(400).json({ error: 'client is required' });
+  if (!b.client || !String(b.client).trim()) return res.status(400).json({ error: 'client is required' });
   const id = randomUUID();
+  const v = (f) => rdValue(f, b[f]);
   db.prepare(`INSERT INTO storage_receiving_dispatch
     (id, client, date_received, date_dispatched, rate, stock_received_type, stock_received_qty, stock_dispatched_type, stock_dispatched_qty, receiving, dispatch, saved_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, b.client, b.dateReceived || null, b.dateDispatched || null, Number(b.rate) || null,
-      b.stockReceivedType || null, b.stockReceivedQty || null, b.stockDispatchedType || null, b.stockDispatchedQty || null,
-      b.receiving || null, b.dispatch || null, req.user.name);
+    .run(id, v('client'), v('dateReceived'), v('dateDispatched'), v('rate'),
+      v('stockReceivedType'), v('stockReceivedQty'), v('stockDispatchedType'), v('stockDispatchedQty'),
+      v('receiving'), v('dispatch'), req.user.name);
   res.status(201).json({ entry: rowToRD(db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(id)) });
+});
+
+router.patch('/receiving-dispatch/:id', (req, res) => {
+  const existing = db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Entry not found' });
+  const b = req.body || {};
+  const sets = [];
+  const params = [];
+  for (const [field, col] of Object.entries(RD_FIELDS)) {
+    if (!(field in b)) continue;
+    const val = rdValue(field, b[field]);
+    if (field === 'client' && !val) return res.status(400).json({ error: 'client cannot be blank' });
+    sets.push(`${col} = ?`);
+    params.push(val);
+  }
+  if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+  // saved_by / saved_on record the last person to save the entry, as in the old app.
+  sets.push('saved_by = ?', "saved_on = datetime('now')");
+  params.push(req.user.name, req.params.id);
+  db.prepare(`UPDATE storage_receiving_dispatch SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  res.json({ entry: rowToRD(db.prepare('SELECT * FROM storage_receiving_dispatch WHERE id = ?').get(req.params.id)) });
 });
 
 router.delete('/receiving-dispatch/:id', (req, res) => {
@@ -489,32 +549,36 @@ router.get('/reports/summary', (req, res) => {
 
   const allItems = db.prepare('SELECT * FROM storage_items').all().map(rowToItem);
   const pallets = db.prepare('SELECT * FROM storage_pallets').all().map(rowToPallet);
-  const clients = [...new Set(allItems.map((i) => i.client).filter(Boolean))].sort();
 
-  const storageByClient = clients.map((client) => ({
-    client, storageCost: Math.round(computeStorageCostForClient(client, allItems, pallets, fromDate, toDate) * 100) / 100,
-  }));
-
-  const rdEntries = db.prepare('SELECT * FROM storage_receiving_dispatch').all().map(rowToRD);
-  const parseStockFee = (str) => {
-    if (!str) return 0;
-    return String(str).split(';').map((s) => s.trim()).filter(Boolean).reduce((total, part) => {
-      const m = part.match(/^(.+?):\s*(\d+)(?:\s*@\s*(.+))?$/);
-      if (!m) return total;
-      const rateNum = Number(String(m[3] || '').replace(/[^0-9.]/g, '')) || 0;
-      return total + (Number(m[2]) || 0) * rateNum;
-    }, 0);
-  };
+  // Receiving/dispatch fees = rate × qty (see rdFees). Each half is charged in
+  // the period its own date falls in: the received fee by date_received, the
+  // dispatched fee by date_dispatched. An entry with neither date falls back to
+  // the day it was saved, so it is still billed somewhere.
+  const inRange = (d) => !!d && d >= from && d <= to;
   const feesByClient = {};
-  rdEntries.forEach((e) => {
-    if (!e.client) return;
-    feesByClient[e.client] = (feesByClient[e.client] || 0) + parseStockFee(e.receiving) + parseStockFee(e.dispatch);
+  db.prepare('SELECT * FROM storage_receiving_dispatch').all().forEach((row) => {
+    if (!row.client) return;
+    const fees = rdFees(row);
+    const savedDay = row.saved_on ? String(row.saved_on).slice(0, 10) : null;
+    let fee = 0;
+    if (!row.date_received && !row.date_dispatched) {
+      if (inRange(savedDay)) fee = fees.total;
+    } else {
+      if (inRange(row.date_received)) fee += fees.received;
+      if (inRange(row.date_dispatched)) fee += fees.dispatched;
+    }
+    if (fee) feesByClient[row.client] = (feesByClient[row.client] || 0) + fee;
   });
 
-  const summary = storageByClient.map((s) => ({
-    client: s.client, storageCost: s.storageCost, receivingDispatchFees: Math.round((feesByClient[s.client] || 0) * 100) / 100,
-    total: Math.round((s.storageCost + (feesByClient[s.client] || 0)) * 100) / 100,
-  }));
+  // Include clients that only have receiving/dispatch fees in the period, not
+  // just clients with stored items.
+  const clients = [...new Set([...allItems.map((i) => i.client), ...Object.keys(feesByClient)].filter(Boolean))].sort();
+
+  const summary = clients.map((client) => {
+    const storageCost = round2(computeStorageCostForClient(client, allItems, pallets, fromDate, toDate));
+    const receivingDispatchFees = round2(feesByClient[client] || 0);
+    return { client, storageCost, receivingDispatchFees, total: round2(storageCost + receivingDispatchFees) };
+  });
 
   res.json({ from, to, summary, grandTotal: Math.round(summary.reduce((t, s) => t + s.total, 0) * 100) / 100 });
 });
