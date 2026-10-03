@@ -41,7 +41,7 @@ test('POST computes fee as rate × received qty + rate × dispatched qty', async
   assert.equal(data.entry.savedBy, 'Staff Person');
 });
 
-test('PATCH edits fields, recalculates the fee and records who saved it', async () => {
+test('PATCH edits fields and recalculates the fee, keeping the original saved-by', async () => {
   const created = await client.post('/api/storage/receiving-dispatch', {
     token: adminToken, body: { client: 'Beta', rate: 10, stockReceivedType: 'Cartons', stockReceivedQty: 3 },
   });
@@ -55,7 +55,7 @@ test('PATCH edits fields, recalculates the fee and records who saved it', async 
   assert.equal(data.entry.dispatch, 'Courier booked');
   assert.equal(data.entry.dateDispatched, null);
   assert.equal(data.entry.fee, 50);
-  assert.equal(data.entry.savedBy, 'Staff Person');
+  assert.equal(data.entry.savedBy, 'Admin Person', 'edits keep who originally logged it, like the old app');
 
   const blank = await client.patch(`/api/storage/receiving-dispatch/${id}`, { token, body: { client: '' } });
   assert.equal(blank.status, 400);
