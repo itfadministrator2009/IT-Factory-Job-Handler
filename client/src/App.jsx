@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -27,13 +27,19 @@ import StorageOrders from './pages/StorageOrders';
 import StorageReceiving from './pages/StorageReceiving';
 import StorageReports from './pages/StorageReports';
 import StorageLocations from './pages/StorageLocations';
+import StorageDashboard from './pages/StorageDashboard';
+import StorageCalculator from './pages/StorageCalculator';
+import StoragePalletLabels from './pages/StoragePalletLabels';
 import PortalLogin from './pages/PortalLogin';
 import Portal from './pages/Portal';
 import { hasPortalSession } from './portal/portalApi';
 
+// Keeps the page you asked for (e.g. a scanned pallet label) so login can
+// send you back to it.
 function RequireAuth({ children }) {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   return children;
 }
 
@@ -95,6 +101,9 @@ function AppRoutes() {
       <Route path="/storage/receiving" element={<RequireAuth><StorageReceiving /></RequireAuth>} />
       <Route path="/storage/locations" element={<RequireAuth><StorageLocations /></RequireAuth>} />
       <Route path="/storage/reports" element={<RequireAdmin><StorageReports /></RequireAdmin>} />
+      <Route path="/storage/dashboard" element={<RequireAuth><StorageDashboard /></RequireAuth>} />
+      <Route path="/storage/calculator" element={<RequireAuth><StorageCalculator /></RequireAuth>} />
+      <Route path="/storage/labels" element={<RequireAuth><StoragePalletLabels /></RequireAuth>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
