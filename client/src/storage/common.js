@@ -101,3 +101,31 @@ export const ITEM_FIELDS = [
   ['startDate', 'Storage Start Date', 'date'],
   ['endDate', 'Storage End Date', 'date'],
 ];
+
+// Note keys, as in the old app: "item:<id>" for one item, "<field>:<value>" for
+// a group. An item shows its own notes plus those of every group it's in.
+export const GROUP_FIELDS = [
+  ['client', 'Client'], ['jobNumber', 'Job #'], ['referenceNumber', 'Reference #'], ['poNumber', 'PO #'],
+  ['orderNumber', 'Order #'], ['storageCentre', 'Storage centre'], ['location', 'Location'],
+];
+export function itemNoteKeys(i) {
+  return [`item:${i.id}`, ...GROUP_FIELDS.map(([k]) => (i[k] ? `${k}:${String(i[k]).trim()}` : null)).filter(Boolean)];
+}
+
+// When a note was added: stored in UTC ("YYYY-MM-DD HH:MM:SS"), shown in Sydney time.
+export function noteTime(s) {
+  const d = new Date(`${String(s || '').replace(' ', 'T')}Z`);
+  return Number.isNaN(d.getTime()) ? (s || '') : d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+// Pallet rate lookup (same three tiers as the server's billing): exact pallet,
+// then "all pallets at this centre", then "all pallets for this client".
+export function palletRateFor(pallets, i) {
+  if (!i.location) return null;
+  const lc = (v) => String(v || '').trim().toLowerCase();
+  const mine = pallets.filter((p) => lc(p.client) === lc(i.client));
+  return mine.find((p) => lc(p.storageCentre) === lc(i.storageCentre) && lc(p.location) === lc(i.location))
+    || mine.find((p) => lc(p.storageCentre) === lc(i.storageCentre) && p.location === '__ALL_AT_CENTRE__')
+    || mine.find((p) => p.location === '__ALL__')
+    || null;
+}
