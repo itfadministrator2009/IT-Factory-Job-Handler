@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Boxes, Package, Users, ClipboardList, Truck, FileText, Download, Mail, Printer } from 'lucide-react';
+import { Boxes, Package, Users, ClipboardList, Truck, FileText, Download, Mail, Printer, RotateCcw } from 'lucide-react';
 import api from '../api';
 import { openPdf, downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
@@ -127,6 +127,7 @@ export default function StorageReports() {
             onClick={() => downloadFile(api, '/storage/export.zip', 'storage-centre.zip').catch(() => alert('Could not download the export'))}>
             <Download size={14} /> Download backup
           </button>
+          <Link to="/storage/restore" className="btn btn-ghost btn-sm" title="Put the Storage Centre data back from a backup"><RotateCcw size={14} /> Restore</Link>
           <button type="button" className="btn btn-ghost btn-sm" title="Email last week's invoicing summary now (the Monday email)"
             onClick={async () => {
               if (!confirm("Email last week's invoicing summary now?")) return;

@@ -10,6 +10,8 @@ const {
 } = require('../storageBilling');
 const { buildOrderPdf, buildInvoicePdf, buildRdInvoicePdf, invoiceReference } = require('../storagePdf');
 const { buildStorageCentreZip } = require('../storageExport');
+const storageRestore = require('../storageRestore');
+const { listBackups, downloadBackup } = require('../backup');
 const { sendWeeklyInvoicingReminder, recipients: weeklyRecipients } = require('../storageWeekly');
 const {
   billingGaps, calculator, dashboard, modelSummary, parseLocalDate, toNumberOrNull, presetRange, PRESETS,
@@ -170,6 +172,53 @@ router.get('/model-summary', (req, res) => {
   res.json({ models: modelSummary(req.query.client && req.query.client !== '__ALL__' ? req.query.client : null) });
 });
 
+// Match & update from a spreadsheet (old updateFieldByRowMap): the client sends
+// serial + value pairs read from the sheet; every item whose serial matches
+// (trimmed, ignoring case) gets that value in one field. Blank values are
+// skipped. dryRun returns the preview without changing anything.
+const MATCH_FIELDS = ['referenceNumber', 'jobNumber', 'poNumber', 'orderNumber', 'assetTag', 'client', 'storageCentre', 'location', 'condition', 'item', 'make', 'model', 'quantity', 'priceWeek', 'startDate', 'endDate'];
+router.post('/items/match-update', (req, res) => {
+  const { field, rows, dryRun } = req.body || {};
+  if (!MATCH_FIELDS.includes(field)) return res.status(400).json({ error: 'Choose a field to update' });
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'No rows to match' });
+  if (rows.length > 20000) return res.status(400).json({ error: 'At most 20,000 rows at a time' });
+  const bySerial = new Map();
+  db.prepare("SELECT id, serial FROM storage_items WHERE serial IS NOT NULL AND trim(serial) != ''").all().forEach((r) => {
+    const k = String(r.serial).trim().toUpperCase();
+    if (!bySerial.has(k)) bySerial.set(k, []);
+    bySerial.get(k).push(r.id);
+  });
+  const convert = (v) => {
+    if (field === 'startDate' || field === 'endDate') return parseLocalDate(v);
+    if (field === 'priceWeek') return toNumberOrNull(v);
+    return String(v).trim();
+  };
+  const updates = []; const unmatched = []; const multi = []; const badValues = [];
+  let blank = 0; let noSerial = 0;
+  rows.forEach((r) => {
+    const serial = String(r?.serial ?? '').trim().toUpperCase();
+    if (!serial) { noSerial += 1; return; }
+    const raw = r?.value;
+    if (raw == null || String(raw).trim() === '') { blank += 1; return; }
+    const ids = bySerial.get(serial);
+    if (!ids) { unmatched.push(String(r.serial).trim()); return; }
+    const value = convert(raw);
+    if (value == null) { badValues.push(`${String(r.serial).trim()}: ${raw}`); return; }
+    if (ids.length > 1) multi.push({ serial: String(r.serial).trim(), count: ids.length });
+    ids.forEach((id) => updates.push([id, value]));
+  });
+  const summary = {
+    field, rows: rows.length, matchedRows: rows.length - blank - noSerial - unmatched.length - badValues.length, itemsToUpdate: updates.length,
+    blank, noSerial, unmatched: unmatched.slice(0, 50), unmatchedCount: unmatched.length, multi: multi.slice(0, 50), multiCount: multi.length,
+    badValues: badValues.slice(0, 20), badValueCount: badValues.length,
+  };
+  if (dryRun) return res.json({ ...summary, updated: 0 });
+  const stmt = db.prepare(`UPDATE storage_items SET ${ITEM_FIELD_COLUMNS[field]} = ?, last_edited_by = ?, updated_at = datetime('now') WHERE id = ?`);
+  let updated = 0;
+  db.transaction(() => { updates.forEach(([id, v]) => { updated += stmt.run(v, req.user.name || null, id).changes; }); })();
+  res.json({ ...summary, updated });
+});
+
 router.patch('/items/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM storage_items WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Item not found' });
@@ -203,8 +252,9 @@ router.post('/items/bulk-delete', (req, res) => {
   res.json({ ok: true, deleted });
 });
 
-// Item notes (keyed by a free-text "item key", matching the old app's model —
-// usually serial or asset tag) — lets staff leave a running log against an item.
+// Item notes, keyed like the old app's ItemNotes sheet: "item:<id>" for one
+// item, or "<field>:<value>" (e.g. "client:HP", "location:Pallet 3") for a group,
+// so a note on a client shows on every one of that client's items.
 router.get('/item-notes', (req, res) => {
   const keys = (req.query.keys || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (keys.length === 0) return res.json({ notes: [] });
@@ -214,11 +264,13 @@ router.get('/item-notes', (req, res) => {
 });
 
 router.post('/item-notes', (req, res) => {
-  const { itemKey, note, author } = req.body;
-  if (!itemKey || !note) return res.status(400).json({ error: 'itemKey and note are required' });
+  const itemKey = String(req.body?.itemKey || '').trim();
+  const note = String(req.body?.note || '').trim();
+  if (!itemKey || !note) return res.status(400).json({ error: 'Write a note before adding it.' });
+  if (note.length > 4000) return res.status(400).json({ error: 'Notes can be at most 4,000 characters' });
   const id = randomUUID();
   db.prepare('INSERT INTO storage_item_notes (id, item_key, note, author) VALUES (?, ?, ?, ?)')
-    .run(id, itemKey, note, author || req.user.name);
+    .run(id, itemKey, note, req.user.name || null);
   res.status(201).json({ note: db.prepare('SELECT * FROM storage_item_notes WHERE id = ?').get(id) });
 });
 
@@ -863,6 +915,77 @@ router.get('/billing-gaps', (req, res) => {
 
 router.get('/dashboard', (req, res) => {
   res.json(dashboard());
+});
+
+// ---------------------------------------------------------------------------
+// Restore Storage Centre data from a backup (admin). Only the Storage Centre
+// tables are replaced; see storageRestore.js.
+// ---------------------------------------------------------------------------
+async function restoreSourceBuffer(body) {
+  const { source, backupId, pointId, zipBase64 } = body || {};
+  if (source === 'point') {
+    const zip = storageRestore.restorePointZip(pointId);
+    if (!zip) throw Object.assign(new Error('That restore point no longer exists'), { status: 404 });
+    return zip;
+  }
+  if (source === 'onedrive') {
+    if (!backupId) throw Object.assign(new Error('Choose a backup'), { status: 400 });
+    return downloadBackup(backupId);
+  }
+  if (source === 'upload') {
+    if (!zipBase64) throw Object.assign(new Error('Choose a backup file'), { status: 400 });
+    return Buffer.from(String(zipBase64), 'base64');
+  }
+  throw Object.assign(new Error('Unknown backup source'), { status: 400 });
+}
+
+router.get('/restore/sources', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can restore Storage Centre data' });
+  let oneDrive = []; let oneDriveError = null;
+  try {
+    const r = await listBackups();
+    if (r.ok) oneDrive = r.backups.filter((b) => /^storage-centre-.*\.zip$/i.test(b.name));
+    else oneDriveError = r.reason === 'not_configured' ? 'OneDrive backups are not set up on this server.' : (r.error || 'Could not list OneDrive backups');
+  } catch (err) { oneDriveError = err.message; }
+  res.json({ restorePoints: storageRestore.listRestorePoints(), oneDrive, oneDriveError });
+});
+
+router.post('/restore/points', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can do this' });
+  const id = await storageRestore.saveRestorePoint(String(req.body?.reason || 'Saved by hand').slice(0, 200), req.user.name);
+  res.status(201).json({ id, restorePoints: storageRestore.listRestorePoints() });
+});
+
+router.get('/restore/points/:id/download', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can do this' });
+  const zip = storageRestore.restorePointZip(req.params.id);
+  if (!zip) return res.status(404).json({ error: 'Restore point not found' });
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="storage-centre-restore-point.zip"');
+  res.send(zip);
+});
+
+router.post('/restore/preview', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can restore Storage Centre data' });
+  try {
+    res.json(storageRestore.inspect(await restoreSourceBuffer(req.body)));
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+router.post('/restore', async (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can restore Storage Centre data' });
+  if (req.body?.confirm !== 'RESTORE') return res.status(400).json({ error: 'Type RESTORE to confirm' });
+  try {
+    const buffer = await restoreSourceBuffer(req.body);
+    const result = await storageRestore.restore(buffer, { by: req.user.name, reason: 'Before restore' });
+    console.log(`[storage] Storage Centre data restored by ${req.user.name}:`, JSON.stringify(result.restored));
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[storage] restore failed:', err.message);
+    res.status(err.status || 400).json({ error: err.message });
+  }
 });
 
 // Download every Storage Centre table as CSVs in a zip (the same file the nightly
