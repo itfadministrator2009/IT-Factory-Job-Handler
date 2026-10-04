@@ -712,6 +712,52 @@ router.post('/locations-registry', (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+// Bring across the old app's LocationsRegistry sheet (Location, Is Pallet,
+// Classified By, ...). Rows are matched the same way as above (spaces collapsed,
+// case ignored). A location already classified here keeps its Work Desk answer
+// unless overwrite is set. dryRun returns the counts without saving.
+const truthy = (v) => v === true || /^(true|yes|y|1|pallet)$/i.test(String(v ?? '').trim());
+router.post('/locations-registry/import', (req, res) => {
+  const { rows, dryRun, overwrite } = req.body || {};
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'No rows to import' });
+  if (rows.length > 20000) return res.status(400).json({ error: 'At most 20,000 rows at a time' });
+  const existing = new Map(db.prepare('SELECT id, location_key, is_pallet FROM storage_locations_registry').all().map((r) => [r.location_key, r]));
+  const seen = new Map();
+  let blank = 0;
+  rows.forEach((r) => {
+    const clean = String(r?.location ?? '').trim().replace(/\s+/g, ' ');
+    if (!clean) { blank += 1; return; }
+    seen.set(normalizeLocationKey(clean), { clean, isPallet: truthy(r?.isPallet), by: String(r?.classifiedBy ?? '').trim() || null });
+  });
+  const toAdd = []; const toChange = []; let same = 0; let keptHere = 0;
+  seen.forEach((v, key) => {
+    const cur = existing.get(key);
+    if (!cur) toAdd.push([key, v]);
+    else if (!!cur.is_pallet === v.isPallet) same += 1;
+    else if (overwrite) toChange.push([cur.id, v]);
+    else keptHere += 1;
+  });
+  // In-use locations that would still be unclassified afterwards.
+  const after = new Set([...existing.keys(), ...seen.keys()]);
+  const stillUnclassified = new Set();
+  db.prepare("SELECT location FROM storage_items WHERE location IS NOT NULL AND trim(location) != '' AND start_date IS NOT NULL AND end_date IS NULL").all()
+    .forEach((r) => { const k = normalizeLocationKey(r.location); if (!after.has(k)) stillUnclassified.add(r.location.trim().replace(/\s+/g, ' ')); });
+  const summary = {
+    rows: rows.length, blank, locations: seen.size, toAdd: toAdd.length, toChange: toChange.length, same, keptHere,
+    pallets: [...seen.values()].filter((v) => v.isPallet).length,
+    stillUnclassified: [...stillUnclassified].sort().slice(0, 100), stillUnclassifiedCount: stillUnclassified.size,
+  };
+  if (dryRun) return res.json({ ...summary, saved: 0 });
+  const ins = db.prepare('INSERT INTO storage_locations_registry (id, location, location_key, is_pallet, classified_by) VALUES (?, ?, ?, ?, ?)');
+  const upd = db.prepare("UPDATE storage_locations_registry SET is_pallet = ?, classified_by = ?, classified_on = datetime('now') WHERE id = ?");
+  let saved = 0;
+  db.transaction(() => {
+    toAdd.forEach(([key, v]) => { saved += ins.run(randomUUID(), v.clean, key, v.isPallet ? 1 : 0, v.by || `${req.user.name} (old app)`).changes; });
+    toChange.forEach(([id, v]) => { saved += upd.run(v.isPallet ? 1 : 0, v.by || `${req.user.name} (old app)`, id).changes; });
+  })();
+  res.json({ ...summary, saved });
+});
+
 // ---------------------------------------------------------------------------
 // Receiving / Dispatch log
 // ---------------------------------------------------------------------------
