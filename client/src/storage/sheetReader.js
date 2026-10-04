@@ -24,15 +24,26 @@ export function parseCsv(text) {
   return rows;
 }
 
-async function readFileRows(file) {
+const sheetKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// preferSheet: for a whole workbook, read the tab with that name if it has one
+// (e.g. "LocationsRegistry"); otherwise the first tab.
+async function readFileRows(file, preferSheet) {
   if (/\.csv$/i.test(file.name)) return { sheet: file.name, rows: parseCsv(await file.text()) };
   if (!/\.xlsx$/i.test(file.name)) throw new Error('Use an .xlsx or .csv file (old .xls files: open in Excel and Save As .xlsx).');
+  if (preferSheet) {
+    const mod = await import('read-excel-file/browser');
+    const sheets = await mod.default(file);
+    const hit = sheets.find((s) => sheetKey(s.sheet) === sheetKey(preferSheet));
+    const use = hit || sheets[0];
+    return { sheet: use.sheet, rows: use.data };
+  }
   const { readSheet } = await import('read-excel-file/browser');
   return { sheet: 'first sheet', rows: await readSheet(file) };
 }
 
-export async function readSpreadsheet(file) {
-  const { sheet, rows: all } = await readFileRows(file);
+export async function readSpreadsheet(file, preferSheet) {
+  const { sheet, rows: all } = await readFileRows(file, preferSheet);
   const rows = all.filter((r) => r.some((v) => String(v ?? '').trim() !== ''));
   return { sheet, headers: (rows[0] || []).map((h) => String(h ?? '').trim()), data: rows.slice(1) };
 }

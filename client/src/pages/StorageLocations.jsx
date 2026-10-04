@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Search } from 'lucide-react';
+import { Plus, Trash2, Search, Upload } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import LocationsImportDrawer from '../storage/LocationsImportDrawer';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -27,6 +28,7 @@ export default function StorageLocations() {
   const [newIsPallet, setNewIsPallet] = useState(true);
   const [busyKey, setBusyKey] = useState(null);
   const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false);
 
   function load() {
     api.get('/storage/locations-registry/overview')
@@ -103,7 +105,9 @@ export default function StorageLocations() {
             {locations ? `${counts.all} location${counts.all === 1 ? '' : 's'} · ${counts.unclassified} unclassified` : 'Loading…'}
           </div>
         </div>
+        <button type="button" className="btn btn-ghost" onClick={() => setImporting(true)}><Upload size={16} /> Import from old app</button>
       </div>
+      {importing && <LocationsImportDrawer onClose={() => setImporting(false)} onDone={load} />}
 
       <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16, maxWidth: 760 }}>
         Mark each location as a real <strong>pallet</strong> or <strong>not a pallet</strong> (a shelf, cage, floor area or placeholder).
