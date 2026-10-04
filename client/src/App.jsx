@@ -30,6 +30,7 @@ import StorageLocations from './pages/StorageLocations';
 import StorageDashboard from './pages/StorageDashboard';
 import StorageCalculator from './pages/StorageCalculator';
 import StoragePalletLabels from './pages/StoragePalletLabels';
+import StorageRestore from './pages/StorageRestore';
 import PortalLogin from './pages/PortalLogin';
 import Portal from './pages/Portal';
 import { hasPortalSession } from './portal/portalApi';
@@ -104,6 +105,7 @@ function AppRoutes() {
       <Route path="/storage/dashboard" element={<RequireAuth><StorageDashboard /></RequireAuth>} />
       <Route path="/storage/calculator" element={<RequireAuth><StorageCalculator /></RequireAuth>} />
       <Route path="/storage/labels" element={<RequireAuth><StoragePalletLabels /></RequireAuth>} />
+      <Route path="/storage/restore" element={<RequireAdmin><StorageRestore /></RequireAdmin>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
