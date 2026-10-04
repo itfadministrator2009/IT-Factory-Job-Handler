@@ -192,3 +192,28 @@ test('clients page also lists client names that are only on records', async () =
   const after3 = (await client.get('/api/storage/clients', { token: staff.token })).data;
   assert.ok(!after3.unlisted.find((u) => u.clientName.toLowerCase() === 'hp'));
 });
+
+test('locations import: brings across the old LocationsRegistry, keeping Work Desk answers unless told', async () => {
+  db.prepare("INSERT INTO storage_items (id, client, location, start_date) VALUES ('li1', 'Lima', 'LR Pallet  7', '2026-01-01'), ('li2', 'Lima', 'LR Floor', '2026-01-01'), ('li3', 'Lima', 'LR Cage', '2026-01-01')").run();
+  await client.post('/api/storage/locations-registry', { token: staff.token, body: { location: 'LR Floor', isPallet: true } });
+  const rows = [
+    { location: 'lr pallet 7', isPallet: 'TRUE', classifiedBy: 'Rami' },
+    { location: 'LR Floor', isPallet: 'FALSE' },
+    { location: 'LR Shelf', isPallet: false },
+    { location: '  ', isPallet: 'TRUE' },
+  ];
+  const pre = (await client.post('/api/storage/locations-registry/import', { token: staff.token, body: { rows, dryRun: true } })).data;
+  assert.deepEqual([pre.locations, pre.toAdd, pre.keptHere, pre.toChange, pre.blank, pre.saved], [3, 2, 1, 0, 1, 0]);
+  assert.ok(pre.stillUnclassified.includes('LR Cage'));
+  assert.ok(!pre.stillUnclassified.includes('LR Pallet 7'));
+  const done = (await client.post('/api/storage/locations-registry/import', { token: staff.token, body: { rows } })).data;
+  assert.equal(done.saved, 2);
+  const get = (k) => db.prepare('SELECT * FROM storage_locations_registry WHERE location_key = ?').get(k);
+  assert.equal(get('lr pallet 7').is_pallet, 1);
+  assert.equal(get('lr pallet 7').classified_by, 'Rami');
+  assert.equal(get('lr shelf').is_pallet, 0);
+  assert.equal(get('lr floor').is_pallet, 1); // Work Desk answer kept
+  const ow = (await client.post('/api/storage/locations-registry/import', { token: staff.token, body: { rows, overwrite: true } })).data;
+  assert.equal(ow.saved, 1);
+  assert.equal(get('lr floor').is_pallet, 0);
+});
