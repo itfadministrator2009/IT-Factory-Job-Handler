@@ -1,20 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Plus, Search, Trash2, Pencil, X, Users, Package, ClipboardList, Upload, DollarSign, AlertTriangle,
-  Wand2, Download, Printer, QrCode, LogOut as MarkOut, LogIn as MarkIn, Edit3,
+  Wand2, Download, Printer, QrCode, LogOut as MarkOut, LogIn as MarkIn, Edit3, FileSpreadsheet,
 } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import {
   ITEM_FIELDS, dmy, money, naturalCompare, downloadCsv, itemStatus, weeksStored, findDuplicateGroups, isInStorage,
+  GROUP_FIELDS, itemNoteKeys,
 } from '../storage/common';
 import ItemRatesDrawer from '../storage/ItemRatesDrawer';
 import BillingGapsDrawer from '../storage/BillingGapsDrawer';
 import ModelCleanupDrawer from '../storage/ModelCleanupDrawer';
 import ImportDrawer from '../storage/ImportDrawer';
 import BulkEditDrawer from '../storage/BulkEditDrawer';
+import GroupDrawer from '../storage/GroupDrawer';
+import MatchUpdateDrawer from '../storage/MatchUpdateDrawer';
+import NotesPanel from '../storage/NotesPanel';
 
 const PAGE = 200;
 const sydneyToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
@@ -46,6 +50,10 @@ export default function StorageManifest() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [tool, setTool] = useState(null);
+  // Old app's group drawer: double-click a client / job / centre / location cell.
+  const [group, setGroup] = useState(null); // { field, value }
+  const [bulkItems, setBulkItems] = useState(null); // items for "Bulk edit these items"
+  const clickTimer = useRef(null);
   // A scanned pallet label (?client=&centre=&location=) — the old QR deep link.
   const [scanned] = useState(() => (params.get('location') ? { client: params.get('client') || '', centre: params.get('centre') || '', location: params.get('location') } : null));
   const [showScanned, setShowScanned] = useState(!!scanned);
@@ -92,6 +100,22 @@ export default function StorageManifest() {
 
   function openAdd(prefill = {}) { setEditing(null); setFormValues({ startDate: sydneyToday(), ...prefill }); setError(''); setShowForm(true); }
   function openEdit(it) { setEditing(it); setFormValues({ ...it }); setError(''); setShowForm(true); }
+  // A single click opens the item; a double-click on a groupable cell opens the
+  // group instead, so the single click waits a moment to see if a second follows.
+  function rowClick(it) {
+    clearTimeout(clickTimer.current);
+    clickTimer.current = setTimeout(() => openEdit(it), 250);
+  }
+  function openGroup(e, field, value) {
+    if (value == null || String(value).trim() === '') return;
+    e.stopPropagation();
+    clearTimeout(clickTimer.current);
+    setGroup({ field, value: String(value).trim() });
+  }
+  const groupCell = (field, value, children, extra = {}) => (
+    <td {...extra} onDoubleClick={(e) => openGroup(e, field, value)} title={value ? `Double-click to see every item with this ${GROUP_FIELDS.find(([k]) => k === field)?.[1].toLowerCase()}` : undefined}>{children}</td>
+  );
+  const noteLabels = (it) => Object.fromEntries(GROUP_FIELDS.map(([k, l]) => [`${k}:${String(it[k] ?? '').trim()}`, `${l} ${it[k]}`]));
 
   async function handleSave(e) {
     e.preventDefault();
@@ -179,6 +203,7 @@ export default function StorageManifest() {
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTool('rates')}><DollarSign size={14} /> Item rates</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTool('gaps')}><AlertTriangle size={14} /> Billing gaps</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTool('models')}><Wand2 size={14} /> Clean up model names</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTool('match')}><FileSpreadsheet size={14} /> Match &amp; update from spreadsheet</button>
         <Link to="/storage/labels" className="btn btn-ghost btn-sm"><QrCode size={14} /> Pallet labels (QR)</Link>
         <button type="button" className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!filtered.length}><Download size={14} /> Export CSV</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={14} /> Print</button>
@@ -255,6 +280,7 @@ export default function StorageManifest() {
         </div>
       )}
 
+      <div className="no-print" style={{ fontSize: 12, color: 'var(--muted)', margin: '-6px 0 8px' }}>Click an item to open it. Double-click a client, job #, storage centre or location to see every item in that group, with its notes and bulk edit.</div>
       <div className="panel" style={{ padding: 0 }}>
         {!items ? (
           <div className="empty-state">Loading…</div>
@@ -273,14 +299,14 @@ export default function StorageManifest() {
               </thead>
               <tbody>
                 {visible.map((it) => (
-                  <tr key={it.id} className="clickable" onClick={() => openEdit(it)} style={dupIds.has(it.id) ? { background: '#fbe9e4' } : undefined}>
+                  <tr key={it.id} className="clickable" onClick={() => rowClick(it)} style={dupIds.has(it.id) ? { background: '#fbe9e4' } : undefined}>
                     <td onClick={(e) => e.stopPropagation()} className="no-print">
                       <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleSelect(it.id)} />
                     </td>
-                    <td>{it.client}{dupIds.has(it.id) && <span className="pill" style={{ marginLeft: 6, background: '#f6d2c7', color: 'var(--danger)' }}>Duplicate</span>}</td>
-                    <td>{it.jobNumber}</td><td>{it.item}</td><td>{it.make}</td><td>{it.model}</td>
+                    {groupCell('client', it.client, <>{it.client}{dupIds.has(it.id) && <span className="pill" style={{ marginLeft: 6, background: '#f6d2c7', color: 'var(--danger)' }}>Duplicate</span>}</>)}
+                    {groupCell('jobNumber', it.jobNumber, it.jobNumber)}<td>{it.item}</td><td>{it.make}</td><td>{it.model}</td>
                     <td style={{ fontFamily: 'var(--font-mono, monospace)' }}>{it.serial}</td>
-                    <td>{it.storageCentre}</td><td>{it.location}</td><td>{it.quantity}</td>
+                    {groupCell('storageCentre', it.storageCentre, it.storageCentre)}{groupCell('location', it.location, it.location)}<td>{it.quantity}</td>
                     <td style={{ textAlign: 'right' }}>{Number(it.priceWeek) > 0 ? money(it.priceWeek) : '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(it.startDate)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(it.endDate)}</td>
@@ -341,6 +367,7 @@ export default function StorageManifest() {
               <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 16 }}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
+              {editing && <NotesPanel keys={itemNoteKeys(editing)} addKey={`item:${editing.id}`} labels={noteLabels(editing)} />}
             </form>
           </div>
         </div>
@@ -353,6 +380,15 @@ export default function StorageManifest() {
       {tool === 'bulk' && (
         <BulkEditDrawer items={(items || []).filter((i) => selected.has(i.id))} onClose={() => setTool(null)}
           onDone={() => { setTool(null); setSelected(new Set()); loadItems(); }} />
+      )}
+      {tool === 'match' && <MatchUpdateDrawer onClose={() => setTool(null)} onDone={loadItems} />}
+      {group && !bulkItems && (
+        <GroupDrawer field={group.field} value={group.value} items={items || []} onClose={() => setGroup(null)}
+          onOpenItem={(i) => { setGroup(null); openEdit(i); }} onBulkEdit={(list) => setBulkItems(list)} />
+      )}
+      {bulkItems && (
+        <BulkEditDrawer items={bulkItems} onClose={() => setBulkItems(null)}
+          onDone={() => { setBulkItems(null); loadItems(); }} />
       )}
     </Layout>
   );
