@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RotateCcw, Upload, Download, Save, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '../api';
 import { downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
@@ -74,6 +75,10 @@ export default function StorageRestore() {
           <h1>Restore Storage Centre data</h1>
           <div className="subtitle">Puts the Storage Centre back to how it was in a backup. Jobs, projects, users and the rest of Work Desk are not touched.</div>
         </div>
+      </div>
+
+      <div className="panel panel-pad" style={{ marginBottom: 16, fontSize: 14 }}>
+        Only need one item, pallet rate or order back? Use <Link to="/restore-records?type=storage_item">Restore individual records</Link> instead — it brings back just the ones you tick.
       </div>
 
       {error && <div className="error-banner">{error}</div>}
