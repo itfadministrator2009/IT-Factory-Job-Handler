@@ -17,6 +17,7 @@ const assetRoutes = require('./routes/assets');
 const storageRoutes = require('./routes/storage');
 const storagePortalRoutes = require('./routes/storagePortal');
 const presenceRoutes = require('./routes/presence');
+const recordRestoreRoutes = require('./routes/recordRestore');
 const { startBackupScheduler } = require('./backup');
 const { startStorageWeeklyScheduler } = require('./storageWeekly');
 
@@ -51,6 +52,8 @@ app.use('/api/storage', storageRoutes);
 // Client-facing Storage Centre portal — its own login, separate from staff accounts.
 app.use('/api/storage-portal', storagePortalRoutes);
 app.use('/api/presence', presenceRoutes);
+// Admin: restore single records (a job, an asset, a storage item…) from a backup.
+app.use('/api/record-restore', recordRestoreRoutes);
 
 const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {
