@@ -131,8 +131,8 @@ input, select, textarea {
 .sidebar-link svg { flex-shrink: 0; }
 .sidebar-section-head { width: 100%; background: none; border: none; cursor: pointer; font-family: inherit; font-weight: 600; white-space: nowrap; }
 .sidebar-section-head.current { color: white; }
-.sidebar-subnav { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 8px 14px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.16); }
-.sidebar-link.sidebar-sublink { font-size: 13px; padding: 6px 10px; gap: 8px; }
+.sidebar-subnav { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 8px 12px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.16); }
+.sidebar-link.sidebar-sublink { font-size: 13px; padding: 6px 8px; gap: 8px; white-space: nowrap; }
 .sidebar-settings { margin-top: 10px; }
 
 .sidebar-footer {
