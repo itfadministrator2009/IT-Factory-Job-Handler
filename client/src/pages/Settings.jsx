@@ -54,6 +54,8 @@ function ManageUsersTab({ currentUser }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('user');
+  const [newAccessAssets, setNewAccessAssets] = useState(true);
+  const [newAccessStorage, setNewAccessStorage] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -85,8 +87,8 @@ function ManageUsersTab({ currentUser }) {
     setSaving(true);
     setError('');
     try {
-      await api.post('/users/admin', { name, email, password, role });
-      setName(''); setEmail(''); setPassword(''); setRole('user');
+      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage });
+      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true);
       setShowForm(false);
       load();
     } catch (err) {
@@ -103,6 +105,18 @@ function ManageUsersTab({ currentUser }) {
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not update role');
+    }
+  }
+
+  // Switch a user's access to the ITF Asset Tracker / ITF Storage Centre on or off.
+  async function handleAccessChange(u, field, value) {
+    setError('');
+    setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, [field]: value } : x)));
+    try {
+      await api.patch(`/users/admin/${u.id}`, { [field]: value });
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not update access');
+      load();
     }
   }
 
@@ -173,7 +187,7 @@ function ManageUsersTab({ currentUser }) {
       <div className="page-header" style={{ marginTop: 0 }}>
         <div>
           <h3 style={{ fontSize: 16 }}>Team members</h3>
-          <div className="subtitle">Add people and control who has admin access.</div>
+          <div className="subtitle">Add people, choose who is an admin, and which sections each person can use.</div>
         </div>
         <button className="btn btn-accent" onClick={() => setShowForm((s) => !s)}>
           <Plus size={16} /> {showForm ? 'Cancel' : 'Add user'}
@@ -227,6 +241,17 @@ function ManageUsersTab({ currentUser }) {
                 <option value="admin">Admin</option>
               </select>
             </div>
+            {role !== 'admin' && (
+              <div className="field">
+                <label>Access</label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14 }}>
+                  <input type="checkbox" checked={newAccessAssets} onChange={(e) => setNewAccessAssets(e.target.checked)} /> ITF Asset Tracker
+                </label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14, marginTop: 6 }}>
+                  <input type="checkbox" checked={newAccessStorage} onChange={(e) => setNewAccessStorage(e.target.checked)} /> ITF Storage Centre
+                </label>
+              </div>
+            )}
             <button className="btn btn-accent" type="submit" disabled={saving}>
               {saving ? 'Adding…' : 'Add user'}
             </button>
@@ -244,6 +269,8 @@ function ManageUsersTab({ currentUser }) {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th style={{ textAlign: 'center' }}>ITF Asset Tracker</th>
+                <th style={{ textAlign: 'center' }}>ITF Storage Centre</th>
                 <th></th>
               </tr>
             </thead>
@@ -258,6 +285,17 @@ function ManageUsersTab({ currentUser }) {
                       <option value="admin">Admin</option>
                     </select>
                   </td>
+                  {['accessAssets', 'accessStorage'].map((field) => {
+                    const admin = u.role === 'admin' || u.role === 'agent';
+                    return (
+                      <td key={field} style={{ textAlign: 'center' }}>
+                        <input type="checkbox" checked={admin || u[field] !== false} disabled={admin}
+                          title={admin ? 'Admins always have access' : (u[field] !== false ? 'Click to remove access' : 'Click to give access')}
+                          aria-label={`${field === 'accessAssets' ? 'ITF Asset Tracker' : 'ITF Storage Centre'} access for ${u.name}`}
+                          onChange={(e) => handleAccessChange(u, field, e.target.checked)} />
+                      </td>
+                    );
+                  })}
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
@@ -282,7 +320,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <ShieldCheck size={13} /> Admins can manage users and roles here. Everyone — Admin or User — has the same access to jobs, reports, templates, and the knowledge base.
+        <ShieldCheck size={13} /> Admins can manage users and roles here, and always have access to everything. Tick or untick ITF Asset Tracker / ITF Storage Centre to choose which of those sections each User can open — the change applies straight away.
       </p>
 
       {editTarget && (
