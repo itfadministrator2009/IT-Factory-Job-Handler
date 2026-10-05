@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { runBackup, listBackups, downloadBackup, DB_PATH } = require('../backup');
+const { runBackup, backupStatus, listBackups, downloadBackup, DB_PATH } = require('../backup');
 
 const router = express.Router();
 router.use(authRequired);
@@ -15,17 +15,29 @@ function adminRequired(req, res, next) {
   next();
 }
 
-router.post('/now', adminRequired, async (req, res) => {
-  const result = await runBackup();
-  if (!result.ok) {
-    const messages = {
-      not_configured: 'Cloud backups are not set up — this needs the same Microsoft 365 connection as the calendar, plus BACKUP_ONEDRIVE_USER set.',
-      db_not_found: 'Could not find the database file to back up.',
-      upload_failed: `Could not upload the backup to OneDrive: ${result.error || 'unknown error'}`,
-    };
-    return res.status(400).json({ error: messages[result.reason] || 'Backup failed' });
+const BACKUP_MESSAGES = {
+  not_configured: 'Cloud backups are not set up — this needs the same Microsoft 365 connection as the calendar, plus BACKUP_ONEDRIVE_USER set.',
+  db_not_found: 'Could not find the database file to back up.',
+};
+
+// Starts a backup in the background and answers straight away — a full backup
+// (database, photos, Storage Centre) can take longer than a web request should
+// be held open. The page then checks /status until it finishes.
+router.post('/now', adminRequired, (req, res) => {
+  const before = backupStatus();
+  const job = runBackup();
+  job.catch((err) => console.error('[backup] Failed:', err.message));
+  res.status(202).json({ started: true, alreadyRunning: before.running });
+});
+
+router.get('/status', adminRequired, (req, res) => {
+  const { running, last } = backupStatus();
+  const out = { running, last };
+  if (last?.result && !last.result.ok) {
+    out.message = BACKUP_MESSAGES[last.result.reason]
+      || `Could not upload the backup to OneDrive: ${last.result.error || 'unknown error'}`;
   }
-  res.json({ ok: true, folder: result.folder, filename: result.filename, uploadsFilename: result.uploadsFilename });
+  res.json(out);
 });
 
 router.get('/list', adminRequired, async (req, res) => {
