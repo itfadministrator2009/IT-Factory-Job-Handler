@@ -1,35 +1,68 @@
 import { useEffect, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import api from '../api';
 import Drawer from './Drawer';
 import { isInStorage, itemStatus } from './common';
 
 // Old "Billing gaps" drawer: items costing $0/week — no rate of their own and
-// no pallet rate covering their location.
-export default function BillingGapsDrawer({ onClose, onEdit, initialOnlyInStorage = false }) {
+// no pallet rate covering their location. Click a row to edit that item, or
+// tick several and bulk edit them (e.g. give them all a weekly rate).
+export default function BillingGapsDrawer({ onClose, onEdit, onBulkEdit, initialOnlyInStorage = false, onOnlyInStorageChange }) {
   const [items, setItems] = useState(null);
   const [onlyInStorage, setOnlyInStorage] = useState(initialOnlyInStorage);
+  const [selected, setSelected] = useState(() => new Set());
   const [error, setError] = useState('');
   useEffect(() => {
     api.get('/storage/billing-gaps').then((r) => setItems(r.data.items)).catch(() => setError('Could not load billing gaps'));
   }, []);
   const rows = (items || []).filter((i) => !onlyInStorage || isInStorage(i));
+  // Only rows still on screen count as selected (e.g. after changing the tick box).
+  const chosen = rows.filter((i) => selected.has(i.id));
+  const allChosen = rows.length > 0 && chosen.length === rows.length;
+
+  function toggle(id) {
+    setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleAll() {
+    setSelected(allChosen ? new Set() : new Set(rows.map((i) => i.id)));
+  }
+  function setInStorage(v) {
+    setOnlyInStorage(v);
+    onOnlyInStorageChange?.(v);
+  }
 
   return (
-    <Drawer title="Billing gaps" subtitle="Items currently costing $0/wk — no rate set on the item itself, and no flat pallet rate covers its pallet either. Worth checking before an invoice run." onClose={onClose} width={900}>
+    <Drawer title="Billing gaps" subtitle="Items currently costing $0/wk — no rate set on the item itself, and no flat pallet rate covers its pallet either. Click an item to edit it, or tick several to bulk edit them." onClose={onClose} width={960}>
       {error && <div className="error-banner">{error}</div>}
-      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, marginBottom: 10 }}>
-        <input type="checkbox" checked={onlyInStorage} onChange={(e) => setOnlyInStorage(e.target.checked)} /> Only items in storage
-      </label>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+          <input type="checkbox" checked={onlyInStorage} onChange={(e) => setInStorage(e.target.checked)} /> Only items in storage
+        </label>
+        {onBulkEdit && (
+          <button type="button" className="btn btn-accent btn-sm" style={{ marginLeft: 'auto' }} disabled={chosen.length === 0} onClick={() => onBulkEdit(chosen)}>
+            <Pencil size={14} /> Bulk edit {chosen.length ? `${chosen.length} selected` : 'selected'}
+          </button>
+        )}
+      </div>
       {!items ? <div className="empty-state">Loading…</div> : rows.length === 0 ? (
         <div className="empty-state">No billing gaps found — every item has a rate, either directly or via its pallet.</div>
       ) : (
         <>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{rows.length} item{rows.length === 1 ? '' : 's'}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{rows.length} item{rows.length === 1 ? '' : 's'}{chosen.length ? ` · ${chosen.length} selected` : ''}</div>
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Job #</th><th>Item</th><th>Serial</th><th>Storage centre</th><th>Location</th><th>Status</th></tr></thead>
+            <thead><tr>
+              {onBulkEdit && <th style={{ width: 32 }}><input type="checkbox" checked={allChosen} onChange={toggleAll} title="Select all" /></th>}
+              <th>Client</th><th>Job #</th><th>Item</th><th>Serial</th><th>Storage centre</th><th>Location</th><th>Status</th>
+            </tr></thead>
             <tbody>
               {rows.map((i) => (
-                <tr key={i.id} className={onEdit ? 'clickable' : undefined} onClick={() => onEdit?.(i)} title={onEdit ? 'Open this item' : undefined}>
+                <tr key={i.id} className={onEdit ? 'clickable' : undefined} onClick={() => onEdit?.(i)} title={onEdit ? 'Open this item' : undefined}
+                  style={selected.has(i.id) ? { background: 'var(--accent-soft, #fdf0e8)' } : undefined}>
+                  {onBulkEdit && (
+                    <td onClick={(e) => { e.stopPropagation(); toggle(i.id); }} style={{ cursor: 'pointer' }}>
+                      <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggle(i.id)} onClick={(e) => e.stopPropagation()} />
+                    </td>
+                  )}
                   <td>{i.client}</td><td>{i.jobNumber}</td><td>{i.item}</td><td>{i.serial}</td><td>{i.storageCentre}</td><td>{i.location}</td><td>{itemStatus(i)}</td>
                 </tr>
               ))}
