@@ -49,7 +49,9 @@ export default function StorageManifest() {
   const [formValues, setFormValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [tool, setTool] = useState(null);
+  // ?tool=gaps (the dashboard's "$0/wk" notice) opens Billing gaps straight away.
+  const [tool, setTool] = useState(() => (params.get('tool') === 'gaps' ? 'gaps' : null));
+  const [gapsInStorageOnly] = useState(() => params.get('tool') === 'gaps');
   // Old app's group drawer: double-click a client / job / centre / location cell.
   const [group, setGroup] = useState(null); // { field, value }
   const [bulkItems, setBulkItems] = useState(null); // items for "Bulk edit these items"
@@ -62,7 +64,7 @@ export default function StorageManifest() {
     return api.get('/storage/items').then((res) => setItems(res.data.items));
   }
   useEffect(() => { loadItems(); }, []);
-  useEffect(() => { if (scanned) setParams({}, { replace: true }); }, [scanned, setParams]);
+  useEffect(() => { if (scanned || gapsInStorageOnly) setParams({}, { replace: true }); }, [scanned, gapsInStorageOnly, setParams]);
   // Changing what's shown clears the selection, so bulk actions only ever
   // touch items you can see.
   useEffect(() => { setSelected(new Set()); setLimit(PAGE); }, [query, clientFilter, centreFilter, statusFilter, locationFilter]);
@@ -374,7 +376,7 @@ export default function StorageManifest() {
       )}
 
       {tool === 'rates' && <ItemRatesDrawer items={items || []} userName={user?.name} onClose={() => setTool(null)} onSaved={loadItems} />}
-      {tool === 'gaps' && <BillingGapsDrawer onClose={() => setTool(null)} onEdit={(i) => { setTool(null); const full = (items || []).find((x) => x.id === i.id); if (full) openEdit(full); }} />}
+      {tool === 'gaps' && <BillingGapsDrawer initialOnlyInStorage={gapsInStorageOnly} onClose={() => setTool(null)} onEdit={(i) => { setTool(null); const full = (items || []).find((x) => x.id === i.id); if (full) openEdit(full); }} />}
       {tool === 'models' && <ModelCleanupDrawer clients={clients} onClose={() => setTool(null)} onChanged={loadItems} />}
       {tool === 'import' && <ImportDrawer items={items || []} onClose={() => setTool(null)} onImported={loadItems} />}
       {tool === 'bulk' && (

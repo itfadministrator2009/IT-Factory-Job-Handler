@@ -5,9 +5,9 @@ import { isInStorage, itemStatus } from './common';
 
 // Old "Billing gaps" drawer: items costing $0/week — no rate of their own and
 // no pallet rate covering their location.
-export default function BillingGapsDrawer({ onClose, onEdit }) {
+export default function BillingGapsDrawer({ onClose, onEdit, initialOnlyInStorage = false }) {
   const [items, setItems] = useState(null);
-  const [onlyInStorage, setOnlyInStorage] = useState(false);
+  const [onlyInStorage, setOnlyInStorage] = useState(initialOnlyInStorage);
   const [error, setError] = useState('');
   useEffect(() => {
     api.get('/storage/billing-gaps').then((r) => setItems(r.data.items)).catch(() => setError('Could not load billing gaps'));

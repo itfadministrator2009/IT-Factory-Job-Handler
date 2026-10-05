@@ -67,7 +67,7 @@ export default function StorageDashboard() {
             {data.billingGaps > 0 && (
               <div className="panel panel-pad" style={{ background: '#fbf1dc', display: 'flex', gap: 10, alignItems: 'center' }}>
                 <AlertTriangle size={16} /> <span style={{ flex: 1 }}><strong>{data.billingGaps}</strong> item(s) in storage are costing $0/wk (no item or pallet rate).</span>
-                <Link to="/storage" className="btn btn-ghost btn-sm">Open Manifest</Link>
+                <Link to="/storage?tool=gaps" className="btn btn-ghost btn-sm">Show these items</Link>
               </div>
             )}
             <div className="panel panel-pad" style={{ display: 'flex', gap: 10, alignItems: 'center', ...(!data.lastBackupAt || hoursAgo(data.lastBackupAt) > 36 ? { background: '#fbe9e4', color: 'var(--danger)' } : {}) }}>
