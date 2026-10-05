@@ -479,7 +479,7 @@ export default function Portal() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1280, margin: '0 auto', padding: '20px 16px 48px' }}>
+      <main style={{ width: '100%', padding: '20px 24px 48px', boxSizing: 'border-box' }}>
         <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }} aria-label="Portal sections">
           {TABS.map((t) => (
             <button key={t.id} type="button" className={`btn btn-sm ${tab === t.id ? 'btn-accent' : 'btn-ghost'}`} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>
