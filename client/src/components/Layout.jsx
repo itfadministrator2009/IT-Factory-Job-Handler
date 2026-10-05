@@ -71,7 +71,7 @@ export default function Layout({ children }) {
           )}
 
           {canUseModule(user, 'storage') && (
-          <Section id="storage" title="ITF Storage Centre" icon={Warehouse} home="/storage"
+          <Section id="storage" title="ITF Storage Centre" icon={Warehouse} home="/storage/dashboard"
             open={open.storage} current={current === 'storage'} onToggle={toggle}>
             <NavLink to="/storage/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
             <NavLink to="/storage" end className={linkClass}><Table size={14} /> Manifest</NavLink>
