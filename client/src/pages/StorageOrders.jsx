@@ -155,10 +155,27 @@ export default function StorageOrders() {
         trackingNumber: skipEmail ? undefined : trackingNumber,
         message: skipEmail ? undefined : message,
       });
-      setDeliverModal(null);
-      load();
     } catch (err) {
       setDeliverError(err.response?.data?.error || 'Could not send the tracking email');
+      setDeliverBusy(false);
+      return;
+    }
+    // Delivered → straight on to a pre-filled dispatch entry (and the manifest end dates),
+    // the same as "Send to dispatch".
+    const emailedTo = skipEmail ? null : toEmail.trim();
+    try {
+      const { data } = await api.post(`/storage/orders/${deliverModal.id}/dispatch`, {});
+      setDeliverModal(null);
+      navigate('/storage/receiving', {
+        state: {
+          dispatchPrefill: data.dispatchPrefill,
+          matchSummary: { matched: data.matched, unmatched: data.unmatched, deviceCount: data.deviceCount, endDate: data.endDate, emailedTo, orderNumber: deliverModal.orderNumber },
+        },
+      });
+    } catch (err) {
+      setDeliverModal(null);
+      load();
+      alert(`Order marked Delivered${emailedTo ? ` and the email was sent to ${emailedTo}` : ''}, but the dispatch entry could not be opened: ${err.response?.data?.error || 'unknown error'}. Use “Send to dispatch” on the order to try again.`);
     } finally {
       setDeliverBusy(false);
     }
@@ -344,7 +361,8 @@ export default function StorageOrders() {
             </div>
             {deliverError && <div className="error-banner">{deliverError}</div>}
             <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
-              Optionally email the customer that their order is on its way (with a tracking number if you have one). Enter the recipient's address manually below, or Skip to mark it Delivered without emailing.
+              Optionally email the customer that their order is on its way (with a tracking number if you have one). Enter the recipient's address below, or Skip to mark it Delivered without emailing.
+              Either way you'll then go to Receiving / Dispatch with the dispatch entry filled in, and the order's devices get today as their storage end date on the manifest.
             </p>
             <div className="form-grid">
               <div className="field"><label>Customer email address</label><input type="email" value={toEmail} onChange={(e) => setToEmail(e.target.value)} placeholder="customer@example.com" /></div>
@@ -352,9 +370,9 @@ export default function StorageOrders() {
               <div className="field span-2"><label>Message (optional)</label><textarea value={message} onChange={(e) => setMessage(e.target.value)} /></div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button type="button" className="btn btn-ghost" onClick={() => submitDeliver(true)} disabled={deliverBusy} style={{ flex: 1 }}>Skip</button>
+              <button type="button" className="btn btn-ghost" onClick={() => submitDeliver(true)} disabled={deliverBusy} style={{ flex: 1 }}>Skip email</button>
               <button type="button" className="btn btn-accent" onClick={() => submitDeliver(false)} disabled={deliverBusy || !toEmail} style={{ flex: 1 }}>
-                {deliverBusy ? 'Sending…' : 'Send & mark Delivered'}
+                {deliverBusy ? 'Working…' : 'Send & mark Delivered'}
               </button>
             </div>
           </div>
