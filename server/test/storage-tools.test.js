@@ -226,3 +226,19 @@ test('values like "64984.0" in id-like fields are tidied to "64984"; other value
   assert.deepEqual([r.asset_tag, r.po_number, r.order_number, r.reference_number, r.job_number, r.serial, r.model], ['64984', '54830880', '12', 'REF-1.0', '4.05', 'ABC.0', 'Pro 24.0']);
   assert.equal(cleanTrailingZeroIds(), 0, 'running again changes nothing');
 });
+
+test('billing ignores capitalisation: one client, one pallet charge, however the names are spelled', () => {
+  const { storageCostLines, summary } = require('../storageBilling');
+  const items = [
+    { client: 'Kase Co', storageCentre: 'ITF Sydney', location: 'Floor', priceWeek: 0, startDate: '2026-01-01' },
+    { client: 'KASE CO', storageCentre: 'ITF SYDNEY', location: 'FLOOR', priceWeek: 0, startDate: '2026-01-01' },
+    { client: 'Kase Co', storageCentre: 'itf  sydney', location: 'floor', priceWeek: 0, startDate: '2026-01-01' },
+  ];
+  const pallets = [{ client: 'kase co', storageCentre: 'ITF Sydney', location: 'Floor', priceWeek: 70, startDate: '2026-01-01' }];
+  const lines = storageCostLines('Kase Co', items, pallets, new Date('2026-02-01T00:00:00'), new Date('2026-02-07T23:59:59'));
+  assert.equal(lines.length, 1, 'one pallet line, not one per spelling');
+  assert.equal(lines[0].itemCount, 3);
+  assert.equal(Math.round(lines[0].amount), 70);
+  const s = summary('2026-02-01', '2026-02-07', { allItems: items, pallets, rdRows: [] });
+  assert.deepEqual(s.summary.map((r) => [r.client, r.storageCost]), [['Kase Co', 70]]);
+});
