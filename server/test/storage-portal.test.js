@@ -216,6 +216,16 @@ test('send to dispatch: Delivered, matching serials closed out, dispatch entry p
   assert.deepEqual(again.data.unmatched.sort(), ['SER-A1 (already out of storage)', 'SER-A3 (already out of storage)']);
 });
 
+test('send to dispatch matches the client even if its spelling differs in capitals or spaces', async () => {
+  db.prepare("INSERT INTO storage_items (id, client, serial, start_date) VALUES ('c1', 'ACME ', 'SER-C1', '2026-09-01')").run();
+  db.prepare("INSERT INTO storage_items (id, client, serial, start_date) VALUES ('c2', 'Beta', 'SER-C2', '2026-09-01')").run();
+  db.prepare("INSERT INTO storage_orders (id, order_number, client, devices, status) VALUES ('oc', 'SC-99001', 'Acme', 'SER-C1, SER-C2', 'In Progress')").run();
+  const { data } = await client.post('/api/storage/orders/oc/dispatch', { token: staff.token, body: { endDate: '2026-10-12' } });
+  assert.deepEqual(data.matched, ['SER-C1']);
+  assert.deepEqual(data.unmatched, ['SER-C2'], 'still never touches another client');
+  assert.equal(db.prepare("SELECT end_date FROM storage_items WHERE id = 'c1'").get().end_date, '2026-10-12');
+});
+
 test('change password, then removed access takes effect immediately', async () => {
   const bad = await client.post('/api/storage-portal/change-password', { token: acmeToken, body: { currentPassword: 'nope', newPassword: 'new-password-22' } });
   assert.equal(bad.status, 400);
