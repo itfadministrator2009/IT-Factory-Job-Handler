@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Trash2, X, Pencil, Printer, Boxes, Package, Users, ClipboardList, BarChart3, Search } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Plus, Trash2, X, Pencil, Printer, Search } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -335,11 +335,6 @@ export default function StorageReceiving() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link to="/storage" className="btn btn-ghost btn-sm"><Boxes size={14} /> Manifest</Link>
-          <Link to="/storage/pallets" className="btn btn-ghost btn-sm"><Package size={14} /> Pallets</Link>
-          <Link to="/storage/clients" className="btn btn-ghost btn-sm"><Users size={14} /> Clients</Link>
-          <Link to="/storage/orders" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Orders</Link>
-          <Link to="/storage/reports" className="btn btn-ghost btn-sm"><BarChart3 size={14} /> Reports</Link>
           <button className="btn btn-accent" onClick={() => openAdd()}><Plus size={16} /> New entry</button>
         </div>
       </div>

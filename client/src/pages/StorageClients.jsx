@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Trash2, Pencil, X, Boxes, Package, ClipboardList, Copy, QrCode as QrIcon } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, Copy, QrCode as QrIcon } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -103,9 +102,6 @@ export default function StorageClients() {
           <div className="subtitle">{clients ? `${clients.length} on the client list${unlisted.length ? ` · ${unlisted.length} more found on records` : ''}` : 'Loading…'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/storage" className="btn btn-ghost btn-sm"><Boxes size={14} /> Manifest</Link>
-          <Link to="/storage/pallets" className="btn btn-ghost btn-sm"><Package size={14} /> Pallets</Link>
-          <Link to="/storage/orders" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Orders</Link>
           <button className="btn btn-accent" onClick={openAdd}><Plus size={16} /> Add client</button>
         </div>
       </div>

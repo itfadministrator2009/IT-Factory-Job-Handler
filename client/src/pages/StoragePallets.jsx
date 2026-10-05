@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Trash2, Pencil, X, Boxes, Users, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Pencil, X } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -64,9 +63,6 @@ export default function StoragePallets() {
           <div className="subtitle">{pallets ? `${pallets.length} pallet${pallets.length === 1 ? '' : 's'}` : 'Loading…'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/storage" className="btn btn-ghost btn-sm"><Boxes size={14} /> Manifest</Link>
-          <Link to="/storage/clients" className="btn btn-ghost btn-sm"><Users size={14} /> Clients</Link>
-          <Link to="/storage/orders" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Orders</Link>
           <button className="btn btn-accent" onClick={openAdd}><Plus size={16} /> Add pallet</button>
         </div>
       </div>
