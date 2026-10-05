@@ -5,7 +5,7 @@ import {
   Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
   ClipboardList, Truck, MapPin, QrCode, Calculator,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, canUseModule } from '../context/AuthContext';
 import WhoIsOnline from './WhoIsOnline';
 
 // The side menu is three sections — ITF Work Desk, ITF Asset Tracker and ITF
@@ -61,13 +61,16 @@ export default function Layout({ children }) {
             <NavLink to="/kb" className={linkClass}><BookOpen size={14} /> Knowledge Base</NavLink>
           </Section>
 
+          {canUseModule(user, 'assets') && (
           <Section id="assets" title="ITF Asset Tracker" icon={Boxes} home="/assets"
             open={open.assets} current={current === 'assets'} onToggle={toggle}>
             <NavLink to="/assets" end className={linkClass}><List size={14} /> All Assets</NavLink>
             {isAdmin && <NavLink to="/assets/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
             {isAdmin && <NavLink to="/assets/fields" className={linkClass}><SlidersHorizontal size={14} /> Manage Fields</NavLink>}
           </Section>
+          )}
 
+          {canUseModule(user, 'storage') && (
           <Section id="storage" title="ITF Storage Centre" icon={Warehouse} home="/storage"
             open={open.storage} current={current === 'storage'} onToggle={toggle}>
             <NavLink to="/storage/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
@@ -81,6 +84,7 @@ export default function Layout({ children }) {
             <NavLink to="/storage/calculator" className={linkClass}><Calculator size={14} /> Calculator</NavLink>
             {isAdmin && <NavLink to="/storage/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
           </Section>
+          )}
 
           {isAdmin && (
             <NavLink to="/settings" className={({ isActive }) => 'sidebar-link sidebar-settings' + (isActive ? ' active' : '')}>
