@@ -384,22 +384,53 @@ function BackupTab() {
   }
   useEffect(() => { loadBackups(); }, []);
 
+  // "Back up now" starts the backup on the server and then checks on it every few
+  // seconds, so a long backup (lots of photos) doesn't get cut off mid-request.
+  const STEP_LABEL = { database: 'database', photos: 'photos and attachments', 'storage centre': 'Storage Centre data' };
+  function describe(status) {
+    const last = status.last;
+    if (!last) return 'The backup did not report back. Try again, and if it keeps happening check the Render logs for lines starting with [backup].';
+    if (last.state === 'interrupted') {
+      return `The backup stopped part-way while backing up the ${STEP_LABEL[last.step] || last.step} — the server restarted (a redeploy, or it ran out of memory). Try again in a minute; if it stops at the same step again, check the Render logs for lines starting with [backup].`;
+    }
+    if (last.state === 'failed') return status.message || 'Backup failed';
+    const r = last.result || {};
+    const parts = [r.filename, r.uploadsFilename, r.storageFilename].filter(Boolean).join(' + ');
+    const warn = r.warnings?.length ? ` Note: ${r.warnings.join(' ')}` : '';
+    return `Backup uploaded to OneDrive (${r.folder}: ${parts}).${warn}`;
+  }
+
   async function handleBackupNow() {
     setBackupRunning(true);
     setBackupMsg('');
+    const startedAt = Date.now();
     try {
-      const { data } = await api.post('/backup/now');
-      setBackupMsg(
-        data.uploadsFilename
-          ? `Backup uploaded to OneDrive — database and photos (${data.folder}/${data.filename} + ${data.uploadsFilename})`
-          : `Backup uploaded to OneDrive (${data.folder}/${data.filename}) — no photos to back up yet`
-      );
-      loadBackups();
+      await api.post('/backup/now');
     } catch (err) {
-      setBackupMsg(err.response?.data?.error || 'Could not run backup');
-    } finally {
+      setBackupMsg(err.response?.data?.error || 'Could not reach the server to start the backup. If the app was just updated, wait a minute and try again.');
       setBackupRunning(false);
+      return;
     }
+    let misses = 0;
+    for (let i = 0; i < 400; i += 1) { // up to ~20 minutes
+      await new Promise((r) => setTimeout(r, 3000));
+      let status;
+      try {
+        status = (await api.get('/backup/status')).data;
+        misses = 0;
+      } catch (err) {
+        // The server may be restarting; keep checking for a little while.
+        misses += 1;
+        if (misses >= 20) { setBackupMsg('Lost contact with the server during the backup. Refresh in a minute and check the list below for today\'s backup.'); break; }
+        continue;
+      }
+      if (status.running) continue;
+      const fresh = status.last && new Date(status.last.startedAt).getTime() >= startedAt - 60000;
+      setBackupMsg(fresh ? describe(status) : describe({ last: null }));
+      break;
+    }
+    loadBackups();
+    setBackupRunning(false);
   }
 
   function openRestore(backup) {
@@ -456,7 +487,7 @@ function BackupTab() {
           </div>
         )}
         <button className="btn btn-ghost btn-sm" onClick={handleBackupNow} disabled={backupRunning}>
-          {backupRunning ? 'Sending…' : 'Back up now'}
+          {backupRunning ? 'Backing up… (can take a few minutes)' : 'Back up now'}
         </button>
       </div>
 
