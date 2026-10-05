@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { LogOut, KeyRound, Search, FileText, X, Plus, Download, Printer } from 'lucide-react';
 import portalApi, { clearPortalSession, getPortalClient } from '../portal/portalApi';
 import { openPdf } from '../utils/pdf';
+import { countByText } from '../storage/common';
 
 const TABS = [
   { id: 'stock', label: 'Stock on hand' },
@@ -81,12 +82,8 @@ function StockTab() {
 
   // Count by item type (quantities summed), as the old portal's chips showed.
   const breakdown = useMemo(() => {
-    const counts = {};
-    (visible || []).forEach((i) => {
-      const k = i.item || '(no item type)';
-      counts[k] = (counts[k] || 0) + (Number(i.quantity) || 1);
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    // "MONITOR" and "Monitor" are one type.
+    return countByText(visible || [], (i) => i.item, (i) => Number(i.quantity) || 1, '(no item type)');
   }, [visible]);
 
   return (
