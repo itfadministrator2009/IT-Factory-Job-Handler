@@ -37,10 +37,13 @@ function currentDateInTimezone(tz) {
 
 let lastBackupDate = null;
 
-// Uploads the live SQLite file to OneDrive via a Graph "upload session" — the
-// resumable-upload endpoint, which (unlike the simple <4MB upload endpoint) has no
-// practical size ceiling, so this keeps working as the database grows over the years.
-async function uploadBackupToOneDrive(buffer, filename) {
+// Uploads to OneDrive via a Graph "upload session" — the resumable-upload
+// endpoint, which has no practical size ceiling. Graph caps each request at 60 MiB,
+// so the file goes up in 10 MiB pieces (a multiple of 320 KiB, as Graph requires).
+// `source` is a Buffer or a path to a file on disk; a file is read one piece at a
+// time, so a large photo archive never has to fit in memory.
+const CHUNK = 32 * 320 * 1024;
+async function uploadBackupToOneDrive(source, filename) {
   const token = await getAccessToken();
   const filePath = `${BACKUP_FOLDER}/${filename}`;
 
@@ -57,71 +60,121 @@ async function uploadBackupToOneDrive(buffer, filename) {
   }
   const { uploadUrl } = await sessionRes.json();
 
-  const uploadRes = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Length': String(buffer.length),
-      'Content-Range': `bytes 0-${buffer.length - 1}/${buffer.length}`,
-    },
-    body: buffer,
-  });
-  if (!uploadRes.ok) {
-    throw new Error(`Upload failed (${uploadRes.status}): ${await uploadRes.text()}`);
+  const isBuffer = Buffer.isBuffer(source);
+  const size = isBuffer ? source.length : fs.statSync(source).size;
+  if (size === 0) throw new Error(`${filename} is empty`);
+  const fh = isBuffer ? null : await fs.promises.open(source, 'r');
+  try {
+    for (let start = 0; start < size; start += CHUNK) {
+      const len = Math.min(CHUNK, size - start);
+      let piece;
+      if (isBuffer) piece = source.subarray(start, start + len);
+      else {
+        piece = Buffer.alloc(len);
+        await fh.read(piece, 0, len, start);
+      }
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Length': String(len), 'Content-Range': `bytes ${start}-${start + len - 1}/${size}` },
+        body: piece,
+      });
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed (${uploadRes.status}): ${await uploadRes.text()}`);
+      }
+    }
+  } finally {
+    if (fh) await fh.close();
   }
 }
 
-// Used by both the nightly scheduler and the admin "Back up now" button.
-// Zips every file in a directory (non-recursive concerns aside — attachments and
-// photos are all stored flat, one level deep) into an in-memory buffer, ready to
-// upload the same way the database file already is.
-function zipDirectory(sourceDir) {
+// Zips every file in a directory (attachments and photos are stored flat, one level
+// deep) into a temporary file on disk — not into memory, which could run the
+// server out of memory once there are a lot of photos.
+function zipDirectoryToFile(sourceDir, outFile) {
   return new Promise((resolve, reject) => {
     const archive = archiver('zip', { zlib: { level: 6 } });
-    const chunks = [];
-    archive.on('data', (chunk) => chunks.push(chunk));
-    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    const out = fs.createWriteStream(outFile);
+    out.on('close', resolve);
+    out.on('error', reject);
     archive.on('warning', (err) => { if (err.code !== 'ENOENT') reject(err); });
     archive.on('error', reject);
+    archive.pipe(out);
     archive.directory(sourceDir, false);
     archive.finalize();
   });
 }
 
-// Used by both the nightly scheduler and the admin "Back up now" button. Backs up
-// the database AND every uploaded photo/attachment — the database alone used to be
-// the only thing backed up, which meant a lost disk would silently take every photo
-// with it even though the database restored fine.
-async function runBackup(filenameOverride) {
-  if (!configured) return { ok: false, reason: 'not_configured' };
-  if (!fs.existsSync(DB_PATH)) return { ok: false, reason: 'db_not_found' };
+// Progress of the current/last backup, so "Back up now" can run in the background
+// and still report how it went — and, if the server restarted part-way, which step
+// it was on. Kept in storage_meta so it survives a restart.
+let running = null;
+function meta() { return require('./storageTools'); }
+function saveStatus(status) {
+  try { meta().setMeta('backup_status', JSON.stringify(status)); } catch (err) { /* status only */ }
+}
+function backupStatus() {
+  let last = null;
+  try { const row = meta().getMeta('backup_status'); last = row ? JSON.parse(row.value) : null; } catch (err) { last = null; }
+  if (last && last.state === 'running' && !running) {
+    // Saved as running, but nothing is running in this process: the server
+    // stopped (restart, redeploy or out of memory) during that step.
+    last = { ...last, state: 'interrupted' };
+  }
+  return { running: !!running, last };
+}
 
+// Used by both the nightly scheduler and the admin "Back up now" button. Backs up
+// the database, every uploaded photo/attachment, and the Storage Centre tables.
+// Only one backup runs at a time; a second call while one is running shares it.
+function runBackup(filenameOverride) {
+  if (running) return running;
+  running = doBackup(filenameOverride).finally(() => { running = null; });
+  return running;
+}
+
+async function doBackup(filenameOverride) {
+  const status = { state: 'running', step: 'database', startedAt: new Date().toISOString() };
+  const early = !configured ? 'not_configured' : !fs.existsSync(DB_PATH) ? 'db_not_found' : null;
+  if (early) {
+    const result = { ok: false, reason: early };
+    saveStatus({ ...status, state: 'failed', finishedAt: status.startedAt, result });
+    return result;
+  }
+  const step = (name) => { status.step = name; saveStatus(status); console.log(`[backup] ${name}…`); };
+  step('database');
   try {
     const buffer = await snapshotDatabase();
     const dateStr = currentDateInTimezone(BACKUP_TIMEZONE);
     const filename = filenameOverride || `helpdesk-backup-${dateStr}.db`;
     await uploadBackupToOneDrive(buffer, filename);
+    // The database is the part that matters most — record it as soon as it's safe.
+    try { meta().setMeta('last_backup_at', new Date().toISOString()); } catch (err) { /* status only */ }
 
+    const warnings = [];
     let uploadsFilename = null;
     const hasUploads = fs.existsSync(UPLOAD_DIR) && fs.readdirSync(UPLOAD_DIR).length > 0;
     if (hasUploads) {
+      step('photos');
+      const tmpZip = path.join(os.tmpdir(), `workdesk-uploads-${process.pid}-${Date.now()}.zip`);
       try {
-        const zipBuffer = await zipDirectory(UPLOAD_DIR);
+        await zipDirectoryToFile(UPLOAD_DIR, tmpZip);
         uploadsFilename = filenameOverride
           ? filenameOverride.replace(/\.db$/, '-uploads.zip')
           : `helpdesk-uploads-${dateStr}.zip`;
-        await uploadBackupToOneDrive(zipBuffer, uploadsFilename);
+        await uploadBackupToOneDrive(tmpZip, uploadsFilename);
       } catch (err) {
-        // The database backup already succeeded above — don't fail the whole
-        // operation just because the (larger, slower) photo archive had a problem.
-        // Callers can tell a photo backup didn't happen because uploadsFilename
-        // comes back null.
+        // The database backup already succeeded — don't fail the whole backup
+        // because the (larger, slower) photo archive had a problem.
         console.error('[backup] Database backed up, but photo/attachment backup failed:', err.message);
+        warnings.push(`Photos were not backed up: ${err.message}`);
         uploadsFilename = null;
+      } finally {
+        try { fs.unlinkSync(tmpZip); } catch (e) { /* already gone */ }
       }
     }
 
-    // Storage Centre tables as CSVs, readable in Excel. Same rule as photos: a
-    // failure here doesn't undo the database backup that already succeeded.
+    // Storage Centre tables as CSVs, readable in Excel. Same rule as photos.
+    step('storage centre');
     let storageFilename = null;
     try {
       const { buffer: zipBuffer } = await buildStorageCentreZip();
@@ -131,17 +184,19 @@ async function runBackup(filenameOverride) {
       await uploadBackupToOneDrive(zipBuffer, storageFilename);
     } catch (err) {
       console.error('[backup] Database backed up, but the Storage Centre export failed:', err.message);
+      warnings.push(`Storage Centre export was not backed up: ${err.message}`);
       storageFilename = null;
     }
 
-    // Shown on the Storage Centre dashboard ("Last backup: …").
-    try { require('./storageTools').setMeta('last_backup_at', new Date().toISOString()); } catch (err) { /* status only */ }
-
     console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
-    return { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename };
+    const result = { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename, warnings };
+    saveStatus({ ...status, state: 'done', finishedAt: new Date().toISOString(), result });
+    return result;
   } catch (err) {
     console.error('[backup] Failed:', err.message);
-    return { ok: false, reason: 'upload_failed', error: err.message };
+    const result = { ok: false, reason: 'upload_failed', error: err.message };
+    saveStatus({ ...status, state: 'failed', finishedAt: new Date().toISOString(), result });
+    return result;
   }
 }
 
@@ -211,4 +266,4 @@ function startBackupScheduler() {
   }, 60 * 60 * 1000);
 }
 
-module.exports = { runBackup, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH };
+module.exports = { runBackup, backupStatus, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH };
