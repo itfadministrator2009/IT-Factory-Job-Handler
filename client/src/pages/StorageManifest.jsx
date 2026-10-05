@@ -52,6 +52,10 @@ export default function StorageManifest() {
   // ?tool=gaps (the dashboard's "$0/wk" notice) opens Billing gaps straight away.
   const [tool, setTool] = useState(() => (params.get('tool') === 'gaps' ? 'gaps' : null));
   const [gapsInStorageOnly] = useState(() => params.get('tool') === 'gaps');
+  // Billing gaps remembers its tick box, and editing an item (or a bulk edit)
+  // started from it goes back to it afterwards.
+  const [gapsOnlyInStorage, setGapsOnlyInStorage] = useState(gapsInStorageOnly);
+  const [backToGaps, setBackToGaps] = useState(false);
   // Old app's group drawer: double-click a client / job / centre / location cell.
   const [group, setGroup] = useState(null); // { field, value }
   const [bulkItems, setBulkItems] = useState(null); // items for "Bulk edit these items"
@@ -102,6 +106,8 @@ export default function StorageManifest() {
 
   function openAdd(prefill = {}) { setEditing(null); setFormValues({ startDate: sydneyToday(), ...prefill }); setError(''); setShowForm(true); }
   function openEdit(it) { setEditing(it); setFormValues({ ...it }); setError(''); setShowForm(true); }
+  function returnToGaps() { if (backToGaps) { setBackToGaps(false); setTool('gaps'); } }
+  function closeForm() { setShowForm(false); returnToGaps(); }
   // A single click opens the item; a double-click on a groupable cell opens the
   // group instead, so the single click waits a moment to see if a second follows.
   function rowClick(it) {
@@ -129,7 +135,7 @@ export default function StorageManifest() {
     try {
       if (editing) await api.patch(`/storage/items/${editing.id}`, payload);
       else await api.post('/storage/items', payload);
-      setShowForm(false);
+      closeForm();
       loadItems();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save');
@@ -337,11 +343,11 @@ export default function StorageManifest() {
       )}
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => !saving && setShowForm(false)}>
+        <div className="modal-overlay" onClick={() => !saving && closeForm()}>
           <div className="modal-card sign-off-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, width: '95vw', height: '88vh' }}>
             <div className="modal-header">
               <h3>{editing ? 'Edit item' : 'Add item'}</h3>
-              {!saving && <button type="button" onClick={() => setShowForm(false)}><X size={18} /></button>}
+              {!saving && <button type="button" onClick={closeForm}><X size={18} /></button>}
             </div>
             {error && <div className="error-banner">{error}</div>}
             <form onSubmit={handleSave} className="sign-off-scroll">
@@ -376,7 +382,11 @@ export default function StorageManifest() {
       )}
 
       {tool === 'rates' && <ItemRatesDrawer items={items || []} userName={user?.name} onClose={() => setTool(null)} onSaved={loadItems} />}
-      {tool === 'gaps' && <BillingGapsDrawer initialOnlyInStorage={gapsInStorageOnly} onClose={() => setTool(null)} onEdit={(i) => { setTool(null); const full = (items || []).find((x) => x.id === i.id); if (full) openEdit(full); }} />}
+      {tool === 'gaps' && (
+        <BillingGapsDrawer initialOnlyInStorage={gapsOnlyInStorage} onOnlyInStorageChange={setGapsOnlyInStorage} onClose={() => setTool(null)}
+          onEdit={(i) => { setTool(null); setBackToGaps(true); openEdit((items || []).find((x) => x.id === i.id) || i); }}
+          onBulkEdit={(list) => { const byId = new Map((items || []).map((x) => [x.id, x])); setTool(null); setBackToGaps(true); setBulkItems(list.map((i) => byId.get(i.id) || i)); }} />
+      )}
       {tool === 'models' && <ModelCleanupDrawer clients={clients} onClose={() => setTool(null)} onChanged={loadItems} />}
       {tool === 'import' && <ImportDrawer items={items || []} onClose={() => setTool(null)} onImported={loadItems} />}
       {tool === 'bulk' && (
@@ -389,8 +399,8 @@ export default function StorageManifest() {
           onOpenItem={(i) => { setGroup(null); openEdit(i); }} onBulkEdit={(list) => setBulkItems(list)} />
       )}
       {bulkItems && (
-        <BulkEditDrawer items={bulkItems} onClose={() => setBulkItems(null)}
-          onDone={() => { setBulkItems(null); loadItems(); }} />
+        <BulkEditDrawer items={bulkItems} onClose={() => { setBulkItems(null); returnToGaps(); }}
+          onDone={() => { setBulkItems(null); loadItems(); returnToGaps(); }} />
       )}
     </Layout>
   );
