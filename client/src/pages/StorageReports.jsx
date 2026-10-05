@@ -5,10 +5,102 @@ import api from '../api';
 import { openPdf, downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
 import RangePicker from '../storage/RangePicker';
-import { presetRange, downloadCsv, dmy, money } from '../storage/common';
+import { presetRange, downloadCsv, dmy, money, sameText } from '../storage/common';
 
 // Previous Monday–Sunday, in local (Sydney) dates.
 const lastWeekRange = () => presetRange('lastWeek');
+
+// Old Invoicing tab, "Storage" section: storage cost (+ receiving/dispatch fees)
+// per client for a period, laid out like the Receiving / Dispatch section below.
+function StorageInvoicing({ clients }) {
+  const [client, setClient] = useState('');
+  const [range, setRange] = useState(() => ({ preset: 'lastWeek', ...lastWeekRange() }));
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function run() {
+    if (!range) { alert('Choose a date range first.'); return; }
+    setLoading(true); setError('');
+    try {
+      const { data } = await api.get('/storage/reports/summary', { params: { from: range.from, to: range.to } });
+      setReport(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not generate report');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const rows = report ? report.summary.filter((s) => !client || sameText(s.client, client)) : [];
+  const totals = rows.reduce((t, s) => ({
+    storage: t.storage + s.storageCost, receiving: t.receiving + (s.receivingFees ?? 0), dispatch: t.dispatch + (s.dispatchFees ?? 0), total: t.total + s.total,
+  }), { storage: 0, receiving: 0, dispatch: 0, total: 0 });
+
+  return (
+    <div className="panel panel-pad">
+      <h3 style={{ fontSize: 16, marginBottom: 4 }}>Storage — {client || 'All Clients'}</h3>
+      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>Storage cost for the period (pallet rates or per-item rates), plus receiving/dispatch fees. Invoice PDF per client.</div>
+      <div className="no-print" style={{ marginBottom: 12 }}>
+        <div className="field" style={{ maxWidth: 280 }}>
+          <label>Client</label>
+          <select value={client} onChange={(e) => setClient(e.target.value)}>
+            <option value="">— All Clients —</option>
+            {clients.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <RangePicker value={range} onChange={(r) => { setRange(r); setReport(null); }} />
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button type="button" className="btn btn-accent" onClick={run} disabled={loading}>{loading ? 'Calculating…' : 'Calculate'}</button>
+          <button type="button" className="btn btn-ghost" disabled={!report || !rows.length} onClick={() => downloadCsv('storage-invoicing.csv', [
+            [`Period: ${dmy(report.from)} – ${dmy(report.to)}`],
+            ['Client', 'Storage cost (ex GST)', 'Receiving (ex GST)', 'Dispatch (ex GST)', 'Total (ex GST)'],
+            ...rows.map((s) => [s.client, s.storageCost.toFixed(2), (s.receivingFees ?? 0).toFixed(2), (s.dispatchFees ?? 0).toFixed(2), s.total.toFixed(2)]),
+            ['Total', totals.storage.toFixed(2), totals.receiving.toFixed(2), totals.dispatch.toFixed(2), totals.total.toFixed(2)],
+          ])}><Download size={14} /> Export CSV</button>
+          <button type="button" className="btn btn-ghost" disabled={!report} onClick={() => window.print()}><Printer size={14} /> Print</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { setClient(''); setRange(null); setReport(null); }}>Clear</button>
+        </div>
+      </div>
+      {error && <div className="error-banner">{error}</div>}
+      {report && (rows.length === 0 ? <div className="empty-state">{client ? `Nothing to bill for ${client} in this period.` : 'No clients with storage or fees in this period.'}</div> : (
+        <table className="ticket-table">
+          <thead><tr>
+            <th>Client</th><th style={{ textAlign: 'right' }}>Storage cost (ex GST)</th><th style={{ textAlign: 'right' }}>Receiving (ex GST)</th>
+            <th style={{ textAlign: 'right' }}>Dispatch (ex GST)</th><th style={{ textAlign: 'right' }}>Total (ex GST)</th><th className="no-print"></th>
+          </tr></thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={s.client}>
+                <td>{s.client}</td>
+                <td style={{ textAlign: 'right' }}>{money(s.storageCost)}</td>
+                <td style={{ textAlign: 'right' }}>{money(s.receivingFees ?? 0)}</td>
+                <td style={{ textAlign: 'right' }}>{money(s.dispatchFees ?? 0)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(s.total)}</td>
+                <td className="no-print">
+                  <button type="button" className="btn btn-ghost btn-sm" title="Invoice PDF for this client and period"
+                    onClick={() => openPdf(api, '/storage/reports/invoice.pdf', { client: s.client, from: report.from, to: report.to }).catch((err) => alert(err.message))}>
+                    <FileText size={13} /> Invoice
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td style={{ fontWeight: 700 }}>Total</td>
+              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.storage)}</td>
+              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.receiving)}</td>
+              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.dispatch)}</td>
+              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.total)}</td>
+              <td className="no-print"></td>
+            </tr>
+          </tfoot>
+        </table>
+      ))}
+    </div>
+  );
+}
 
 // Old Invoicing tab, "Receiving / Dispatch" section: fees per client for a
 // period, with CSV export, print and a per-client PDF.
@@ -34,7 +126,7 @@ function RdInvoicing({ clients }) {
 
   return (
     <div className="panel panel-pad" style={{ marginTop: 24 }}>
-      <h3 style={{ fontSize: 16, marginBottom: 4 }}>Receiving / Dispatch invoicing — {client || 'all clients'}</h3>
+      <h3 style={{ fontSize: 16, marginBottom: 4 }}>Receiving / Dispatch invoicing — {client || 'All Clients'}</h3>
       <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>Receiving fees by date received, dispatch fees by date dispatched.</div>
       <div className="no-print" style={{ marginBottom: 12 }}>
         <div className="field" style={{ maxWidth: 280 }}>
@@ -87,28 +179,8 @@ function RdInvoicing({ clients }) {
 }
 
 export default function StorageReports() {
-  const defaultRange = lastWeekRange();
-  const [from, setFrom] = useState(defaultRange.from);
-  const [to, setTo] = useState(defaultRange.to);
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [clients, setClients] = useState([]);
   useEffect(() => { api.get('/storage/lists').then((r) => setClients(r.data.clients)).catch(() => {}); }, []);
-
-  async function runReport(e) {
-    e?.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const { data } = await api.get('/storage/reports/summary', { params: { from, to } });
-      setReport(data);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not generate report');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <Layout>
@@ -141,46 +213,7 @@ export default function StorageReports() {
         </div>
       </div>
 
-      <form onSubmit={runReport} className="panel panel-pad" style={{ display: 'flex', gap: 12, alignItems: 'end', marginBottom: 16 }}>
-        <div className="field"><label>From</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} required /></div>
-        <div className="field"><label>To</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} required /></div>
-        <button className="btn btn-accent" type="submit" disabled={loading}>{loading ? 'Calculating…' : 'Run report'}</button>
-      </form>
-
-      {error && <div className="error-banner">{error}</div>}
-
-      {report && (
-        <div className="panel" style={{ padding: 0 }}>
-          <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Storage Cost</th><th>Receiving</th><th>Dispatch</th><th>Total</th><th></th></tr></thead>
-            <tbody>
-              {report.summary.map((s) => (
-                <tr key={s.client}>
-                  <td>{s.client}</td>
-                  <td>${s.storageCost.toFixed(2)}</td>
-                  <td>${(s.receivingFees ?? 0).toFixed(2)}</td>
-                  <td>${(s.dispatchFees ?? 0).toFixed(2)}</td>
-                  <td style={{ fontWeight: 700 }}>${s.total.toFixed(2)}</td>
-                  <td>
-                    <button type="button" className="btn btn-ghost btn-sm" title="Invoice PDF for this client and period"
-                      onClick={() => openPdf(api, '/storage/reports/invoice.pdf', { client: s.client, from: report.from, to: report.to }).catch((err) => alert(err.message))}>
-                      <FileText size={13} /> Invoice
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {report.summary.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No clients with storage items.</td></tr>
-              )}
-            </tbody>
-            {report.summary.length > 0 && (
-              <tfoot>
-                <tr><td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>Grand total</td><td style={{ fontWeight: 700 }}>${report.grandTotal.toFixed(2)}</td><td></td></tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      )}
+      <StorageInvoicing clients={clients} />
 
       <RdInvoicing clients={clients} />
     </Layout>
