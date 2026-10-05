@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import WhoIsOnline from './WhoIsOnline';
 
-// The side menu is three sections — ITF Work Desk, ITF Asset Tracker and
+// The side menu is three sections — ITF Work Desk, ITF Asset Tracker and ITF
 // Storage Centre — each opening to show its own pages, then Settings.
 const DESK_PATHS = ['/dashboard', '/jobs', '/projects', '/reports', '/templates', '/kb'];
 const inDesk = (p) => DESK_PATHS.some((d) => p === d || p.startsWith(`${d}/`));
@@ -67,7 +67,7 @@ export default function Layout({ children }) {
             {isAdmin && <NavLink to="/assets/fields" className={linkClass}>Manage Fields</NavLink>}
           </Section>
 
-          <Section id="storage" title="Storage Centre" icon={Warehouse} home="/storage"
+          <Section id="storage" title="ITF Storage Centre" icon={Warehouse} home="/storage"
             open={open.storage} current={current === 'storage'} onToggle={toggle}>
             <NavLink to="/storage/dashboard" className={linkClass}>Dashboard</NavLink>
             <NavLink to="/storage" end className={linkClass}>Manifest</NavLink>
