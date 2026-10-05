@@ -8,7 +8,10 @@ const { authRequired } = require('../auth');
 const { canAccessJob } = require('../permissions');
 
 const router = express.Router();
-router.use(authRequired);
+// This router is mounted at /api, so the staff sign-in check is limited to its own
+// URLs — a bare router.use(authRequired) would also catch every later /api route,
+// including the client portal's own login.
+router.use(['/jobs/:jobId/attachments', '/attachments'], authRequired);
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
