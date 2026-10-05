@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth, canUseModule } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -41,6 +41,15 @@ function RequireAuth({ children }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  return children;
+}
+
+// ITF Asset Tracker / ITF Storage Centre pages: only for users with access.
+function RequireModule({ module, children }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  if (!canUseModule(user, module)) return <Navigate to="/jobs" replace />;
   return children;
 }
 
@@ -91,20 +100,20 @@ function AppRoutes() {
       <Route path="/projects/:id" element={<RequireAuth><ProjectDetail /></RequireAuth>} />
       <Route path="/projects/:id/entries/:entryId" element={<RequireAuth><ProjectEntryForm /></RequireAuth>} />
 
-      <Route path="/assets" element={<RequireAuth><AssetTracker /></RequireAuth>} />
+      <Route path="/assets" element={<RequireModule module="assets"><AssetTracker /></RequireModule>} />
       <Route path="/assets/reports" element={<RequireAdmin><AssetReports /></RequireAdmin>} />
       <Route path="/assets/fields" element={<RequireAdmin><AssetFields /></RequireAdmin>} />
 
-      <Route path="/storage" element={<RequireAuth><StorageManifest /></RequireAuth>} />
-      <Route path="/storage/pallets" element={<RequireAuth><StoragePallets /></RequireAuth>} />
-      <Route path="/storage/clients" element={<RequireAuth><StorageClients /></RequireAuth>} />
-      <Route path="/storage/orders" element={<RequireAuth><StorageOrders /></RequireAuth>} />
-      <Route path="/storage/receiving" element={<RequireAuth><StorageReceiving /></RequireAuth>} />
-      <Route path="/storage/locations" element={<RequireAuth><StorageLocations /></RequireAuth>} />
+      <Route path="/storage" element={<RequireModule module="storage"><StorageManifest /></RequireModule>} />
+      <Route path="/storage/pallets" element={<RequireModule module="storage"><StoragePallets /></RequireModule>} />
+      <Route path="/storage/clients" element={<RequireModule module="storage"><StorageClients /></RequireModule>} />
+      <Route path="/storage/orders" element={<RequireModule module="storage"><StorageOrders /></RequireModule>} />
+      <Route path="/storage/receiving" element={<RequireModule module="storage"><StorageReceiving /></RequireModule>} />
+      <Route path="/storage/locations" element={<RequireModule module="storage"><StorageLocations /></RequireModule>} />
       <Route path="/storage/reports" element={<RequireAdmin><StorageReports /></RequireAdmin>} />
-      <Route path="/storage/dashboard" element={<RequireAuth><StorageDashboard /></RequireAuth>} />
-      <Route path="/storage/calculator" element={<RequireAuth><StorageCalculator /></RequireAuth>} />
-      <Route path="/storage/labels" element={<RequireAuth><StoragePalletLabels /></RequireAuth>} />
+      <Route path="/storage/dashboard" element={<RequireModule module="storage"><StorageDashboard /></RequireModule>} />
+      <Route path="/storage/calculator" element={<RequireModule module="storage"><StorageCalculator /></RequireModule>} />
+      <Route path="/storage/labels" element={<RequireModule module="storage"><StoragePalletLabels /></RequireModule>} />
       <Route path="/storage/restore" element={<RequireAdmin><StorageRestore /></RequireAdmin>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
