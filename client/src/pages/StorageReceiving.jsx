@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Trash2, X, Pencil, Printer, Boxes, Package, Users, ClipboardList, BarChart3 } from 'lucide-react';
+import { Plus, Trash2, X, Pencil, Printer, Boxes, Package, Users, ClipboardList, BarChart3, Search } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import { sameText, distinctText } from '../storage/common';
 
 const ALL = '__all__';
 
@@ -55,6 +56,18 @@ function dmy(d) {
   if (!d) return '';
   const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : d;
+}
+
+// One tidy line per cell, like the old app: long text is cut off with "…" and
+// the full text shows on hover (and in the entry details).
+function Cell({ children, width, style }) {
+  const text = children == null ? '' : String(children);
+  return (
+    <td title={text.length > 24 ? text : undefined}
+      style={{ maxWidth: width, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...style }}>
+      {text.replace(/\s*\n\s*/g, ' · ')}
+    </td>
+  );
 }
 
 function escapeHtml(s) {
@@ -189,6 +202,8 @@ export default function StorageReceiving() {
   const [entries, setEntries] = useState(null);
   const [clientNames, setClientNames] = useState([]);
   const [clientFilter, setClientFilter] = useState(ALL);
+  const [query, setQuery] = useState('');
+  const [details, setDetails] = useState(null); // entry shown in the details panel
   const [editing, setEditing] = useState(null); // null = closed, {} = new, entry = edit
   const [formValues, setFormValues] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -208,15 +223,20 @@ export default function StorageReceiving() {
 
   // Clients for the filter: the master list plus any name that only appears on an entry.
   const filterClients = useMemo(() => {
-    const names = new Set(clientNames.filter(Boolean));
-    (entries || []).forEach((e) => e.client && names.add(e.client));
-    return [...names].sort((a, b) => a.localeCompare(b));
+    // One entry per client whatever the capitals ("NSW Health" / "NSW HEALTH").
+    return distinctText([...clientNames, ...(entries || []).map((e) => e.client)]);
   }, [clientNames, entries]);
 
   const visible = useMemo(() => {
     if (!entries) return null;
-    return clientFilter === ALL ? entries : entries.filter((e) => e.client === clientFilter);
-  }, [entries, clientFilter]);
+    const q = query.trim().toLowerCase();
+    return entries.filter((e) => {
+      if (clientFilter !== ALL && !sameText(e.client, clientFilter)) return false;
+      if (!q) return true;
+      return [e.client, e.stockReceivedType, e.stockDispatchedType, e.receiving, e.dispatch, e.savedBy, dmy(e.dateReceived), dmy(e.dateDispatched)]
+        .some((v) => String(v || '').toLowerCase().includes(q));
+    });
+  }, [entries, clientFilter, query]);
 
   const visibleTotal = useMemo(() => (visible || []).reduce((t, e) => t + (Number(e.fee) || 0), 0), [visible]);
 
@@ -324,12 +344,17 @@ export default function StorageReceiving() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 420 }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search client, stock, notes, serial, date…" style={{ width: '100%', paddingLeft: 30 }} />
+        </div>
         <label htmlFor="rd-client-filter" style={{ fontSize: 13, color: 'var(--muted)' }}>Client</label>
         <select id="rd-client-filter" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={{ minWidth: 220 }}>
           <option value={ALL}>All clients</option>
           {filterClients.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Click an entry for the full details.</span>
       </div>
 
       {loadError && <div className="error-banner">{loadError}</div>}
@@ -341,48 +366,98 @@ export default function StorageReceiving() {
           <div className="empty-state"><h3>No entries{clientFilter === ALL ? ' yet' : ' for this client'}</h3></div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="ticket-table">
+            <table className="ticket-table orders-table">
               <thead>
                 <tr>
                   <th>Client</th>
-                  <th>Date Received</th>
-                  <th>Stock Received</th>
-                  <th>Date Dispatched</th>
-                  <th>Stock Dispatched</th>
+                  <th>Date received</th>
+                  <th>Stock received</th>
+                  <th>Date dispatched</th>
+                  <th>Stock dispatched</th>
                   <th style={{ textAlign: 'right' }}>Fee</th>
-                  <th>Notes</th>
+                  <th>Receiving notes</th>
+                  <th>Dispatch notes</th>
                   <th>Saved</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((e) => {
-                  const notes = [e.receiving && `Receiving: ${e.receiving}`, e.dispatch && `Dispatch: ${e.dispatch}`].filter(Boolean).join('\n');
-                  return (
-                    <tr key={e.id}>
-                      <td>{e.client}</td>
-                      <td>{dmy(e.dateReceived)}</td>
-                      <td>{stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate)}</td>
-                      <td>{dmy(e.dateDispatched)}</td>
-                      <td>{stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate)}</td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{money(e.fee)}</td>
-                      <td style={{ maxWidth: 260, whiteSpace: 'pre-wrap', fontSize: 12, color: 'var(--muted)' }}>{notes}</td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'nowrap' }}>{e.savedBy}<br />{e.savedOn}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Edit" onClick={() => openEdit(e)}><Pencil size={13} /></button>
-                        <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Print" onClick={() => printEntry(e)}><Printer size={13} /></button>
-                        {isAdmin && (
-                          <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(e.id)}><Trash2 size={13} /></button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {visible.map((e) => (
+                  <tr key={e.id} className="clickable" onClick={() => setDetails(e)} title="Show the full entry">
+                    <Cell width={170}>{e.client}</Cell>
+                    <td style={{ whiteSpace: 'nowrap' }}>{dmy(e.dateReceived)}</td>
+                    <Cell width={210}>{stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate)}</Cell>
+                    <td style={{ whiteSpace: 'nowrap' }}>{dmy(e.dateDispatched)}</td>
+                    <Cell width={210}>{stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate)}</Cell>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{money(e.fee)}</td>
+                    <Cell width={230} style={{ color: 'var(--muted)' }}>{e.receiving}</Cell>
+                    <Cell width={230} style={{ color: 'var(--muted)' }}>{e.dispatch}</Cell>
+                    <Cell width={200} style={{ color: 'var(--muted)', fontSize: 12 }}>{[e.savedBy, e.savedOn].filter(Boolean).join(' · ')}</Cell>
+                    <td style={{ whiteSpace: 'nowrap' }} onClick={(ev) => ev.stopPropagation()}>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Edit" onClick={() => openEdit(e)}><Pencil size={13} /></button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Print" onClick={() => printEntry(e)}><Printer size={13} /></button>
+                      {isAdmin && (
+                        <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(e.id)}><Trash2 size={13} /></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {details && (() => {
+        const e = details;
+        const fees = feesFor(e);
+        const rows = [
+          ['Date received', dmy(e.dateReceived)],
+          ['Stock received', stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate)],
+          ['Receiving fee', fees.received ? money(fees.received) : ''],
+          ['Date dispatched', dmy(e.dateDispatched)],
+          ['Stock dispatched', stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate)],
+          ['Dispatch fee', fees.dispatched ? money(fees.dispatched) : ''],
+          ['Total fee', money(e.fee ?? fees.total)],
+          ['Receiving notes', e.receiving],
+          ['Dispatch notes', e.dispatch],
+          ['Saved', [e.savedBy, e.savedOn].filter(Boolean).join(' · ')],
+        ];
+        return (
+          <div className="modal-overlay" onClick={() => setDetails(null)}>
+            <div className="modal-card" onClick={(ev) => ev.stopPropagation()} style={{ maxWidth: 760, width: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="modal-header">
+                <div>
+                  <h3>Receiving / dispatch — {e.client}</h3>
+                  <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, fontWeight: 400 }}>
+                    {[e.dateReceived && `received ${dmy(e.dateReceived)}`, e.dateDispatched && `dispatched ${dmy(e.dateDispatched)}`].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <button type="button" onClick={() => setDetails(null)} aria-label="Close"><X size={18} /></button>
+              </div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <tbody>
+                    {rows.map(([l, v]) => (
+                      <tr key={l} style={{ borderBottom: '1px solid var(--line)' }}>
+                        <th style={{ textAlign: 'left', padding: '7px 12px 7px 0', width: 180, color: 'var(--muted)', fontWeight: 600, verticalAlign: 'top' }}>{l}</th>
+                        <td style={{ padding: '7px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: l === 'Total fee' ? 700 : undefined }}>{v || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setDetails(null); openEdit(e); }}><Pencil size={13} /> Edit</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => printEntry(e)}><Printer size={13} /> Print</button>
+                {isAdmin && (
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => { setDetails(null); handleDelete(e.id); }}><Trash2 size={13} /> Delete</button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {editing && (
         <div className="modal-overlay" onClick={() => !saving && setEditing(null)}>
