@@ -926,3 +926,10 @@ input, select, textarea {
 .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--ink); }
 .chip.active { background: var(--teal); border-color: var(--teal); color: #fff; }
 .panel-pad { padding: 16px 18px; }
+
+/* A link-styled button (Client Orders: order # and "N devices"). */
+.link-button { background: none; border: none; padding: 0; color: var(--teal); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; }
+.link-button:hover { color: var(--teal-dim); }
+/* Client Orders: compact one-line rows like the old app. */
+.orders-table td { padding-top: 10px; padding-bottom: 10px; font-size: 13px; }
+.orders-table th { white-space: nowrap; }
