@@ -22,6 +22,10 @@ before(async () => {
   app.use(express.json());
   app.use('/api/auth', require('../routes/auth'));
   app.use('/api/storage', require('../routes/storage'));
+  // Mounted at /api ahead of the portal, as in index.js: its staff sign-in check
+  // must only cover attachment URLs, not every /api request (it once blocked the
+  // portal login with "Missing or invalid Authorization header").
+  app.use('/api', require('../routes/attachments'));
   app.use('/api/storage-portal', require('../routes/storagePortal'));
   client = await startTestServer(app);
   server = client.server;
@@ -223,4 +227,9 @@ test('change password, then removed access takes effect immediately', async () =
   await client.patch(`/api/storage/clients/${acmeId}`, { token: staff.token, body: { removePortalAccess: true } });
   assert.equal((await client.get('/api/storage-portal/items', { token: acmeToken })).status, 401, 'existing session cut off');
   assert.equal((await client.post('/api/storage-portal/login', { body: { username: 'acme.ops', password: 'new-password-22' } })).status, 401);
+});
+
+test('job attachment URLs still need a staff sign-in', async () => {
+  assert.equal((await client.get('/api/attachments/nope/download')).status, 401);
+  assert.equal((await client.post('/api/jobs/nope/attachments', { body: {} })).status, 401);
 });
