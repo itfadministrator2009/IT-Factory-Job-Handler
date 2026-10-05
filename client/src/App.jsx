@@ -31,6 +31,7 @@ import StorageDashboard from './pages/StorageDashboard';
 import StorageCalculator from './pages/StorageCalculator';
 import StoragePalletLabels from './pages/StoragePalletLabels';
 import StorageRestore from './pages/StorageRestore';
+import RecordRestore from './pages/RecordRestore';
 import PortalLogin from './pages/PortalLogin';
 import Portal from './pages/Portal';
 import { hasPortalSession } from './portal/portalApi';
@@ -115,6 +116,7 @@ function AppRoutes() {
       <Route path="/storage/calculator" element={<RequireModule module="storage"><StorageCalculator /></RequireModule>} />
       <Route path="/storage/labels" element={<RequireModule module="storage"><StoragePalletLabels /></RequireModule>} />
       <Route path="/storage/restore" element={<RequireAdmin><StorageRestore /></RequireAdmin>} />
+      <Route path="/restore-records" element={<RequireAdmin><RecordRestore /></RequireAdmin>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
