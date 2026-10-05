@@ -66,6 +66,8 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled promise rejection (server continues running):', err);
 });
 
+// One-off tidy of values like "64984.0" brought across from the old Google Sheet.
+try { require('./storageTools').cleanTrailingZeroIds(); } catch (err) { console.error('[storage] Could not tidy ".0" values:', err.message); }
 startBackupScheduler();
 startStorageWeeklyScheduler();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));

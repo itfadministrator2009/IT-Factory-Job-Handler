@@ -243,7 +243,29 @@ function toNumberOrNull(v) {
   return Number.isFinite(n) && String(v).replace(/[^0-9.\-]/g, '') !== '' ? n : null;
 }
 
+// Numbers that came across from the old Google Sheet as decimals ("64984.0",
+// "54830880.0") in id-like fields are put back as written ("64984"). Only an
+// exact digits + ".0" value is changed; safe to run every time the server starts.
+const ID_COLUMNS = ['asset_tag', 'po_number', 'order_number', 'reference_number', 'job_number', 'serial'];
+const TRAILING_ZERO = /^\s*(\d+)\.0\s*$/;
+function cleanTrailingZeroIds() {
+  const cols = ID_COLUMNS.join(', ');
+  const rows = db.prepare(`SELECT id, ${cols} FROM storage_items WHERE ${ID_COLUMNS.map((c) => `${c} LIKE '%.0'`).join(' OR ')}`).all();
+  let changed = 0;
+  db.transaction(() => {
+    rows.forEach((r) => {
+      ID_COLUMNS.forEach((c) => {
+        const m = r[c] != null && String(r[c]).match(TRAILING_ZERO);
+        if (m) { db.prepare(`UPDATE storage_items SET ${c} = ? WHERE id = ?`).run(m[1], r.id); changed += 1; }
+      });
+    });
+  })();
+  if (changed) console.log(`[storage] Tidied ${changed} number value(s) ending in ".0" (asset tag, PO #, order #, reference, job #, serial).`);
+  return changed;
+}
+
 module.exports = {
+  cleanTrailingZeroIds,
   getMeta, setMeta, loadItems, loadPallets, isInStorage, billingGaps, presetRange, PRESETS,
   calculator, dashboard, modelSummary, parseLocalDate, toNumberOrNull, naturalCompare,
 };
