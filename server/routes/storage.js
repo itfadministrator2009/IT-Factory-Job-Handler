@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const { db, nextStorageOrderNumber } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole } = require('../permissions');
+const { isAdminRole, requireModule } = require('../permissions');
 const { notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived } = require('../email');
 const {
   ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement, rdLinesInPeriod, round2,
@@ -19,6 +19,7 @@ const {
 
 const router = express.Router();
 router.use(authRequired);
+router.use(requireModule('storage'));
 
 function isAdmin(userId) {
   return isAdminRole(db.prepare('SELECT role FROM users WHERE id = ?').get(userId)?.role);

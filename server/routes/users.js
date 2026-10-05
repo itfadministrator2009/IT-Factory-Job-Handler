@@ -33,13 +33,16 @@ router.get('/', (req, res) => {
 });
 
 // Admin-only: full user management
+const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage';
+const toAdminUser = (u) => u && ({ ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0 });
+
 router.get('/admin', adminRequired, (req, res) => {
-  const users = db.prepare('SELECT id, name, email, role, created_at FROM users ORDER BY created_at ASC').all();
+  const users = db.prepare(`SELECT ${USER_COLS} FROM users ORDER BY created_at ASC`).all().map(toAdminUser);
   res.json({ users });
 });
 
 router.post('/admin', adminRequired, (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, accessAssets, accessStorage } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'name, email, and password are required' });
   }
@@ -50,10 +53,10 @@ router.post('/admin', adminRequired, (req, res) => {
   const finalRole = role === 'admin' ? 'admin' : 'user';
   const id = uuid();
   const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)')
-    .run(id, name, email, password_hash, finalRole);
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role, access_assets, access_storage) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, email, password_hash, finalRole, accessAssets === false ? 0 : 1, accessStorage === false ? 0 : 1);
 
-  const user = db.prepare('SELECT id, name, email, role, created_at FROM users WHERE id = ?').get(id);
+  const user = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id));
   res.status(201).json({ user });
 });
 
@@ -61,7 +64,11 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
-  const { role, name, email } = req.body;
+  const { role, name, email, accessAssets, accessStorage } = req.body;
+
+  // Which sections a (non-admin) user can open. Admins always have both.
+  if (accessAssets !== undefined) db.prepare('UPDATE users SET access_assets = ? WHERE id = ?').run(accessAssets ? 1 : 0, req.params.id);
+  if (accessStorage !== undefined) db.prepare('UPDATE users SET access_storage = ? WHERE id = ?').run(accessStorage ? 1 : 0, req.params.id);
 
   if (role !== undefined) {
     const finalRole = role === 'admin' ? 'admin' : 'user';
@@ -82,7 +89,7 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
     db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), req.params.id);
   }
 
-  const updated = db.prepare('SELECT id, name, email, role, created_at FROM users WHERE id = ?').get(req.params.id);
+  const updated = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(req.params.id));
   res.json({ user: updated });
 });
 
