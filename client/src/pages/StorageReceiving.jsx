@@ -462,6 +462,11 @@ export default function StorageReceiving() {
               {!saving && <button type="button" onClick={() => setEditing(null)}><X size={18} /></button>}
             </div>
             {error && <div className="error-banner">{error}</div>}
+            {matchSummary?.orderNumber && !editing.id && (
+              <div className="success-banner" style={{ marginBottom: 8, display: 'block', fontSize: 13 }}>
+                Order {matchSummary.orderNumber} marked Delivered{matchSummary.emailedTo ? ` — tracking email sent to ${matchSummary.emailedTo}` : ' (no email sent)'}. Check the dispatch details below and save.
+              </div>
+            )}
             {matchSummary && !editing.id && (
               <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 13,
                 background: matchSummary.unmatched.length === 0 ? '#e6f2e8' : (matchSummary.matched.length ? '#fbf1dc' : '#fbe1db') }}>

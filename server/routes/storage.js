@@ -584,9 +584,9 @@ router.post('/orders/:id/dispatch', (req, res) => {
     : new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
 
   const tokens = [...new Set(orderDeviceTokens(order.devices))];
-  const findInStorage = db.prepare(`SELECT id, serial FROM storage_items WHERE client = ? AND upper(trim(serial)) = upper(?)
+  const findInStorage = db.prepare(`SELECT id, serial FROM storage_items WHERE lower(trim(client)) = lower(trim(?)) AND upper(trim(serial)) = upper(?)
     AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')`);
-  const findOut = db.prepare("SELECT 1 FROM storage_items WHERE client = ? AND upper(trim(serial)) = upper(?) AND end_date IS NOT NULL AND end_date != ''");
+  const findOut = db.prepare("SELECT 1 FROM storage_items WHERE lower(trim(client)) = lower(trim(?)) AND upper(trim(serial)) = upper(?) AND end_date IS NOT NULL AND end_date != ''");
   const setEnd = db.prepare("UPDATE storage_items SET end_date = ?, last_edited_by = ?, updated_at = datetime('now') WHERE id = ?");
   const matched = []; const unmatched = [];
   db.transaction(() => {
