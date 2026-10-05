@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -536,6 +537,9 @@ function BackupTab() {
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
           This replaces everything currently in the app with an older backup. A safety copy of the current data is always taken automatically first, but this is still a big action — the app will restart afterward.
         </p>
+        <div style={{ fontSize: 13, background: 'var(--accent-soft, #fdf0e8)', borderRadius: 8, padding: '10px 12px', marginBottom: 16 }}>
+          Only need one job, asset or Storage Centre item back? Use <Link to="/restore-records">Restore individual records</Link> — it brings back just the records you tick and leaves everything else as it is.
+        </div>
 
         {listError && <div className="error-banner">{listError}</div>}
 
