@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, X, Boxes, Package, Users, FileText, Truck, Printer, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, X, FileText, Truck, Printer, Search } from 'lucide-react';
 import api from '../api';
 import { openPdf } from '../utils/pdf';
 import Layout from '../components/Layout';
@@ -172,9 +172,6 @@ export default function StorageOrders() {
           <div className="subtitle">{orders ? `${orders.length} order${orders.length === 1 ? '' : 's'}` : 'Loading…'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/storage" className="btn btn-ghost btn-sm"><Boxes size={14} /> Manifest</Link>
-          <Link to="/storage/pallets" className="btn btn-ghost btn-sm"><Package size={14} /> Pallets</Link>
-          <Link to="/storage/clients" className="btn btn-ghost btn-sm"><Users size={14} /> Clients</Link>
           <button className="btn btn-accent" onClick={openAdd}><Plus size={16} /> New order</button>
         </div>
       </div>

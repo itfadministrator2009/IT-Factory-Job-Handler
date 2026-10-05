@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Boxes, Package, Users, ClipboardList, Truck, FileText, Download, Mail, Printer, RotateCcw } from 'lucide-react';
+import { FileText, Download, Mail, Printer, RotateCcw } from 'lucide-react';
 import api from '../api';
 import { openPdf, downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
@@ -190,11 +190,6 @@ export default function StorageReports() {
           <div className="subtitle">Storage + receiving/dispatch fees per client, by date range</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/storage" className="btn btn-ghost btn-sm"><Boxes size={14} /> Manifest</Link>
-          <Link to="/storage/pallets" className="btn btn-ghost btn-sm"><Package size={14} /> Pallets</Link>
-          <Link to="/storage/clients" className="btn btn-ghost btn-sm"><Users size={14} /> Clients</Link>
-          <Link to="/storage/orders" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Orders</Link>
-          <Link to="/storage/receiving" className="btn btn-ghost btn-sm"><Truck size={14} /> Receiving/Dispatch</Link>
           <button type="button" className="btn btn-ghost btn-sm" title="All Storage Centre data as CSV files (opens in Excel)"
             onClick={() => downloadFile(api, '/storage/export.zip', 'storage-centre.zip').catch(() => alert('Could not download the export'))}>
             <Download size={14} /> Download backup

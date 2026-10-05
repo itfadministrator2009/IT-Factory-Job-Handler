@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  Plus, Search, Trash2, Pencil, X, Users, Package, ClipboardList, Upload, DollarSign, AlertTriangle,
-  Wand2, Download, Printer, QrCode, LogOut as MarkOut, LogIn as MarkIn, Edit3, FileSpreadsheet,
-} from 'lucide-react';
+import { Plus, Search, Trash2, Pencil, X, Upload, DollarSign, AlertTriangle, Wand2, Download, Printer, QrCode, LogOut as MarkOut, LogIn as MarkIn, Edit3, FileSpreadsheet } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -199,9 +196,6 @@ export default function StorageManifest() {
           <div className="subtitle">{items ? `${items.length} item${items.length === 1 ? '' : 's'} on file` : 'Loading…'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Link to="/storage/pallets" className="btn btn-ghost btn-sm"><Package size={14} /> Pallets</Link>
-          <Link to="/storage/clients" className="btn btn-ghost btn-sm"><Users size={14} /> Clients</Link>
-          <Link to="/storage/orders" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Orders</Link>
           <button className="btn btn-accent" onClick={() => openAdd()}><Plus size={16} /> Add item</button>
         </div>
       </div>
