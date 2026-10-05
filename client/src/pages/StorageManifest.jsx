@@ -56,6 +56,7 @@ export default function StorageManifest() {
   // started from it goes back to it afterwards.
   const [gapsOnlyInStorage, setGapsOnlyInStorage] = useState(gapsInStorageOnly);
   const [backToGaps, setBackToGaps] = useState(false);
+  const [gapsClient, setGapsClient] = useState('');
   // Old app's group drawer: double-click a client / job / centre / location cell.
   const [group, setGroup] = useState(null); // { field, value }
   const [bulkItems, setBulkItems] = useState(null); // items for "Bulk edit these items"
@@ -383,7 +384,7 @@ export default function StorageManifest() {
 
       {tool === 'rates' && <ItemRatesDrawer items={items || []} userName={user?.name} onClose={() => setTool(null)} onSaved={loadItems} />}
       {tool === 'gaps' && (
-        <BillingGapsDrawer initialOnlyInStorage={gapsOnlyInStorage} onOnlyInStorageChange={setGapsOnlyInStorage} onClose={() => setTool(null)}
+        <BillingGapsDrawer initialOnlyInStorage={gapsOnlyInStorage} onOnlyInStorageChange={setGapsOnlyInStorage} initialClient={gapsClient} onClientChange={setGapsClient} onClose={() => setTool(null)}
           onEdit={(i) => { setTool(null); setBackToGaps(true); openEdit((items || []).find((x) => x.id === i.id) || i); }}
           onBulkEdit={(list) => { const byId = new Map((items || []).map((x) => [x.id, x])); setTool(null); setBackToGaps(true); setBulkItems(list.map((i) => byId.get(i.id) || i)); }} />
       )}
