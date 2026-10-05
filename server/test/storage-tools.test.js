@@ -217,3 +217,12 @@ test('locations import: brings across the old LocationsRegistry, keeping Work De
   assert.equal(ow.saved, 1);
   assert.equal(get('lr floor').is_pallet, 0);
 });
+
+test('values like "64984.0" in id-like fields are tidied to "64984"; other values are left alone', () => {
+  db.prepare("INSERT INTO storage_items (id, client, asset_tag, po_number, order_number, reference_number, job_number, serial, model) VALUES ('tz1', 'Tango', '64984.0', '54830880.0', ' 12.0 ', 'REF-1.0', '4.05', 'ABC.0', 'Pro 24.0')").run();
+  const { cleanTrailingZeroIds } = require('../storageTools');
+  assert.ok(cleanTrailingZeroIds() >= 3);
+  const r = db.prepare("SELECT * FROM storage_items WHERE id = 'tz1'").get();
+  assert.deepEqual([r.asset_tag, r.po_number, r.order_number, r.reference_number, r.job_number, r.serial, r.model], ['64984', '54830880', '12', 'REF-1.0', '4.05', 'ABC.0', 'Pro 24.0']);
+  assert.equal(cleanTrailingZeroIds(), 0, 'running again changes nothing');
+});
