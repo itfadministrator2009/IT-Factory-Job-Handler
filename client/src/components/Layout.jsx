@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban,
-  Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight,
+  Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
+  ClipboardList, Truck, MapPin, QrCode, Calculator,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WhoIsOnline from './WhoIsOnline';
@@ -62,23 +63,23 @@ export default function Layout({ children }) {
 
           <Section id="assets" title="ITF Asset Tracker" icon={Boxes} home="/assets"
             open={open.assets} current={current === 'assets'} onToggle={toggle}>
-            <NavLink to="/assets" end className={linkClass}>All Assets</NavLink>
-            {isAdmin && <NavLink to="/assets/reports" className={linkClass}>Reports</NavLink>}
-            {isAdmin && <NavLink to="/assets/fields" className={linkClass}>Manage Fields</NavLink>}
+            <NavLink to="/assets" end className={linkClass}><List size={14} /> All Assets</NavLink>
+            {isAdmin && <NavLink to="/assets/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
+            {isAdmin && <NavLink to="/assets/fields" className={linkClass}><SlidersHorizontal size={14} /> Manage Fields</NavLink>}
           </Section>
 
           <Section id="storage" title="ITF Storage Centre" icon={Warehouse} home="/storage"
             open={open.storage} current={current === 'storage'} onToggle={toggle}>
-            <NavLink to="/storage/dashboard" className={linkClass}>Dashboard</NavLink>
-            <NavLink to="/storage" end className={linkClass}>Manifest</NavLink>
-            <NavLink to="/storage/pallets" className={linkClass}>Pallets</NavLink>
-            <NavLink to="/storage/clients" className={linkClass}>Clients</NavLink>
-            <NavLink to="/storage/orders" className={linkClass}>Client Orders</NavLink>
-            <NavLink to="/storage/receiving" className={linkClass}>Receiving / Dispatch</NavLink>
-            <NavLink to="/storage/locations" className={linkClass}>Locations</NavLink>
-            <NavLink to="/storage/labels" className={linkClass}>Pallet Labels</NavLink>
-            <NavLink to="/storage/calculator" className={linkClass}>Calculator</NavLink>
-            {isAdmin && <NavLink to="/storage/reports" className={linkClass}>Reports</NavLink>}
+            <NavLink to="/storage/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
+            <NavLink to="/storage" end className={linkClass}><Table size={14} /> Manifest</NavLink>
+            <NavLink to="/storage/pallets" className={linkClass}><Package size={14} /> Pallets</NavLink>
+            <NavLink to="/storage/clients" className={linkClass}><Users size={14} /> Clients</NavLink>
+            <NavLink to="/storage/orders" className={linkClass}><ClipboardList size={14} /> Client Orders</NavLink>
+            <NavLink to="/storage/receiving" className={linkClass}><Truck size={14} /> Receiving / Dispatch</NavLink>
+            <NavLink to="/storage/locations" className={linkClass}><MapPin size={14} /> Locations</NavLink>
+            <NavLink to="/storage/labels" className={linkClass}><QrCode size={14} /> Pallet Labels</NavLink>
+            <NavLink to="/storage/calculator" className={linkClass}><Calculator size={14} /> Calculator</NavLink>
+            {isAdmin && <NavLink to="/storage/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
           </Section>
 
           {isAdmin && (
