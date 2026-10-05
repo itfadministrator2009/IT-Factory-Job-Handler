@@ -9,7 +9,7 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import {
   ITEM_FIELDS, dmy, money, naturalCompare, downloadCsv, itemStatus, weeksStored, findDuplicateGroups, isInStorage,
-  GROUP_FIELDS, itemNoteKeys,
+  GROUP_FIELDS, itemNoteKeys, sameText, normText, distinctText, countByText,
 } from '../storage/common';
 import ItemRatesDrawer from '../storage/ItemRatesDrawer';
 import BillingGapsDrawer from '../storage/BillingGapsDrawer';
@@ -74,17 +74,18 @@ export default function StorageManifest() {
   // touch items you can see.
   useEffect(() => { setSelected(new Set()); setLimit(PAGE); }, [query, clientFilter, centreFilter, statusFilter, locationFilter]);
 
-  const clients = useMemo(() => [...new Set((items || []).map((i) => i.client).filter(Boolean))].sort(naturalCompare), [items]);
-  const centres = useMemo(() => [...new Set((items || []).map((i) => i.storageCentre).filter(Boolean))].sort(naturalCompare), [items]);
+  // Names that differ only in capitals or spacing count as one ("HP" / "hp").
+  const clients = useMemo(() => distinctText((items || []).map((i) => i.client)), [items]);
+  const centres = useMemo(() => distinctText((items || []).map((i) => i.storageCentre)), [items]);
 
   const filtered = useMemo(() => {
     if (!items) return [];
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
-      if (clientFilter && it.client !== clientFilter) return false;
-      if (centreFilter && String(it.storageCentre || '').trim().toLowerCase() !== centreFilter.trim().toLowerCase()) return false;
+      if (clientFilter && !sameText(it.client, clientFilter)) return false;
+      if (centreFilter && !sameText(it.storageCentre, centreFilter)) return false;
       if (statusFilter && itemStatus(it) !== statusFilter) return false;
-      if (locationFilter && String(it.location || '').trim().toLowerCase() !== locationFilter.trim().toLowerCase()) return false;
+      if (locationFilter && !sameText(it.location, locationFilter)) return false;
       if (!q) return true;
       return ITEM_FIELDS.some(([k]) => it[k] != null && String(k.endsWith('Date') ? dmy(it[k]) : it[k]).toLowerCase().includes(q));
     });
@@ -95,13 +96,11 @@ export default function StorageManifest() {
 
   const stats = useMemo(() => {
     const inStore = filtered.filter(isInStorage);
-    const byType = {};
-    inStore.forEach((i) => { const k = i.item || '(no item type)'; byType[k] = (byType[k] || 0) + (Number(i.quantity) || 1); });
     return {
       inStorage: inStore.length,
-      clients: new Set(inStore.map((i) => i.client).filter(Boolean)).size,
+      clients: new Set(inStore.map((i) => normText(i.client)).filter(Boolean)).size,
       qty: inStore.reduce((t, i) => t + (Number(i.quantity) || 0), 0),
-      byType: Object.entries(byType).sort((a, b) => b[1] - a[1]),
+      byType: countByText(inStore, (i) => i.item, (i) => Number(i.quantity) || 1, '(no item type)'),
     };
   }, [filtered]);
 
@@ -254,11 +253,11 @@ export default function StorageManifest() {
           <Search size={14} style={{ marginLeft: 4 }} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search client, item, serial, location…" style={{ flex: 1, border: '1px solid var(--line)', borderRadius: 8, padding: '9px 12px' }} />
         </div>
-        <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
+        <select value={clients.find((c) => sameText(c, clientFilter)) ?? clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
           <option value="">All clients</option>
           {clients.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={centreFilter} onChange={(e) => setCentreFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
+        <select value={centres.find((c) => sameText(c, centreFilter)) ?? centreFilter} onChange={(e) => setCentreFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
           <option value="">All storage centres</option>
           {centres.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>

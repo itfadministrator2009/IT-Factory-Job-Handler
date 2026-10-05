@@ -81,7 +81,9 @@ function rdLinesInPeriod(rows, from, to) {
 // ---------------------------------------------------------------------------
 // Storage cost
 // ---------------------------------------------------------------------------
-const lc = (v) => String(v || '').trim().toLowerCase();
+// Text is compared ignoring case and extra spaces, so "ITF Sydney Warehouse" and
+// "ITF SYDNEY WAREHOUSE" are the same place and "Viridian" / "VIRIDIAN" the same client.
+const lc = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 function getPalletRate(pallets, client, storageCentre, location) {
   if (!location) return null;
@@ -109,8 +111,10 @@ function overlapDays(item, from, to) {
 // total matches the old calculation exactly; round when displaying.
 function storageCostLines(client, allItems, pallets, from, to) {
   const groups = {};
-  allItems.filter((i) => i.client === client).forEach((i) => {
-    const key = `${i.storageCentre || ''}|||${i.location || ''}`;
+  allItems.filter((i) => lc(i.client) === lc(client)).forEach((i) => {
+    // One group per storage centre + location however it's capitalised, so a pallet
+    // rate is charged once even when items spell the centre differently.
+    const key = `${lc(i.storageCentre)}|||${lc(i.location)}`;
     if (!groups[key]) groups[key] = { storageCentre: i.storageCentre || '', location: i.location || '', items: [] };
     groups[key].items.push(i);
   });
@@ -167,10 +171,21 @@ function clientStatement(client, from, to, data = loadBillingData()) {
   if (!period) throw new Error('from and to must be YYYY-MM-DD with from <= to');
   const storageLines = storageCostLines(client, data.allItems, data.pallets, period.fromDate, period.toDate)
     .map((l) => ({ ...l, amount: round2(l.amount) }));
-  const rdLines = rdLinesInPeriod(data.rdRows.filter((r) => r.client === client), from, to);
+  const rdLines = rdLinesInPeriod(data.rdRows.filter((r) => lc(r.client) === lc(client)), from, to);
   const storageTotal = round2(computeStorageCostForClient(client, data.allItems, data.pallets, period.fromDate, period.toDate));
   const rdTotal = round2(rdLines.reduce((t, l) => t + l.amount, 0));
   return { client, from, to, storageLines, rdLines, storageTotal, rdTotal, total: round2(storageTotal + rdTotal) };
+}
+
+// One name per client however it's capitalised: the most common spelling wins.
+function displayNames(names) {
+  const byKey = new Map();
+  names.filter((n) => String(n || '').trim()).forEach((n) => {
+    const k = lc(n); const s = String(n).trim();
+    if (!byKey.has(k)) byKey.set(k, new Map());
+    byKey.get(k).set(s, (byKey.get(k).get(s) || 0) + 1);
+  });
+  return [...byKey.values()].map((m) => [...m].sort((a, b) => b[1] - a[1])[0][0]).sort((a, b) => a.localeCompare(b));
 }
 
 // The Reports summary: one row per client with storage items or fees in the period.
@@ -180,13 +195,13 @@ function summary(from, to, data = loadBillingData()) {
   const feesByClient = {};
   rdLinesInPeriod(data.rdRows, from, to).forEach((l) => {
     if (!l.client) return;
-    const f = feesByClient[l.client] || (feesByClient[l.client] = { receiving: 0, dispatch: 0 });
+    const f = feesByClient[lc(l.client)] || (feesByClient[lc(l.client)] = { receiving: 0, dispatch: 0 });
     if (l.kind === 'Receiving') f.receiving += l.amount; else f.dispatch += l.amount;
   });
-  const clients = [...new Set([...data.allItems.map((i) => i.client), ...Object.keys(feesByClient)].filter(Boolean))].sort();
+  const clients = displayNames([...data.allItems.map((i) => i.client), ...data.rdRows.filter((r) => feesByClient[lc(r.client)]).map((r) => r.client)]);
   const rows = clients.map((client) => {
     const storageCost = round2(computeStorageCostForClient(client, data.allItems, data.pallets, period.fromDate, period.toDate));
-    const f = feesByClient[client] || { receiving: 0, dispatch: 0 };
+    const f = feesByClient[lc(client)] || { receiving: 0, dispatch: 0 };
     const receivingFees = round2(f.receiving);
     const dispatchFees = round2(f.dispatch);
     const receivingDispatchFees = round2(f.receiving + f.dispatch);
@@ -199,5 +214,5 @@ module.exports = {
   ALL_PALLETS, ALL_PALLETS_AT_CENTRE,
   round2, toQty, parseStockParts, sideFee, rdFees, stockText, rdLinesInPeriod,
   getPalletRate, overlapDays, storageCostLines, computeStorageCostForClient,
-  loadBillingData, parsePeriod, clientStatement, summary,
+  loadBillingData, parsePeriod, clientStatement, summary, displayNames, lc,
 };

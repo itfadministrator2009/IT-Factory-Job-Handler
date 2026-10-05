@@ -99,21 +99,21 @@ function portalItem(r, pallets) {
 // many distinct pallets they sit on. Only locations classified as pallets on
 // the Locations page count — unclassified or "not a pallet" ones never do.
 router.get('/summary', (req, res) => {
-  const items = db.prepare("SELECT storage_centre, location FROM storage_items WHERE client = ? AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')")
+  const items = db.prepare("SELECT storage_centre, location FROM storage_items WHERE lower(trim(client)) = lower(trim(?)) AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')")
     .all(req.portalClient.client_name);
   const palletKeys = palletLocationKeys();
   const pallets = new Set();
   items.forEach((i) => {
-    if (i.location && palletKeys.has(normLoc(i.location))) pallets.add(`${i.storage_centre || ''}|||${normLoc(i.location)}`);
+    if (i.location && palletKeys.has(normLoc(i.location))) pallets.add(`${normLoc(i.storage_centre)}|||${normLoc(i.location)}`);
   });
-  const total = db.prepare('SELECT COUNT(*) AS c FROM storage_items WHERE client = ?').get(req.portalClient.client_name).c;
+  const total = db.prepare('SELECT COUNT(*) AS c FROM storage_items WHERE lower(trim(client)) = lower(trim(?))').get(req.portalClient.client_name).c;
   res.json({ inStorageCount: items.length, palletCount: pallets.size, totalCount: total });
 });
 
 // Every item on record for this client, with its status — as the old portal showed.
 router.get('/items', (req, res) => {
   const pallets = palletLocationKeys();
-  const rows = db.prepare('SELECT * FROM storage_items WHERE client = ? ORDER BY storage_centre, location, item, serial')
+  const rows = db.prepare('SELECT * FROM storage_items WHERE lower(trim(client)) = lower(trim(?)) ORDER BY storage_centre, location, item, serial')
     .all(req.portalClient.client_name);
   res.json({ items: rows.map((r) => portalItem(r, pallets)) });
 });
@@ -132,7 +132,7 @@ function portalOrder(r) {
 }
 
 router.get('/orders', (req, res) => {
-  const rows = db.prepare('SELECT * FROM storage_orders WHERE client = ? ORDER BY created_at DESC').all(req.portalClient.client_name);
+  const rows = db.prepare('SELECT * FROM storage_orders WHERE lower(trim(client)) = lower(trim(?)) ORDER BY created_at DESC').all(req.portalClient.client_name);
   res.json({ orders: rows.map(portalOrder) });
 });
 
@@ -148,7 +148,7 @@ router.post('/orders', orderLimiter, (req, res) => {
   // portal), by item id — so a client can never order someone else's stock.
   const ids = Array.isArray(b.deviceIds) ? [...new Set(b.deviceIds.map(String))].slice(0, 2000) : [];
   if (!ids.length) return res.status(400).json({ error: 'Select at least one device before submitting.' });
-  const pick = db.prepare(`SELECT * FROM storage_items WHERE id = ? AND client = ?
+  const pick = db.prepare(`SELECT * FROM storage_items WHERE id = ? AND lower(trim(client)) = lower(trim(?))
     AND start_date IS NOT NULL AND start_date != '' AND (end_date IS NULL OR end_date = '')`);
   const picked = ids.map((id) => pick.get(id, req.portalClient.client_name)).filter(Boolean);
   if (picked.length !== ids.length) return res.status(400).json({ error: 'Some selected devices are no longer in storage — refresh the page and try again.' });
@@ -185,7 +185,7 @@ router.post('/orders', orderLimiter, (req, res) => {
 });
 
 router.get('/orders/:id/pdf', async (req, res) => {
-  const row = db.prepare('SELECT * FROM storage_orders WHERE id = ? AND client = ?').get(req.params.id, req.portalClient.client_name);
+  const row = db.prepare('SELECT * FROM storage_orders WHERE id = ? AND lower(trim(client)) = lower(trim(?))').get(req.params.id, req.portalClient.client_name);
   if (!row) return res.status(404).json({ error: 'Order not found' });
   try {
     const pdf = await buildOrderPdf({ ...portalOrder(row), client: row.client });
@@ -209,7 +209,7 @@ function stockWithoutRates(type, qty) {
 }
 
 router.get('/receiving-dispatch', (req, res) => {
-  const rows = db.prepare('SELECT * FROM storage_receiving_dispatch WHERE client = ? ORDER BY COALESCE(date_dispatched, date_received, saved_on) DESC')
+  const rows = db.prepare('SELECT * FROM storage_receiving_dispatch WHERE lower(trim(client)) = lower(trim(?)) ORDER BY COALESCE(date_dispatched, date_received, saved_on) DESC')
     .all(req.portalClient.client_name);
   res.json({
     entries: rows.map((r) => ({

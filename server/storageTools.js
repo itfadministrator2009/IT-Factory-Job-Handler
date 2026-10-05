@@ -98,7 +98,7 @@ function calculator({ from, to, client, centre, groupBy = 'all' }, items = loadI
   if (!period) throw new Error('from and to must be YYYY-MM-DD with from <= to');
   const { fromDate, toDate } = period;
   // Items with no client aren't billed anywhere, so they're left out here too.
-  const scoped = items.filter((i) => i.client && (!client || i.client === client) && (!centre || norm(i.storageCentre) === norm(centre)));
+  const scoped = items.filter((i) => i.client && (!client || norm(i.client) === norm(client)) && (!centre || norm(i.storageCentre) === norm(centre)));
 
   if (groupBy === 'none') {
     const rows = scoped.map((i) => {
@@ -112,7 +112,7 @@ function calculator({ from, to, client, centre, groupBy = 'all' }, items = loadI
 
   const groups = {};
   scoped.forEach((i) => {
-    const key = `${i.client}|||${i.storageCentre || ''}|||${i.location || ''}`;
+    const key = `${norm(i.client)}|||${norm(i.storageCentre)}|||${norm(i.location)}`;
     if (!groups[key]) groups[key] = { client: i.client, storageCentre: i.storageCentre || '', location: i.location || '', items: [] };
     groups[key].items.push(i);
   });
@@ -198,7 +198,7 @@ function dashboard(date = new Date(), items = loadItems(), pallets = loadPallets
 // ---------------------------------------------------------------------------
 function modelSummary(client, items = loadItems()) {
   const groups = {};
-  items.filter((i) => !client || i.client === client).forEach((i) => {
+  items.filter((i) => !client || norm(i.client) === norm(client)).forEach((i) => {
     const make = String(i.make || '').trim();
     const model = String(i.model || '').trim();
     if (!make && !model) return;

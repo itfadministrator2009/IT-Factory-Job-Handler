@@ -34,6 +34,38 @@ export function presetRange(preset, today = new Date()) {
 
 export const naturalCompare = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
 
+// Text compared ignoring case and extra spaces: "ITF Sydney Warehouse" and
+// "ITF SYDNEY  WAREHOUSE" are the same thing.
+export const normText = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+export const sameText = (a, b) => normText(a) === normText(b);
+
+// Distinct values ignoring case/spaces, each shown with its most common spelling.
+export function distinctText(values) {
+  const byKey = new Map();
+  values.forEach((v) => {
+    const s = String(v ?? '').trim();
+    if (!s) return;
+    const k = normText(s);
+    if (!byKey.has(k)) byKey.set(k, new Map());
+    byKey.get(k).set(s, (byKey.get(k).get(s) || 0) + 1);
+  });
+  return [...byKey.values()].map((m) => [...m].sort((a, b) => b[1] - a[1])[0][0]).sort(naturalCompare);
+}
+
+// Totals per value ignoring case/spaces ([[spelling, total]], biggest first).
+export function countByText(rows, getValue, getAmount = () => 1, blankLabel = '') {
+  const byKey = new Map();
+  rows.forEach((r) => {
+    const s = String(getValue(r) ?? '').trim() || blankLabel;
+    const k = normText(s);
+    if (!byKey.has(k)) byKey.set(k, { total: 0, spellings: new Map() });
+    const e = byKey.get(k);
+    e.total += getAmount(r);
+    e.spellings.set(s, (e.spellings.get(s) || 0) + 1);
+  });
+  return [...byKey.values()].map((e) => [[...e.spellings].sort((a, b) => b[1] - a[1])[0][0], e.total]).sort((a, b) => b[1] - a[1]);
+}
+
 export function downloadCsv(filename, rows) {
   const cell = (v) => {
     const t = v == null ? '' : String(v);
