@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import api from '../api';
 import Drawer from './Drawer';
-import { isInStorage, itemStatus } from './common';
+import { isInStorage, itemStatus, sameText, countByText, naturalCompare } from './common';
 
 // Old "Billing gaps" drawer: items costing $0/week — no rate of their own and
 // no pallet rate covering their location. Click a row to edit that item, or
@@ -18,10 +18,10 @@ export default function BillingGapsDrawer({ onClose, onEdit, onBulkEdit, initial
   }, []);
   const shown = (items || []).filter((i) => !onlyInStorage || isInStorage(i));
   // Clients with gaps (after the in-storage tick), with how many each — for the client picker.
-  const clientCounts = [...shown.reduce((m, i) => { const c = String(i.client || '').trim(); m.set(c, (m.get(c) || 0) + 1); return m; }, new Map())]
-    .filter(([c]) => c !== '')
-    .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
-  const rows = client ? shown.filter((i) => String(i.client || '').trim() === client) : shown;
+  // Spellings that differ only in capitals or spacing count as one client.
+  const clientCounts = countByText(shown.filter((i) => String(i.client || '').trim()), (i) => i.client)
+    .sort((a, b) => naturalCompare(a[0], b[0]));
+  const rows = client ? shown.filter((i) => sameText(i.client, client)) : shown;
   // Only rows still on screen count as selected (e.g. after changing the tick box).
   const chosen = rows.filter((i) => selected.has(i.id));
   const allChosen = rows.length > 0 && chosen.length === rows.length;
@@ -43,7 +43,7 @@ export default function BillingGapsDrawer({ onClose, onEdit, onBulkEdit, initial
   function selectClient(c) {
     // Pick a client and tick all of their items, ready to bulk edit.
     pickClient(c);
-    setSelected(new Set(shown.filter((i) => String(i.client || '').trim() === c).map((i) => i.id)));
+    setSelected(new Set(shown.filter((i) => sameText(i.client, c)).map((i) => i.id)));
   }
 
   return (
@@ -53,10 +53,10 @@ export default function BillingGapsDrawer({ onClose, onEdit, onBulkEdit, initial
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
           <input type="checkbox" checked={onlyInStorage} onChange={(e) => setInStorage(e.target.checked)} /> Only items in storage
         </label>
-        <select value={client} onChange={(e) => pickClient(e.target.value)} style={{ minWidth: 200 }} aria-label="Client">
+        <select value={clientCounts.find(([c]) => sameText(c, client))?.[0] ?? client} onChange={(e) => pickClient(e.target.value)} style={{ minWidth: 200 }} aria-label="Client">
           <option value="">All clients ({shown.length})</option>
           {clientCounts.map(([c, n]) => <option key={c} value={c}>{c} ({n})</option>)}
-          {client && !clientCounts.some(([c]) => c === client) && <option value={client}>{client} (0)</option>}
+          {client && !clientCounts.some(([c]) => sameText(c, client)) && <option value={client}>{client} (0)</option>}
         </select>
         {onBulkEdit && client && rows.length > 0 && chosen.length !== rows.length && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => selectClient(client)}>Select all {rows.length} for {client}</button>

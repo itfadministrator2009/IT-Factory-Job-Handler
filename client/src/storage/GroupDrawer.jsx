@@ -14,7 +14,7 @@ export default function GroupDrawer({ field, value, items, onClose, onOpenItem, 
   const [onlyInStorage, setOnlyInStorage] = useState(false);
   useEffect(() => { api.get('/storage/pallets').then((r) => setPallets(r.data.pallets)).catch(() => {}); }, []);
 
-  const norm = (v) => String(v ?? '').trim().toLowerCase();
+  const norm = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
   const all = useMemo(() => items.filter((i) => norm(i[field]) === norm(value))
     .sort((a, b) => naturalCompare(a.client, b.client) || naturalCompare(a.location, b.location) || naturalCompare(a.item, b.item)), [items, field, value]);
   const rows = onlyInStorage ? all.filter(isInStorage) : all;
