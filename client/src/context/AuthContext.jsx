@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../api';
 import { resetPresence } from '../components/WhoIsOnline';
 
@@ -9,6 +9,16 @@ export function AuthProvider({ children }) {
     const stored = localStorage.getItem('helpdesk_user');
     return stored ? JSON.parse(stored) : null;
   });
+
+  // Pick up role / section-access changes made in Settings without signing out.
+  useEffect(() => {
+    if (!localStorage.getItem('helpdesk_token')) return;
+    api.get('/auth/me').then(({ data }) => {
+      if (!data?.user) return;
+      localStorage.setItem('helpdesk_user', JSON.stringify(data.user));
+      setUser(data.user);
+    }).catch(() => {});
+  }, []);
 
   const login = useCallback(async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
@@ -42,6 +52,14 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+// Can this user open the ITF Asset Tracker ('assets') / ITF Storage Centre ('storage')?
+// Admins always can; for others it's switched on or off in Settings → Manage Users.
+export function canUseModule(user, module) {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'agent') return true;
+  return (module === 'assets' ? user.accessAssets : user.accessStorage) !== false;
 }
 
 export function useAuth() {

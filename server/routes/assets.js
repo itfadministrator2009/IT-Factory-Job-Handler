@@ -3,11 +3,12 @@ const multer = require('multer');
 const { randomUUID } = require('crypto');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole } = require('../permissions');
+const { isAdminRole, requireModule } = require('../permissions');
 const { notifyAssetReport } = require('../email');
 
 const router = express.Router();
 router.use(authRequired);
+router.use(requireModule('assets'));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 

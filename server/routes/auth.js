@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { v4: uuid } = require('uuid');
 const { db } = require('../db');
+const { publicUser } = require('../permissions');
 const { signToken, authRequired } = require('../auth');
 const { sendPasswordReset } = require('../email');
 
@@ -65,7 +66,7 @@ router.post('/register', registerLimiter, (req, res) => {
   ).run(id, name, email, password_hash, role);
 
   const user = { id, name, email, role };
-  res.status(201).json({ token: signToken(user), user });
+  res.status(201).json({ token: signToken(user), user: publicUser({ ...user, access_assets: 1, access_storage: 1 }) });
 });
 
 router.post('/login', loginLimiter, (req, res) => {
@@ -79,11 +80,15 @@ router.post('/login', loginLimiter, (req, res) => {
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
-  res.json({ token: signToken(user), user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  res.json({ token: signToken(user), user: publicUser(user) });
 });
 
+// The current user fresh from the database, so role or access changes made in
+// Settings show up without signing out and back in.
 router.get('/me', authRequired, (req, res) => {
-  res.json({ user: req.user });
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!row) return res.status(401).json({ error: 'Account not found' });
+  res.json({ user: publicUser(row) });
 });
 
 router.post('/forgot-password', forgotPasswordLimiter, (req, res) => {

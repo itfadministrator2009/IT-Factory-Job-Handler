@@ -26,4 +26,32 @@ function currentRole(userId) {
   return db.prepare('SELECT role FROM users WHERE id = ?').get(userId)?.role || 'user';
 }
 
-module.exports = { isAdminRole, canAccessJob, currentRole };
+// ITF Asset Tracker ('assets') and ITF Storage Centre ('storage') can be switched
+// on or off per user in Settings. Admins always have both. Read fresh from the
+// database so a change applies on the user's very next request.
+const MODULE_COLUMNS = { assets: 'access_assets', storage: 'access_storage' };
+const MODULE_NAMES = { assets: 'the ITF Asset Tracker', storage: 'the ITF Storage Centre' };
+function hasModuleAccess(userId, module) {
+  const row = db.prepare('SELECT role, access_assets, access_storage FROM users WHERE id = ?').get(userId);
+  if (!row) return false;
+  if (isAdminRole(row.role)) return true;
+  return row[MODULE_COLUMNS[module]] !== 0;
+}
+function requireModule(module) {
+  return (req, res, next) => {
+    if (hasModuleAccess(req.user.id, module)) return next();
+    res.status(403).json({ error: `You don't have access to ${MODULE_NAMES[module]}. Ask an admin to turn it on in Settings.`, code: 'no_module_access' });
+  };
+}
+// The signed-in user as the client sees it, including which sections they can use.
+function publicUser(row) {
+  if (!row) return null;
+  const admin = isAdminRole(row.role);
+  return {
+    id: row.id, name: row.name, email: row.email, role: row.role,
+    accessAssets: admin || row.access_assets !== 0,
+    accessStorage: admin || row.access_storage !== 0,
+  };
+}
+
+module.exports = { isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser };
