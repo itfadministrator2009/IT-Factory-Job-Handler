@@ -403,6 +403,10 @@ function addColumnIfMissing(table, column, definition) {
 addColumnIfMissing('jobs', 'ms_event_id', 'TEXT');
 addColumnIfMissing('jobs', 'comments', 'TEXT');
 addColumnIfMissing('project_entries', 'assigned_to', 'TEXT');
+// Per-user access to the ITF Asset Tracker and ITF Storage Centre (Settings →
+// Manage Users). Existing users keep access; admins always have both.
+addColumnIfMissing('users', 'access_assets', 'INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'access_storage', 'INTEGER NOT NULL DEFAULT 1');
 
 function migrateJobsStatusConstraint() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").get()?.sql;
