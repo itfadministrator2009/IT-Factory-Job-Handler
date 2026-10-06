@@ -1005,7 +1005,7 @@ input, select, textarea {
   flex-direction: column;
   justify-content: center;
   min-width: 150px;
-  padding: 5px 34px 5px 12px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #faf9f6;
@@ -1036,6 +1036,15 @@ input, select, textarea {
   letter-spacing: 0.06em;
   color: var(--muted);
   line-height: 1.2;
+  /* Sits over the drop-down so a click anywhere in the box opens it. */
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  right: 34px;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
 }
 .filter-field.active .filter-field-label { color: var(--teal); }
 .filter-field select {
@@ -1043,8 +1052,9 @@ input, select, textarea {
   -webkit-appearance: none;
   border: none;
   background: transparent;
-  padding: 1px 0 0;
+  padding: 20px 34px 6px 12px;
   margin: 0;
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 500;
   color: var(--ink);
