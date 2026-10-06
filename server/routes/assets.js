@@ -605,7 +605,10 @@ router.post('/import', upload.single('file'), (req, res) => {
 router.get('/reports/summary', (req, res) => {
   if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can view reports' });
 
-  const total = db.prepare('SELECT COUNT(*) as c FROM assets').get().c;
+  // ?customer= narrows the counts to one customer (any spelling); By Customer
+  // always shows every customer so the page can switch between them.
+  const { where: cw, params: cp } = buildWhere({ customer: req.query.customer || '' });
+  const total = db.prepare(`SELECT COUNT(*) as c FROM assets ${cw}`).get(...cp).c;
 
   // Grouped by the imported name text when present (so 60 historical rows entered
   // by "Ian" show up as Ian's own bucket, not lumped under whichever admin actually
@@ -613,26 +616,27 @@ router.get('/reports/summary', (req, res) => {
   const byTech = db.prepare(`
     SELECT COALESCE(json_extract(a.fields_json, '$._imported_creator_name'), u.name) as name, COUNT(*) as count
     FROM assets a LEFT JOIN users u ON u.id = a.created_by
+    ${cw}
     GROUP BY COALESCE(json_extract(a.fields_json, '$._imported_creator_name'), a.created_by)
     ORDER BY count DESC
-  `).all().map((r) => ({ name: r.name || 'Unassigned', count: r.count }));
+  `).all(...cp).map((r) => ({ name: r.name || 'Unassigned', count: r.count }));
 
   const byMonth = db.prepare(`
     SELECT strftime('%Y-%m', created_at) as period, COUNT(*) as count
-    FROM assets GROUP BY period ORDER BY period DESC
-  `).all();
+    FROM assets ${cw} GROUP BY period ORDER BY period DESC
+  `).all(...cp);
 
   const byYear = db.prepare(`
     SELECT strftime('%Y', created_at) as period, COUNT(*) as count
-    FROM assets GROUP BY period ORDER BY period DESC
-  `).all();
+    FROM assets ${cw} GROUP BY period ORDER BY period DESC
+  `).all(...cp);
 
   const byQuarter = db.prepare(`
     SELECT strftime('%Y', created_at) as year,
            ((CAST(strftime('%m', created_at) as INTEGER) - 1) / 3) + 1 as quarter,
            COUNT(*) as count
-    FROM assets GROUP BY year, quarter ORDER BY year DESC, quarter DESC
-  `).all().map((r) => ({ period: `${r.year} Q${r.quarter}`, count: r.count }));
+    FROM assets ${cw} GROUP BY year, quarter ORDER BY year DESC, quarter DESC
+  `).all(...cp).map((r) => ({ period: `${r.year} Q${r.quarter}`, count: r.count }));
 
   // Spellings of the same customer ("ACME ", "Acme") count as one.
   const customers = canonicalCustomers();
@@ -649,8 +653,8 @@ router.get('/reports/summary', (req, res) => {
            COALESCE(NULLIF(trim(json_extract(fields_json, '$.status')), ''), '') as status,
            COALESCE(NULLIF(trim(json_extract(fields_json, '$.asset_sent_to')), ''), '') as sentTo,
            COUNT(*) as count
-    FROM assets GROUP BY assetClass, customerKey, status, sentTo
-  `).all().forEach((r) => {
+    FROM assets ${cw} GROUP BY assetClass, customerKey, status, sentTo
+  `).all(...cp).forEach((r) => {
     const customer = r.customerKey ? (customers.get(r.customerKey)?.best || r.customerKey) : 'Unspecified';
     const k = [r.assetClass, customer, r.status, r.sentTo].join('\u0001');
     const row = classMerged.get(k) || { assetClass: r.assetClass, customer, status: r.status, sentTo: r.sentTo, count: 0 };
