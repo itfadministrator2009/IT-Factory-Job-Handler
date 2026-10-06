@@ -161,7 +161,7 @@ function useWidth() {
   return [ref, w];
 }
 
-export function ColumnChart({ data, color = CHART_COLORS.blue, height = 200, onSelect, navigate }) {
+export function ColumnChart({ data, color = CHART_COLORS.blue, height = 200, onSelect, navigate, unit = 'asset' }) {
   const tip = useTip();
   const [hover, setHover] = useState(null);
   const [boxRef, boxW] = useWidth();
@@ -197,7 +197,7 @@ export function ColumnChart({ data, color = CHART_COLORS.blue, height = 200, onS
           const rr = Math.min(4, h / 2, barW / 2);
           return (
             <g key={d.label} style={{ cursor: d.to || onSelect ? 'pointer' : 'default' }}
-              onMouseMove={(e) => { setHover(i); tip.show(e, <><strong>{d.label}</strong><br />{fmt(d.value)} asset{d.value === 1 ? '' : 's'}</>); }}
+              onMouseMove={(e) => { setHover(i); tip.show(e, <><strong>{d.label}</strong><br />{fmt(d.value)} {unit}{d.value === 1 ? '' : 's'}</>); }}
               onMouseLeave={() => { setHover(null); tip.hide(); }}
               onClick={() => d.value && click(d)}>
               {/* Bigger invisible hit target than the bar itself */}
