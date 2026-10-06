@@ -12,7 +12,7 @@ const { notifyProjectEntryComplete, notifyProjectEntryAssigned } = require('../e
 // Fixed internal distribution list notified whenever a project entry is submitted —
 // configurable via env var without a code change, defaulting to the addresses given.
 const PROJECT_COMPLETE_EMAILS = (process.env.PROJECT_COMPLETE_EMAILS
-  || 'sam@itfactory.com.au,tom@itfactory.com.au,rnahas@itfactory.com.au,michael@itfactory.com.au,admin@itfactory.com.au,elina@itfactory.com.au')
+  || 'sam@itfactory.com.au,tom@itfactory.com.au,rnahas@itfactory.com.au,michael@itfactory.com.au,admin@itfactory.com.au,elina@itfactory.com.au,nathan@itfactory.com.au')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
 const router = express.Router();
