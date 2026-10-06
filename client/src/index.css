@@ -1084,3 +1084,20 @@ input, select, textarea {
   border-radius: 10px;
 }
 .filter-clear:hover { background: #fdf0e8; }
+
+/* Print button sized to sit beside a filter box */
+.filter-print {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #faf9f6;
+  color: var(--teal);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+.filter-print:hover { border-color: var(--teal); background: #e9f3f4; }
