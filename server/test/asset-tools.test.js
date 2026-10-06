@@ -49,6 +49,14 @@ test('reports group customer spellings together', async () => {
   assert.deepEqual(data.byCompany.find((r) => r.company === 'Acme'), { company: 'Acme', count: 2 });
   assert.equal(data.byCompany.some((r) => r.company === 'ACME '), false);
   assert.equal(data.classRows.filter((r) => r.customer === 'Acme').reduce((t, r) => t + r.count, 0), 2);
+
+  // One customer (any spelling): every count narrows, By Customer still lists all.
+  const one = (await client.get('/api/assets/reports/summary?customer=acme', { token: admin.token })).data;
+  assert.equal(one.total, 2);
+  assert.equal(one.byMonth.reduce((t, r) => t + r.count, 0), 2);
+  assert.equal(one.byTech.reduce((t, r) => t + r.count, 0), 2);
+  assert.equal(one.classRows.reduce((t, r) => t + r.count, 0), 2);
+  assert.ok(one.byCompany.some((r) => r.company === 'Beta'));
 });
 
 test('adding or editing an asset warns about a serial already on file, unless told to save anyway', async () => {
