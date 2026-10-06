@@ -148,18 +148,24 @@ export default function JobList() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => <option key={s}>{s}</option>)}
-        </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-          <option value="">All priorities</option>
-          <option>Low</option>
-          <option>Medium</option>
-          <option>High</option>
-          <option>Urgent</option>
-        </select>
-        <label className="checkbox-label" style={{ marginLeft: 4 }}>
+        <label className={`filter-field${status ? ' active' : ''}`}>
+          <span className="filter-field-label">Status</span>
+          <select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">All</option>
+            {STATUSES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </label>
+        <label className={`filter-field${priority ? ' active' : ''}`}>
+          <span className="filter-field-label">Priority</span>
+          <select aria-label="Priority" value={priority} onChange={(e) => setPriority(e.target.value)}>
+            <option value="">All</option>
+            <option>Low</option>
+            <option>Medium</option>
+            <option>High</option>
+            <option>Urgent</option>
+          </select>
+        </label>
+        <label className={`filter-toggle${overdueOnly ? ' active' : ''}`}>
           <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
           Overdue only
         </label>

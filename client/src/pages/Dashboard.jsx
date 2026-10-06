@@ -55,31 +55,31 @@ export default function Dashboard() {
 
       {stats && (
         <div className="stat-grid">
-          <div className="stat-card">
+          <div className="stat-card accent-ink">
             <div className="num">{stats.total}</div>
             <div className="label">Total jobs</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card accent-blue">
             <div className="num">{stats.byStatus.Open}</div>
             <div className="label">Open</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card accent-yellow">
             <div className="num">{stats.byStatus['In Progress']}</div>
             <div className="label">In progress</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card accent-aqua">
             <div className="num">{stats.byStatus.Complete}</div>
             <div className="label">Complete</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card accent-green">
             <div className="num">{stats.byStatus.Collected}</div>
             <div className="label">Collected</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card accent-orange">
             <div className="num">{stats.unassigned}</div>
             <div className="label">Unassigned</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card accent-neutral">
             <div className="num">{stats.byStatus.Closed}</div>
             <div className="label">Closed</div>
           </div>

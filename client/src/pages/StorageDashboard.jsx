@@ -9,7 +9,7 @@ const PERIODS = ['lastWeek', 'lastMonth', 'lastQuarter', 'lastYear', 'lastFY'];
 
 // Horizontal bars, one series (one hue, no legend — the heading names it).
 // Values are labelled at the bar end; hovering shows the exact figure and share.
-function BarList({ rows, format, total }) {
+function BarList({ rows, format, total, color = '#2a78d6' }) {
   const max = Math.max(...rows.map((r) => r.value), 0) || 1;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 220px) 1fr', gap: '6px 12px', alignItems: 'center' }}>
@@ -19,7 +19,7 @@ function BarList({ rows, format, total }) {
           <div key={r.label} style={{ display: 'contents' }}>
             <div style={{ fontSize: 13, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.label}>{r.label}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={`${r.label}: ${format(r.value)}${share}`}>
-              <div style={{ height: 18, width: `${Math.max((r.value / max) * 100, 0.5)}%`, maxWidth: 'calc(100% - 110px)', background: 'var(--teal)', borderRadius: '0 4px 4px 0' }} />
+              <div style={{ height: 18, width: `${Math.max((r.value / max) * 100, 0.5)}%`, maxWidth: 'calc(100% - 110px)', background: color, borderRadius: 4 }} />
               <span style={{ fontSize: 12, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{format(r.value)}<span style={{ color: 'var(--muted)' }}>{share}</span></span>
             </div>
           </div>
@@ -79,9 +79,9 @@ export default function StorageDashboard() {
           </div>
 
           <div className="stat-grid" style={{ marginBottom: 16 }}>
-            <div className="stat-card"><div className="num">{data.stats.inStorage}</div><div className="label">Items in storage</div></div>
-            <div className="stat-card"><div className="num">{data.stats.clients}</div><div className="label">Clients</div></div>
-            <div className="stat-card"><div className="num">{data.stats.totalQuantity}</div><div className="label">Total quantity</div></div>
+            <div className="stat-card accent-blue"><div className="num">{data.stats.inStorage}</div><div className="label">Items in storage</div></div>
+            <div className="stat-card accent-aqua"><div className="num">{data.stats.clients}</div><div className="label">Clients</div></div>
+            <div className="stat-card accent-yellow"><div className="num">{data.stats.totalQuantity}</div><div className="label">Total quantity</div></div>
           </div>
 
           <div className="panel panel-pad" style={{ marginBottom: 16 }}>
@@ -117,7 +117,7 @@ export default function StorageDashboard() {
           <div className="panel panel-pad">
             <h3 style={{ fontSize: 15, marginBottom: 14 }}>Items in storage per client</h3>
             {itemRows.length === 0 ? <div className="empty-state">Nothing in storage.</div>
-              : <BarList rows={itemRows} format={(n) => `${n} item${n === 1 ? '' : 's'}`} total={itemRows.reduce((t, r) => t + r.value, 0)} />}
+              : <BarList rows={itemRows} color="#1baf7a" format={(n) => `${n} item${n === 1 ? '' : 's'}`} total={itemRows.reduce((t, r) => t + r.value, 0)} />}
           </div>
         </>
       )}

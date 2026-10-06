@@ -220,15 +220,41 @@ input, select, textarea {
   margin-bottom: 24px;
 }
 
+/* Stat tiles: white card with a coloured bar on top, label above the number
+   (same look as the Asset Reports tiles). The colour comes from an accent-*
+   class, or follows the chart palette order when none is given. */
 .stat-card {
+  --accent: #2a78d6;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 16px;
+  border-top: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px;
 }
+.stat-grid > .stat-card:nth-child(6n+1) { --accent: #16241f; }
+.stat-grid > .stat-card:nth-child(6n+2) { --accent: #2a78d6; }
+.stat-grid > .stat-card:nth-child(6n+3) { --accent: #eb6834; }
+.stat-grid > .stat-card:nth-child(6n+4) { --accent: #1baf7a; }
+.stat-grid > .stat-card:nth-child(6n+5) { --accent: #eda100; }
+.stat-grid > .stat-card:nth-child(6n+6) { --accent: #e87ba4; }
+.stat-grid > .stat-card.accent-ink { --accent: #16241f; }
+.stat-grid > .stat-card.accent-blue { --accent: #2a78d6; }
+.stat-grid > .stat-card.accent-orange { --accent: #eb6834; }
+.stat-grid > .stat-card.accent-aqua { --accent: #1baf7a; }
+.stat-grid > .stat-card.accent-yellow { --accent: #eda100; }
+.stat-grid > .stat-card.accent-magenta { --accent: #e87ba4; }
+.stat-grid > .stat-card.accent-green { --accent: #008300; }
+.stat-grid > .stat-card.accent-violet { --accent: #4a3aa7; }
+.stat-grid > .stat-card.accent-neutral { --accent: #c9c7bd; }
 
-.stat-card .num { font-family: var(--font-display); font-size: 28px; font-weight: 700; }
-.stat-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+.stat-card .num { order: 2; font-family: var(--font-body); font-size: 28px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--ink); }
+.stat-card .label { order: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
+.stat-card .sub { order: 3; font-size: 12px; color: var(--muted); margin-top: 4px; }
+a.stat-card, .stat-card.clickable { color: inherit; text-decoration: none; cursor: pointer; transition: box-shadow 120ms, transform 120ms; }
+a.stat-card:hover, .stat-card.clickable:hover { box-shadow: 0 4px 14px rgba(22, 36, 31, 0.08); }
 
 /* ---------- Ticket table ---------- */
 .ticket-filters {
@@ -236,13 +262,13 @@ input, select, textarea {
   gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
 }
 
-.ticket-filters select, .ticket-filters input {
+.ticket-filters > select, .ticket-filters > input {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 7px 10px;
+  border-radius: 10px;
+  padding: 7px 12px;
   background: white;
 }
 
@@ -296,17 +322,19 @@ input, select, textarea {
   white-space: nowrap;
 }
 
-.pill-status-Open { background: #e6edf9; color: var(--blue); }
-.pill-status-InProgress { background: #fbf1dc; color: var(--amber); }
-.pill-status-OnHold { background: #f1ece3; color: var(--muted); }
-.pill-status-Complete { background: #e6f2e8; color: var(--green); }
-.pill-status-Collected { background: #e6f2e8; color: var(--green); }
-.pill-status-Closed { background: #eee; color: #777; }
+/* Status / priority pills — tints of the chart palette, with darker text of the
+   same hue so the words stay easy to read. */
+.pill-status-Open { background: #e3eefb; color: #1d5fae; }
+.pill-status-InProgress { background: #fdf1d6; color: #8a5d00; }
+.pill-status-OnHold { background: #fbe9f0; color: #a8456c; }
+.pill-status-Complete { background: #dff4ec; color: #0d7a52; }
+.pill-status-Collected { background: #e2f1e2; color: #006400; }
+.pill-status-Closed { background: #eeede8; color: #6b7570; }
 
-.pill-priority-Low { background: #eef1ee; color: #5c6a60; }
-.pill-priority-Medium { background: #e6edf9; color: var(--blue); }
-.pill-priority-High { background: #fbeadf; color: var(--coral); }
-.pill-priority-Urgent { background: #fbe1db; color: #c23f1c; }
+.pill-priority-Low { background: #eeede8; color: #5c6a60; }
+.pill-priority-Medium { background: #e3eefb; color: #1d5fae; }
+.pill-priority-High { background: #fde8de; color: #b84716; }
+.pill-priority-Urgent { background: #fbe1e1; color: #b42f2e; }
 
 /* ---------- Auth pages ---------- */
 .auth-wrap {
@@ -1111,3 +1139,7 @@ input, select, textarea {
   transition: border-color 120ms, background 120ms;
 }
 .filter-print:hover { border-color: var(--teal); background: #e9f3f4; }
+
+/* Two charts side by side on report pages; one column on narrow screens. */
+.report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
+@media (max-width: 900px) { .report-grid { grid-template-columns: 1fr; } }
