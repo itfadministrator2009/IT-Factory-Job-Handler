@@ -134,12 +134,15 @@ export default function AssetReports() {
           <h1>Asset Reports</h1>
           <div className="subtitle">{customer ? <>Showing <strong>{customer}</strong> only.</> : 'Every asset on file.'} Click any chart, bar or number to see those assets.</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={customer} onChange={(e) => pickCustomer(e.target.value)} aria-label="Customer" style={{ minWidth: 230, fontWeight: customer ? 600 : 400 }}>
-            <option value="">All customers</option>
-            {customers.map((c) => <option key={c.company} value={c.company}>{c.company} ({c.count})</option>)}
-          </select>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={14} /> Print</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' }}>
+          <label className={`filter-field wide${customer ? ' active' : ''}`}>
+            <span className="filter-field-label">Customer</span>
+            <select value={customer} onChange={(e) => pickCustomer(e.target.value)} aria-label="Customer">
+              <option value="">All customers</option>
+              {customers.map((c) => <option key={c.company} value={c.company}>{c.company} ({c.count})</option>)}
+            </select>
+          </label>
+          <button type="button" className="filter-print" onClick={() => window.print()}><Printer size={15} /> Print</button>
         </div>
       </div>
 
