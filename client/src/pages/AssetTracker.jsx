@@ -1,14 +1,29 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil, BarChart3, Sliders, ListChecks, Copy } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil, BarChart3, Sliders, ListChecks, Copy, Camera, Layers, AlertTriangle, Filter } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
+import BarcodeScanner from '../components/BarcodeScanner';
 import { useAuth } from '../context/AuthContext';
 
 // Columns shown in the main table — a curated subset of the (potentially many)
 // fields, since showing all 24+ as columns would be unusable. Clicking a row opens
 // every field for that asset.
-const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'model_number', 'serial_number', 'customer', 'status', 'zoho_ticket_number'];
+const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'model_number', 'serial_number', 'customer', 'status', 'asset_sent_to', 'zoho_ticket_number'];
+
+// Exact-match filters (URL parameters, so a report can link straight to a list).
+// "__none__" = the field is blank. dupes=1: only assets whose serial is on more
+// than one asset. batch=<id>: only the assets in that allocation batch.
+const FILTERS = [
+  { param: 'category', label: 'Category' },
+  { param: 'status', label: 'Status' },
+  { param: 'sent_to', label: 'Sent to' },
+  { param: 'customer', label: 'Customer' },
+];
+const FILTER_PARAMS = ['category', 'status', 'sent_to', 'customer', 'dupes', 'batch'];
+const NONE = '__none__';
+// Fields that can be filled in by scanning a barcode.
+const SCAN_KEYS = ['serial_number', 'asset_tag', 'client_asset_tag'];
 
 export default function AssetTracker() {
   const navigate = useNavigate();
@@ -22,6 +37,12 @@ export default function AssetTracker() {
   const [totalPages, setTotalPages] = useState(1);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(new Set());
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = Object.fromEntries(FILTER_PARAMS.map((k) => [k, searchParams.get(k) || '']));
+  const filterKey = FILTER_PARAMS.map((k) => filters[k]).join('|');
+  const activeFilters = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+  const [filterOptions, setFilterOptions] = useState(null);
+  const [batchName, setBatchName] = useState('');
 
   const [showForm, setShowForm] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null); // null = adding new
@@ -51,18 +72,53 @@ export default function AssetTracker() {
   const [serialError, setSerialError] = useState('');
   const [copiedMissing, setCopiedMissing] = useState(false);
 
+  // Edit several fields on the ticked assets at once. bulkEdits = { field_key: value }.
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkEdits, setBulkEdits] = useState({});
+  const [bulkEditError, setBulkEditError] = useState('');
+  // Asset form: another asset already has this serial — show it and offer "save anyway".
+  const [dupWarning, setDupWarning] = useState(null);
+  // Camera scanning: { mode: 'serials' } (bulk search, keeps scanning) or { mode: 'field', key }.
+  const [scanTarget, setScanTarget] = useState(null);
+  // Import: rows skipped because their serial is already on file, and the file, to re-run.
+  const lastImportFile = useRef(null);
+  const [importDupes, setImportDupes] = useState([]);
+  // Allocation batches: save the ticked assets as a new batch or add them to one.
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batches, setBatches] = useState([]);
+  const [batchForm, setBatchForm] = useState({ mode: 'new', name: '', notes: '', batchId: '' });
+  const [batchError, setBatchError] = useState('');
+  const [batchMsg, setBatchMsg] = useState(null);
+
   function loadFieldDefs() {
     api.get('/assets/field-defs').then((res) => setFieldDefs(res.data.fields));
   }
   function loadAssets(p = page, q = query) {
-    api.get('/assets', { params: { page: p, q } }).then((res) => {
+    api.get('/assets', { params: { page: p, q, ...activeFilters } }).then((res) => {
       setAssets(res.data.assets);
       setTotal(res.data.total);
       setTotalPages(res.data.totalPages);
       setPage(res.data.page);
     });
   }
-  useEffect(() => { loadFieldDefs(); loadAssets(1, ''); }, []);
+  useEffect(() => { loadFieldDefs(); }, []);
+  function loadFilterOptions() { api.get('/assets/filter-options').then((r) => setFilterOptions(r.data)).catch(() => {}); }
+  useEffect(() => { loadFilterOptions(); }, []);
+  // (Re)load whenever the filters in the address change — including arriving from a report link.
+  useEffect(() => {
+    setSelected(new Set());
+    setSerialResult(null);
+    loadAssets(1, query);
+    if (filters.batch) api.get(`/assets/batches/${filters.batch}`).then((r) => setBatchName(r.data.batch.name)).catch(() => setBatchName('this batch'));
+    else setBatchName('');
+  }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function setFilter(param, value) {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(param, value); else next.delete(param);
+    setSearchParams(next, { replace: true });
+  }
+  function clearFilters() { setSearchParams(new URLSearchParams(), { replace: true }); }
 
   async function runSerialSearch(text = serialText, { selectAll = true } = {}) {
     setSerialBusy(true);
@@ -102,12 +158,14 @@ export default function AssetTracker() {
     setEditingAsset(null);
     setFormValues({});
     setError('');
+    setDupWarning(null);
     setShowForm(true);
   }
   function openEditForm(asset) {
     setEditingAsset(asset);
     setFormValues({ ...asset.fields });
     setError('');
+    setDupWarning(null);
     setShowForm(true);
   }
 
@@ -115,20 +173,24 @@ export default function AssetTracker() {
     setFormValues((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function handleSaveAsset(e) {
-    e.preventDefault();
+  async function handleSaveAsset(e, { allowDuplicateSerial = false } = {}) {
+    e?.preventDefault();
     setSaving(true);
     setError('');
+    setDupWarning(null);
     try {
+      const body = { fields: formValues, ...(allowDuplicateSerial ? { allowDuplicateSerial: true } : {}) };
       if (editingAsset) {
-        await api.patch(`/assets/${editingAsset.id}`, { fields: formValues });
+        await api.patch(`/assets/${editingAsset.id}`, body);
       } else {
-        await api.post('/assets', { fields: formValues });
+        await api.post('/assets', body);
       }
       setShowForm(false);
       refreshList();
+      loadFilterOptions();
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not save');
+      if (err.response?.data?.code === 'duplicate_serial') setDupWarning(err.response.data);
+      else setError(err.response?.data?.error || 'Could not save');
     } finally {
       setSaving(false);
     }
@@ -155,7 +217,7 @@ export default function AssetTracker() {
   }
 
   async function handleSelectAllMatching() {
-    const { data } = await api.get('/assets/all-ids', { params: { q: query } });
+    const { data } = await api.get('/assets/all-ids', { params: { q: query, ...activeFilters } });
     setSelected(new Set(data.ids));
   }
 
@@ -182,6 +244,56 @@ export default function AssetTracker() {
       refreshList();
     } finally {
       setBulkApplying(false);
+    }
+  }
+
+  function openBulkEdit() {
+    setBulkEdits({});
+    setBulkEditError('');
+    setShowBulkEdit(true);
+  }
+  function toggleBulkField(key, on) {
+    setBulkEdits((p) => { const n = { ...p }; if (on) n[key] = fieldDefs.find((f) => f.field_key === key)?.type === 'multiselect' ? [] : ''; else delete n[key]; return n; });
+  }
+  async function applyBulkEdits() {
+    if (!Object.keys(bulkEdits).length) { setBulkEditError('Tick at least one field to change.'); return; }
+    setBulkApplying(true);
+    setBulkEditError('');
+    try {
+      await api.patch('/assets/bulk-edit', { ids: Array.from(selected), updates: bulkEdits });
+      setShowBulkEdit(false);
+      setSelected(new Set());
+      refreshList();
+      loadFilterOptions();
+    } catch (err) {
+      setBulkEditError(err.response?.data?.error || 'Could not update the assets');
+    } finally {
+      setBulkApplying(false);
+    }
+  }
+
+  async function openBatchModal() {
+    setBatchError('');
+    setBatchForm({ mode: 'new', name: '', notes: '', batchId: '' });
+    setShowBatchModal(true);
+    try { const { data } = await api.get('/assets/batches'); setBatches(data.batches); } catch (e) { setBatches([]); }
+  }
+  async function saveBatch() {
+    setBatchError('');
+    const assetIds = Array.from(selected);
+    try {
+      let batch; let added;
+      if (batchForm.mode === 'new') {
+        if (!batchForm.name.trim()) { setBatchError('Give the batch a name'); return; }
+        ({ data: { batch, added } } = await api.post('/assets/batches', { name: batchForm.name, notes: batchForm.notes, assetIds }));
+      } else {
+        if (!batchForm.batchId) { setBatchError('Choose a batch'); return; }
+        ({ data: { batch, added } } = await api.post(`/assets/batches/${batchForm.batchId}/items`, { assetIds }));
+      }
+      setShowBatchModal(false);
+      setBatchMsg({ batch, added });
+    } catch (err) {
+      setBatchError(err.response?.data?.error || 'Could not save the batch');
     }
   }
 
@@ -228,7 +340,7 @@ export default function AssetTracker() {
     // In a serial search, export the ticked assets (or all the matches if none are ticked).
     const res = serialResult
       ? await api.post('/assets/export', { ids: selected.size ? Array.from(selected) : serialResult.assets.map((a) => a.id) }, { responseType: 'blob' })
-      : await api.get('/assets/export', { params: { q: query }, responseType: 'blob' });
+      : await api.get('/assets/export', { params: { q: query, ...activeFilters }, responseType: 'blob' });
     const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
     const link = document.createElement('a');
     link.href = url;
@@ -238,21 +350,39 @@ export default function AssetTracker() {
     document.body.removeChild(link);
   }
 
-  async function handleImportFile(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  async function runImport(file, { onlyRows = null } = {}) {
+    const allowDuplicates = !!onlyRows;
     setImportMsg('Importing…');
+    setImportDupes([]);
     const form = new FormData();
     form.append('file', file);
+    if (onlyRows) form.append('onlyRows', JSON.stringify(onlyRows));
     try {
       const { data } = await api.post('/assets/import', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setImportMsg(`Imported ${data.created} asset${data.created === 1 ? '' : 's'}.${data.skippedColumns.length ? ` Columns not recognised: ${data.skippedColumns.join(', ')}` : ''}`);
+      const dupes = data.duplicateSerials || [];
+      const dupText = !dupes.length ? ''
+        : allowDuplicates ? ` ${dupes.length} of them have a serial that was already on file.`
+          : ` Skipped ${dupes.length} row${dupes.length === 1 ? '' : 's'} whose serial is already on file.`;
+      setImportMsg(`Imported ${data.created} asset${data.created === 1 ? '' : 's'}.${dupText}${data.skippedColumns.length ? ` Columns not recognised: ${data.skippedColumns.join(', ')}` : ''}`);
+      setImportDupes(allowDuplicates ? [] : dupes.map((serial, i) => ({ serial, row: data.skippedRows?.[i] })));
       loadAssets();
+      loadFilterOptions();
     } catch (err) {
       setImportMsg(err.response?.data?.error || 'Import failed');
-    } finally {
-      e.target.value = '';
     }
+  }
+  async function handleImportFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    lastImportFile.current = file;
+    runImport(file);
+  }
+  // Re-sends the same file with just the skipped row numbers, so nothing else is imported twice.
+  function importSkippedAnyway() {
+    if (!lastImportFile.current) return;
+    if (!confirm(`Import the ${importDupes.length} skipped row(s) anyway? Their serials will then be on more than one asset.`)) return;
+    runImport(lastImportFile.current, { onlyRows: importDupes.map((d) => d.row) });
   }
 
   function renderFieldInput(field, value, onChange) {
@@ -339,10 +469,61 @@ export default function AssetTracker() {
         {isAdmin && <Link to="/assets/fields" className="btn btn-ghost btn-sm"><Sliders size={14} /> Manage fields</Link>}
       </div>
 
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+        <Filter size={14} style={{ color: 'var(--muted)' }} />
+        {FILTERS.map(({ param, label }) => {
+          const opts = param === 'customer'
+            ? (filterOptions?.customer || []).map((c) => ({ value: c.value, text: `${c.value} (${c.count})` }))
+            : (filterOptions?.[param] || []).map((v) => ({ value: v, text: v }));
+          const current = filters[param];
+          const known = !current || current === NONE || opts.some((o) => o.value.toLowerCase() === current.toLowerCase());
+          return (
+            <select key={param} aria-label={label} value={opts.find((o) => o.value.toLowerCase() === current.toLowerCase())?.value ?? current}
+              onChange={(e) => setFilter(param, e.target.value)} style={{ minWidth: 140, fontWeight: current ? 600 : 400 }}>
+              <option value="">{label}: any</option>
+              {opts.map((o) => <option key={o.value} value={o.value}>{o.text}</option>)}
+              <option value={NONE}>{label}: (blank)</option>
+              {!known && <option value={current}>{current}</option>}
+            </select>
+          );
+        })}
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+          <input type="checkbox" checked={filters.dupes === '1'} onChange={(e) => setFilter('dupes', e.target.checked ? '1' : '')} /> Duplicate serials only
+        </label>
+        {filters.batch && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, background: 'var(--accent-soft, #fdf0e8)', borderRadius: 14, padding: '3px 10px' }}>
+            <Layers size={13} /> Batch: <Link to={`/assets/batches/${filters.batch}`}>{batchName || '…'}</Link>
+            <button type="button" onClick={() => setFilter('batch', '')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }} title="Show all assets"><X size={13} /></button>
+          </span>
+        )}
+        {Object.keys(activeFilters).length > 0 && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}><X size={13} /> Clear filters</button>
+        )}
+      </div>
+
+      {batchMsg && (
+        <div className="success-banner" style={{ marginBottom: 16 }}>
+          <span>
+            {batchMsg.added} asset{batchMsg.added === 1 ? '' : 's'} added to batch <strong>{batchMsg.batch.name}</strong> ({batchMsg.batch.count} in total).{' '}
+            <Link to={`/assets/batches/${batchMsg.batch.id}`}>Open batch / packing list</Link>
+          </span>
+          <button type="button" onClick={() => setBatchMsg(null)}><X size={15} /></button>
+        </div>
+      )}
+
       {importMsg && (
         <div className={importMsg.startsWith('Imported') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 16 }}>
-          <span>{importMsg}</span>
-          <button type="button" onClick={() => setImportMsg('')}><X size={15} /></button>
+          <span>
+            {importMsg}
+            {importDupes.length > 0 && (
+              <>
+                <br />
+                <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{importDupes.map((d) => d.serial).join(', ')}</span>{' '}
+                <button type="button" onClick={importSkippedAnyway} style={{ textDecoration: 'underline', fontWeight: 600 }}>Import these anyway</button>
+              </>
+            )}
+          </span>
+          <button type="button" onClick={() => { setImportMsg(''); setImportDupes([]); }}><X size={15} /></button>
         </div>
       )}
       {emailResultMsg && (
@@ -359,7 +540,7 @@ export default function AssetTracker() {
             <span style={{ fontSize: 13 }}>
               {serialResult.found} of {serialResult.searched} serial{serialResult.searched === 1 ? '' : 's'} found
               {' · '}{serialResult.assets.length} asset{serialResult.assets.length === 1 ? '' : 's'} shown
-              {isAdmin && serialResult.assets.length > 0 && ' (all ticked — use Set field below to allocate them)'}
+              {isAdmin && serialResult.assets.length > 0 && ' (all ticked — use Edit fields or Add to batch below to allocate them)'}
             </span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowSerialModal(true)}>Edit list</button>
@@ -409,6 +590,8 @@ export default function AssetTracker() {
             <input value={bulkFieldValue} onChange={(e) => setBulkFieldValue(e.target.value)} placeholder="value" style={{ width: 140 }} />
           )}
           <button type="button" onClick={handleBulkEdit} disabled={bulkApplying || !bulkFieldKey}>Apply</button>
+          <button type="button" onClick={openBulkEdit} disabled={bulkApplying}><Pencil size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Edit fields…</button>
+          <button type="button" onClick={openBatchModal} disabled={bulkApplying}><Layers size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Add to batch…</button>
           <button type="button" onClick={openEmailModal} disabled={bulkApplying}><Mail size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Email</button>
           <button type="button" onClick={handleBulkDelete} disabled={bulkApplying} style={{ color: 'var(--danger)' }}><Trash2 size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Delete</button>
           <button type="button" className="clear-selection" onClick={() => setSelected(new Set())}>Clear</button>
@@ -491,6 +674,7 @@ export default function AssetTracker() {
             <textarea value={serialText} onChange={(e) => setSerialText(e.target.value)} autoFocus rows={12}
               placeholder={'5CG5513GZ8\n5CG5513GYR\nHZ83RK4'} style={{ width: '100%', fontFamily: 'monospace', fontSize: 13 }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setScanTarget({ mode: 'serials' })}><Camera size={14} /> Scan with camera</button>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                 {(() => { const n = new Set(serialText.split(/[\s,;]+/).map((v) => v.trim().toUpperCase()).filter(Boolean)).size; return `${n} serial${n === 1 ? '' : 's'}`; })()}
               </span>
@@ -510,12 +694,27 @@ export default function AssetTracker() {
               {!saving && <button type="button" onClick={() => setShowForm(false)}><X size={18} /></button>}
             </div>
             {error && <div className="error-banner">{error}</div>}
+            {dupWarning && (
+              <div style={{ background: '#fff4e0', border: '1px solid #f0d49b', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}><AlertTriangle size={14} style={{ verticalAlign: -2, marginRight: 6, color: '#9a5b00' }} />{dupWarning.error}</div>
+                <div style={{ color: 'var(--muted)', marginBottom: 8 }}>
+                  {dupWarning.matches.map((m) => [m.assetTag && `tag ${m.assetTag}`, m.customer, m.status].filter(Boolean).join(' · ') || 'no asset tag').join(' | ')}
+                </div>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDupWarning(null)}>Go back and fix the serial</button>{' '}
+                <button type="button" className="btn btn-accent btn-sm" disabled={saving} onClick={() => handleSaveAsset(null, { allowDuplicateSerial: true })}>Save anyway</button>
+              </div>
+            )}
             <form onSubmit={handleSaveAsset} className="sign-off-scroll">
               <div className="form-grid">
                 {fieldDefs.map((f) => (
                   <div className={'field' + ((f.type === 'multiselect' || f.type === 'textarea') ? ' span-2' : '')} key={f.field_key}>
                     <label>{f.label}</label>
-                    {renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}
+                    {SCAN_KEYS.includes(f.field_key) && f.type === 'text' ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ flex: 1 }}>{renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}</div>
+                        <button type="button" className="btn btn-ghost btn-sm icon-btn" title={`Scan ${f.label}`} onClick={() => setScanTarget({ mode: 'field', key: f.field_key, label: f.label })}><Camera size={14} /></button>
+                      </div>
+                    ) : renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}
                   </div>
                 ))}
               </div>
@@ -525,6 +724,93 @@ export default function AssetTracker() {
             </form>
           </div>
         </div>
+      )}
+
+      {showBulkEdit && fieldDefs && (
+        <div className="modal-overlay" onClick={() => !bulkApplying && setShowBulkEdit(false)}>
+          <div className="modal-card sign-off-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, width: '95vw', maxHeight: '90vh' }}>
+            <div className="modal-header">
+              <h3>Edit {selected.size} asset{selected.size === 1 ? '' : 's'}</h3>
+              {!bulkApplying && <button type="button" onClick={() => setShowBulkEdit(false)}><X size={18} /></button>}
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+              Tick each field to change and set its new value — e.g. Asset Sent To, Status and Buyer together. Fields you don't tick are left as they are.
+              Ticking a field and leaving it empty clears it.
+            </p>
+            {bulkEditError && <div className="error-banner">{bulkEditError}</div>}
+            <div className="sign-off-scroll" style={{ display: 'grid', gap: 8 }}>
+              {[...fieldDefs].filter((f) => !['asset_tag', 'serial_number'].includes(f.field_key))
+                // The fields used to allocate stock come first, then the rest in their usual order.
+                .sort((a, b) => {
+                  const first = ['asset_sent_to', 'status', 'buyer', 'customer'];
+                  const ra = first.includes(a.field_key) ? first.indexOf(a.field_key) : first.length;
+                  const rb = first.includes(b.field_key) ? first.indexOf(b.field_key) : first.length;
+                  return ra - rb;
+                })
+                .map((f) => {
+                  const on = f.field_key in bulkEdits;
+                  return (
+                    <div key={f.field_key} style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 10, alignItems: 'start', padding: '6px 8px', borderRadius: 6, background: on ? 'var(--accent-soft, #fdf0e8)' : 'transparent' }}>
+                      <label className="checkbox-label" style={{ fontSize: 13, fontWeight: on ? 600 : 400, paddingTop: 6 }}>
+                        <input type="checkbox" checked={on} onChange={(e) => toggleBulkField(f.field_key, e.target.checked)} /> {f.label}
+                      </label>
+                      <div>{on ? renderFieldInput(f, bulkEdits[f.field_key], (v) => setBulkEdits((p) => ({ ...p, [f.field_key]: v }))) : <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: '32px' }}>unchanged</span>}</div>
+                    </div>
+                  );
+                })}
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14 }}>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{Object.keys(bulkEdits).length} field{Object.keys(bulkEdits).length === 1 ? '' : 's'} to change</span>
+              <button type="button" className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={bulkApplying || !Object.keys(bulkEdits).length} onClick={applyBulkEdits}>
+                {bulkApplying ? 'Saving…' : `Apply to ${selected.size} asset${selected.size === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBatchModal && (
+        <div className="modal-overlay" onClick={() => setShowBatchModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <h3><Layers size={16} style={{ verticalAlign: -2, marginRight: 6 }} />Add {selected.size} asset{selected.size === 1 ? '' : 's'} to a batch</h3>
+              <button type="button" onClick={() => setShowBatchModal(false)}><X size={18} /></button>
+            </div>
+            {batchError && <div className="error-banner">{batchError}</div>}
+            <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 14 }}>
+              <label className="checkbox-label"><input type="radio" checked={batchForm.mode === 'new'} onChange={() => setBatchForm((p) => ({ ...p, mode: 'new' }))} /> New batch</label>
+              <label className="checkbox-label"><input type="radio" checked={batchForm.mode === 'existing'} disabled={!batches.length} onChange={() => setBatchForm((p) => ({ ...p, mode: 'existing' }))} /> Existing batch{!batches.length ? ' (none yet)' : ''}</label>
+            </div>
+            {batchForm.mode === 'new' ? (
+              <>
+                <div className="field"><label>Batch name</label><input value={batchForm.name} autoFocus onChange={(e) => setBatchForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Wholesale – Buyer X – Oct" /></div>
+                <div className="field"><label>Notes (optional)</label><textarea value={batchForm.notes} onChange={(e) => setBatchForm((p) => ({ ...p, notes: e.target.value }))} placeholder="Order number, pick-up date, who it's for…" /></div>
+              </>
+            ) : (
+              <div className="field"><label>Batch</label>
+                <select value={batchForm.batchId} onChange={(e) => setBatchForm((p) => ({ ...p, batchId: e.target.value }))}>
+                  <option value="">Choose…</option>
+                  {batches.map((b) => <option key={b.id} value={b.id}>B-{String(b.number).padStart(4, '0')} · {b.name} ({b.count})</option>)}
+                </select>
+              </div>
+            )}
+            <button type="button" className="btn btn-accent" style={{ marginTop: 8 }} onClick={saveBatch}>
+              {batchForm.mode === 'new' ? 'Create batch' : 'Add to batch'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {scanTarget && (
+        <BarcodeScanner
+          continuous={scanTarget.mode === 'serials'}
+          title={scanTarget.mode === 'serials' ? 'Scan serial numbers' : `Scan ${scanTarget.label}`}
+          onScan={(code) => {
+            if (scanTarget.mode === 'serials') setSerialText((t) => (t.trim() ? `${t.replace(/\s+$/, '')}\n${code}` : code));
+            else updateFormField(scanTarget.key, code);
+          }}
+          onClose={() => setScanTarget(null)}
+        />
       )}
 
       {showEmailModal && (

@@ -338,4 +338,56 @@ function buildRdInvoicePdf({ client, from, to, lines, total }) {
   });
 }
 
-module.exports = { buildOrderPdf, buildInvoicePdf, buildRdInvoicePdf, invoiceReference };
+// ---------------------------------------------------------------------------
+// ITF Asset Tracker allocation batch — packing list
+// ---------------------------------------------------------------------------
+// batch = { number, name, notes, count, createdBy, createdAt }; items = [{ fields, deleted }]
+function buildBatchPdf(batch, items) {
+  return toBuffer((doc) => {
+    let y = header(doc, 'ASSET PACKING LIST', [
+      ['BATCH NO:', `B-${String(batch.number || '').padStart(4, '0')}`],
+      ['DATE:', dmy(todaySydney())],
+      ['ITEMS:', String(items.length)],
+      ['PREPARED BY:', batch.createdBy],
+    ]);
+    y = infoTable(doc, [['BATCH:', batch.name], ...(batch.notes ? [['NOTES:', batch.notes]] : [])], y);
+    y += 16;
+
+    // Count by asset class (Category) so the receiver can check quantities quickly.
+    const byClass = new Map();
+    items.forEach(({ fields }) => { const c = fields.category || 'Unspecified'; byClass.set(c, (byClass.get(c) || 0) + 1); });
+    y = sectionTitle(doc, 'SUMMARY', y);
+    y = table(doc, [{ label: 'Asset class', width: 0.8 }, { label: 'Qty', width: 0.2, align: 'right' }],
+      [...byClass.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => [c, n]), y);
+    y += 16;
+
+    y = sectionTitle(doc, `ITEMS (${items.length})`, y);
+    y = table(doc, [
+      { label: '#', width: 0.05, align: 'right' },
+      { label: 'Asset tag', width: 0.13 },
+      { label: 'Class', width: 0.14 },
+      { label: 'Make / model', width: 0.27 },
+      { label: 'Serial', width: 0.2 },
+      { label: 'Customer', width: 0.13 },
+      { label: 'Chk', width: 0.08, align: 'center' },
+    ], items.map(({ fields: f }, i) => [
+      i + 1, f.asset_tag || '', f.category || '',
+      [f.manufacturer, f.model_name || f.model_number].filter(Boolean).join(' '),
+      f.serial_number || '', f.customer || '', '[   ]',
+    ]), y);
+    y += 24;
+
+    y = ensureSpace(doc, y, 110);
+    y = sectionTitle(doc, 'PACKED / RECEIVED BY', y);
+    const left = doc.page.margins.left;
+    const width = doc.page.width - left - doc.page.margins.right;
+    const col = width / 3;
+    ['Name', 'Signature', 'Date'].forEach((label, i) => {
+      const x = left + i * col;
+      doc.moveTo(x + 4, y + 40).lineTo(x + col - 12, y + 40).strokeColor('#999').stroke();
+      doc.fontSize(8).fillColor(MUTED).font('Helvetica').text(label, x + 4, y + 44);
+    });
+  });
+}
+
+module.exports = { buildOrderPdf, buildInvoicePdf, buildRdInvoicePdf, invoiceReference, buildBatchPdf };

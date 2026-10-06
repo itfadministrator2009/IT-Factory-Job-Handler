@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban,
   Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
-  ClipboardList, Truck, MapPin, QrCode, Calculator,
+  ClipboardList, Truck, MapPin, QrCode, Calculator, Layers,
 } from 'lucide-react';
 import { useAuth, canUseModule } from '../context/AuthContext';
 import WhoIsOnline from './WhoIsOnline';
@@ -65,6 +65,7 @@ export default function Layout({ children }) {
           <Section id="assets" title="ITF Asset Tracker" icon={Boxes} home="/assets"
             open={open.assets} current={current === 'assets'} onToggle={toggle}>
             <NavLink to="/assets" end className={linkClass}><List size={14} /> All Assets</NavLink>
+            <NavLink to="/assets/batches" className={linkClass}><Layers size={14} /> Batches</NavLink>
             {isAdmin && <NavLink to="/assets/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
             {isAdmin && <NavLink to="/assets/fields" className={linkClass}><SlidersHorizontal size={14} /> Manage Fields</NavLink>}
           </Section>

@@ -227,6 +227,30 @@ CREATE TABLE IF NOT EXISTS asset_audit (
   FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
   FOREIGN KEY (changed_by) REFERENCES users(id)
 );
+-- Allocation batches: a named group of assets (e.g. "Wholesale – Buyer X – Oct")
+-- for an order or an allocation, with a packing list. An item keeps a snapshot of
+-- the asset as it was when added, so the batch still reads correctly if the asset
+-- is later deleted.
+CREATE TABLE IF NOT EXISTS asset_batches (
+  id TEXT PRIMARY KEY,
+  batch_number INTEGER,
+  name TEXT NOT NULL,
+  notes TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS asset_batch_items (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  snapshot_json TEXT,
+  added_by TEXT,
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(batch_id, asset_id),
+  FOREIGN KEY (batch_id) REFERENCES asset_batches(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_asset_batch_items_asset ON asset_batch_items(asset_id);
 -- ================= end Asset Tracker feature =================
 
 -- ================= Storage Centre feature =================

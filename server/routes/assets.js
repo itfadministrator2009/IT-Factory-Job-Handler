@@ -5,6 +5,7 @@ const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole, requireModule } = require('../permissions');
 const { notifyAssetReport } = require('../email');
+const { buildBatchPdf } = require('../storagePdf');
 
 const router = express.Router();
 router.use(authRequired);
@@ -43,6 +44,69 @@ function buildCsv(assets, defs) {
     lines.push(row.map(escape).join(','));
   });
   return lines.join('\r\n');
+}
+
+// ---------------------------------------------------------------------------
+// Filters and customer names
+// ---------------------------------------------------------------------------
+// A field's value with capitals, surrounding spaces and doubled spaces ignored —
+// so "ACME ", "Acme" and "acme" are one customer everywhere.
+const norm = (key) => `lower(trim(replace(replace(replace(COALESCE(json_extract(fields_json, '$.${key}'), ''), '  ', ' '), '  ', ' '), '  ', ' ')))`;
+const normText = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+const SERIAL = "upper(trim(COALESCE(json_extract(fields_json, '$.serial_number'), '')))";
+const FILTER_KEYS = { category: 'category', status: 'status', sent_to: 'asset_sent_to', customer: 'customer' };
+const NONE = '__none__'; // "Unspecified" — the field is blank
+
+// WHERE clause for the asset list, select-all, export and batches: free-text q,
+// exact field filters, duplicate serials only, and in-batch.
+function buildWhere(query = {}) {
+  const parts = []; const params = [];
+  const q = String(query.q || '').trim();
+  if (q) { parts.push('fields_json LIKE ?'); params.push(`%${q}%`); }
+  Object.entries(FILTER_KEYS).forEach(([param, key]) => {
+    const v = query[param];
+    if (v == null || v === '') return;
+    if (v === NONE) parts.push(`${norm(key)} = ''`);
+    else { parts.push(`${norm(key)} = ?`); params.push(normText(v)); }
+  });
+  if (query.dupes === '1' || query.dupes === 'true') {
+    parts.push(`${SERIAL} != '' AND ${SERIAL} IN (SELECT ${SERIAL} FROM assets GROUP BY ${SERIAL} HAVING COUNT(*) > 1)`);
+  }
+  if (query.batch) { parts.push('id IN (SELECT asset_id FROM asset_batch_items WHERE batch_id = ?)'); params.push(String(query.batch)); }
+  return { where: parts.length ? `WHERE ${parts.join(' AND ')}` : '', params };
+}
+
+// Group spellings of the same customer; show the most-used spelling for each.
+function canonicalCustomers() {
+  const rows = db.prepare(`SELECT json_extract(fields_json, '$.customer') as c, COUNT(*) as n FROM assets GROUP BY c`).all();
+  const groups = new Map();
+  rows.forEach(({ c, n }) => {
+    const key = normText(c);
+    const g = groups.get(key) || { key, total: 0, best: null, bestN: -1 };
+    g.total += n;
+    const label = String(c ?? '').trim().replace(/\s+/g, ' ');
+    // Most-used spelling wins; on a tie, prefer normal capitals over ALL CAPS.
+    const better = n > g.bestN || (n === g.bestN && g.best === g.best?.toUpperCase() && label !== label.toUpperCase());
+    if (label && better) { g.best = label; g.bestN = n; }
+    groups.set(key, g);
+  });
+  return groups; // key -> { key, total, best }
+}
+const customerLabel = (groups, value) => (normText(value) ? (groups.get(normText(value))?.best || String(value).trim()) : 'Unspecified');
+
+// Other assets already using this serial (ignoring capitals/spaces).
+function serialConflicts(serial, excludeId = null) {
+  const k = String(serial ?? '').trim().toUpperCase();
+  if (!k) return [];
+  return db.prepare(`SELECT id, fields_json FROM assets WHERE ${SERIAL} = ? AND id != ?`).all(k, excludeId || '')
+    .map((r) => { const f = JSON.parse(r.fields_json || '{}'); return { id: r.id, assetTag: f.asset_tag || '', customer: f.customer || '', status: f.status || '' }; });
+}
+function duplicateSerialResponse(res, serial, matches) {
+  return res.status(409).json({
+    code: 'duplicate_serial',
+    error: `Serial ${String(serial).trim()} is already on ${matches.length === 1 ? 'another asset' : `${matches.length} other assets`}${matches[0]?.assetTag ? ` (asset tag ${matches.map((m) => m.assetTag).filter(Boolean).join(', ')})` : ''}.`,
+    matches,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -106,10 +170,7 @@ router.get('/', (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 50));
   const offset = (page - 1) * limit;
-  const q = (req.query.q || '').trim();
-
-  const where = q ? 'WHERE fields_json LIKE ?' : '';
-  const whereParams = q ? [`%${q}%`] : [];
+  const { where, params: whereParams } = buildWhere(req.query);
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM assets ${where}`).get(...whereParams).c;
   const rows = db.prepare(`SELECT * FROM assets ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...whereParams, limit, offset);
@@ -120,9 +181,7 @@ router.get('/', (req, res) => {
 // every id across every page for bulk actions, without pulling full records for
 // however many hundreds of assets that might be.
 router.get('/all-ids', (req, res) => {
-  const q = (req.query.q || '').trim();
-  const where = q ? 'WHERE fields_json LIKE ?' : '';
-  const whereParams = q ? [`%${q}%`] : [];
+  const { where, params: whereParams } = buildWhere(req.query);
   const rows = db.prepare(`SELECT id FROM assets ${where} ORDER BY created_at DESC`).all(...whereParams);
   res.json({ ids: rows.map((r) => r.id) });
 });
@@ -130,6 +189,11 @@ router.get('/all-ids', (req, res) => {
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
+  // Warn before a second asset gets the same serial (the page can then save anyway).
+  if (!req.body.allowDuplicateSerial) {
+    const matches = serialConflicts(fields.serial_number);
+    if (matches.length) return duplicateSerialResponse(res, fields.serial_number, matches);
+  }
   const id = randomUUID();
   db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)').run(id, JSON.stringify(fields), req.user.id);
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
@@ -187,6 +251,133 @@ router.post('/serial-search', (req, res) => {
     hits.forEach((r) => assets.push(withParsedFields(r)));
   });
   res.json({ assets, searched: serials.length, found: serials.length - notFound.length, notFound, duplicates });
+});
+
+// Values for the filter drop-downs: each field's options plus anything actually
+// in use, and customers grouped regardless of capitals/spaces, with counts.
+router.get('/filter-options', (req, res) => {
+  const defs = getFieldDefs();
+  const used = (key) => db.prepare(`SELECT DISTINCT trim(json_extract(fields_json, '$.${key}')) as v FROM assets WHERE trim(COALESCE(json_extract(fields_json, '$.${key}'), '')) != ''`).all().map((r) => r.v);
+  const optionList = (key) => {
+    const seen = new Map();
+    [...(defs.find((d) => d.field_key === key)?.options || []), ...used(key)].forEach((v) => { if (!seen.has(normText(v))) seen.set(normText(v), v); });
+    return [...seen.values()];
+  };
+  const customers = [...canonicalCustomers().values()].filter((g) => g.key)
+    .map((g) => ({ value: g.best, count: g.total }))
+    .sort((a, b) => a.value.localeCompare(b.value, undefined, { sensitivity: 'base', numeric: true }));
+  res.json({ category: optionList('category'), status: optionList('status'), sent_to: optionList('asset_sent_to'), customer: customers });
+});
+
+// ---------------------------------------------------------------------------
+// Allocation batches — a named group of assets for an order or allocation
+// (e.g. "Wholesale – Buyer X – Oct"), with a packing list PDF.
+// ---------------------------------------------------------------------------
+const snapshotOf = (asset) => {
+  const f = JSON.parse(asset.fields_json || '{}');
+  const pick = ['asset_tag', 'category', 'manufacturer', 'model_name', 'model_number', 'serial_number', 'customer', 'status', 'asset_sent_to', 'buyer'];
+  return JSON.stringify(Object.fromEntries(pick.filter((k) => f[k] != null && f[k] !== '').map((k) => [k, f[k]])));
+};
+function addToBatch(batchId, assetIds, userId) {
+  const get = db.prepare('SELECT * FROM assets WHERE id = ?');
+  const ins = db.prepare('INSERT OR IGNORE INTO asset_batch_items (id, batch_id, asset_id, snapshot_json, added_by) VALUES (?, ?, ?, ?, ?)');
+  let added = 0;
+  db.transaction(() => {
+    assetIds.forEach((id) => {
+      const a = get.get(id);
+      if (a) added += ins.run(randomUUID(), batchId, id, snapshotOf(a), userId).changes;
+    });
+    db.prepare("UPDATE asset_batches SET updated_at = datetime('now') WHERE id = ?").run(batchId);
+  })();
+  return added;
+}
+function batchSummary(b) {
+  const count = db.prepare('SELECT COUNT(*) as c FROM asset_batch_items WHERE batch_id = ?').get(b.id).c;
+  const creator = b.created_by ? db.prepare('SELECT name FROM users WHERE id = ?').get(b.created_by)?.name : null;
+  return { id: b.id, number: b.batch_number, name: b.name, notes: b.notes || '', count, createdBy: creator || '', createdAt: b.created_at, updatedAt: b.updated_at };
+}
+function batchItems(batchId) {
+  const getAsset = db.prepare('SELECT * FROM assets WHERE id = ?');
+  return db.prepare('SELECT * FROM asset_batch_items WHERE batch_id = ? ORDER BY added_at, rowid').all(batchId).map((it) => {
+    const live = getAsset.get(it.asset_id);
+    return { itemId: it.id, assetId: it.asset_id, deleted: !live, addedAt: it.added_at, fields: live ? JSON.parse(live.fields_json || '{}') : JSON.parse(it.snapshot_json || '{}') };
+  });
+}
+const adminOnly = (req, res) => { if (isAdmin(req.user.id)) return false; res.status(403).json({ error: 'Only admins can change batches' }); return true; };
+
+router.get('/batches', (req, res) => {
+  res.json({ batches: db.prepare('SELECT * FROM asset_batches ORDER BY created_at DESC').all().map(batchSummary) });
+});
+
+router.post('/batches', (req, res) => {
+  if (adminOnly(req, res)) return;
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Give the batch a name' });
+  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds : [];
+  const id = randomUUID();
+  const number = (db.prepare('SELECT MAX(batch_number) as m FROM asset_batches').get().m || 0) + 1;
+  db.prepare('INSERT INTO asset_batches (id, batch_number, name, notes, created_by) VALUES (?, ?, ?, ?, ?)').run(id, number, name, String(req.body?.notes || '').trim() || null, req.user.id);
+  const added = addToBatch(id, ids, req.user.id);
+  res.status(201).json({ batch: batchSummary(db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(id)), added });
+});
+
+router.get('/batches/:batchId', (req, res) => {
+  const b = db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(req.params.batchId);
+  if (!b) return res.status(404).json({ error: 'Batch not found' });
+  res.json({ batch: batchSummary(b), items: batchItems(b.id) });
+});
+
+router.patch('/batches/:batchId', (req, res) => {
+  if (adminOnly(req, res)) return;
+  const b = db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(req.params.batchId);
+  if (!b) return res.status(404).json({ error: 'Batch not found' });
+  const name = req.body?.name !== undefined ? String(req.body.name).trim() : b.name;
+  if (!name) return res.status(400).json({ error: 'Give the batch a name' });
+  const notes = req.body?.notes !== undefined ? String(req.body.notes).trim() || null : b.notes;
+  db.prepare("UPDATE asset_batches SET name = ?, notes = ?, updated_at = datetime('now') WHERE id = ?").run(name, notes, b.id);
+  res.json({ batch: batchSummary(db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(b.id)) });
+});
+
+router.post('/batches/:batchId/items', (req, res) => {
+  if (adminOnly(req, res)) return;
+  const b = db.prepare('SELECT id FROM asset_batches WHERE id = ?').get(req.params.batchId);
+  if (!b) return res.status(404).json({ error: 'Batch not found' });
+  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds : [];
+  if (!ids.length) return res.status(400).json({ error: 'Choose at least one asset' });
+  res.json({ added: addToBatch(b.id, ids, req.user.id), batch: batchSummary(db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(b.id)) });
+});
+
+router.post('/batches/:batchId/remove', (req, res) => {
+  if (adminOnly(req, res)) return;
+  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds : [];
+  const del = db.prepare('DELETE FROM asset_batch_items WHERE batch_id = ? AND asset_id = ?');
+  let removed = 0;
+  db.transaction(() => { ids.forEach((id) => { removed += del.run(req.params.batchId, id).changes; }); })();
+  db.prepare("UPDATE asset_batches SET updated_at = datetime('now') WHERE id = ?").run(req.params.batchId);
+  res.json({ removed });
+});
+
+// Deleting a batch only removes the grouping — the assets themselves stay.
+router.delete('/batches/:batchId', (req, res) => {
+  if (adminOnly(req, res)) return;
+  const r = db.prepare('DELETE FROM asset_batches WHERE id = ?').run(req.params.batchId);
+  if (!r.changes) return res.status(404).json({ error: 'Batch not found' });
+  db.prepare('DELETE FROM asset_batch_items WHERE batch_id = ?').run(req.params.batchId);
+  res.json({ ok: true });
+});
+
+router.get('/batches/:batchId/pdf', async (req, res) => {
+  const b = db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(req.params.batchId);
+  if (!b) return res.status(404).json({ error: 'Batch not found' });
+  try {
+    const buffer = await buildBatchPdf(batchSummary(b), batchItems(b.id));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="batch-${b.batch_number}-${b.name.replace(/[^A-Za-z0-9._-]+/g, '_')}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('[assets] batch PDF failed:', err);
+    res.status(500).json({ error: 'Could not make the packing list' });
+  }
 });
 
 router.post('/bulk-delete', (req, res) => {
@@ -266,9 +457,7 @@ router.get('/email-defaults', (req, res) => {
 });
 
 router.get('/export', (req, res) => {
-  const q = (req.query.q || '').trim();
-  const where = q ? 'WHERE fields_json LIKE ?' : '';
-  const whereParams = q ? [`%${q}%`] : [];
+  const { where, params: whereParams } = buildWhere(req.query);
   const rows = db.prepare(`SELECT * FROM assets ${where} ORDER BY created_at DESC`).all(...whereParams).map(withParsedFields);
   const defs = getFieldDefs();
   const csv = buildCsv(rows, defs);
@@ -355,11 +544,21 @@ router.post('/import', upload.single('file'), (req, res) => {
 
   let created = 0;
   const skippedColumns = [];
+  // Rows whose serial is already on file (or earlier in the same file) are skipped
+  // unless "import duplicates" was ticked — and listed back either way.
+  const allowDuplicates = ['1', 'true', 'yes'].includes(String(req.body?.allowDuplicates || '').toLowerCase());
+  const knownSerials = new Set(db.prepare(`SELECT ${SERIAL} as s FROM assets WHERE ${SERIAL} != ''`).all().map((r) => r.s));
+  const duplicateSerials = [];
+  const skippedRows = [];
+  // "Import the skipped rows anyway": the page sends back just those row numbers.
+  let onlyRows = null;
+  try { const v = JSON.parse(req.body?.onlyRows || 'null'); if (Array.isArray(v)) onlyRows = new Set(v.map(Number)); } catch (e) { /* ignore */ }
   headerCells.forEach((h) => { if (!labelToKey.has(h.toLowerCase()) && h !== 'Date Created' && h !== 'User Name') skippedColumns.push(h); });
 
   const insertWithDate = db.prepare('INSERT INTO assets (id, fields_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
   const insertDefault = db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)');
   for (let i = 1; i < lines.length; i++) {
+    if (onlyRows && !onlyRows.has(i)) continue;
     const cells = parseCsvLine(lines[i]);
     const fields = {};
     headerCells.forEach((h, idx) => {
@@ -384,6 +583,13 @@ router.post('/import', upload.single('file'), (req, res) => {
 
     if (Object.keys(fields).length === 0) continue;
 
+    const serialKey = String(fields.serial_number ?? '').trim().toUpperCase();
+    if (serialKey && knownSerials.has(serialKey) && !onlyRows) {
+      duplicateSerials.push(String(fields.serial_number).trim());
+      if (!allowDuplicates) { skippedRows.push(i); continue; }
+    }
+    if (serialKey) knownSerials.add(serialKey);
+
     const historicalDate = dateCreatedIdx >= 0 ? parseHistoricalDate(cells[dateCreatedIdx]) : null;
     if (historicalDate) {
       insertWithDate.run(randomUUID(), JSON.stringify(fields), createdBy, historicalDate, historicalDate);
@@ -393,7 +599,7 @@ router.post('/import', upload.single('file'), (req, res) => {
     created++;
   }
 
-  res.json({ ok: true, created, skippedColumns });
+  res.json({ ok: true, created, skippedColumns, duplicateSerials, skippedRows, duplicatesImported: allowDuplicates || !!onlyRows });
 });
 
 router.get('/reports/summary', (req, res) => {
@@ -428,21 +634,30 @@ router.get('/reports/summary', (req, res) => {
     FROM assets GROUP BY year, quarter ORDER BY year DESC, quarter DESC
   `).all().map((r) => ({ period: `${r.year} Q${r.quarter}`, count: r.count }));
 
-  const byCompany = db.prepare(`
-    SELECT COALESCE(json_extract(fields_json, '$.customer'), 'Unspecified') as company, COUNT(*) as count
-    FROM assets GROUP BY company ORDER BY count DESC
-  `).all();
+  // Spellings of the same customer ("ACME ", "Acme") count as one.
+  const customers = canonicalCustomers();
+  const byCompany = [...customers.values()]
+    .map((g) => ({ company: g.key ? g.best || 'Unspecified' : 'Unspecified', count: g.total }))
+    .sort((a, b) => b.count - a.count);
 
   // Asset class (the Category field) — counted per customer, status and where it
   // was sent, so the page can show the breakdown for all customers or just one.
-  const classRows = db.prepare(`
+  const classMerged = new Map();
+  db.prepare(`
     SELECT COALESCE(NULLIF(trim(json_extract(fields_json, '$.category')), ''), 'Unspecified') as assetClass,
-           COALESCE(NULLIF(trim(json_extract(fields_json, '$.customer')), ''), 'Unspecified') as customer,
+           ${norm('customer')} as customerKey,
            COALESCE(NULLIF(trim(json_extract(fields_json, '$.status')), ''), '') as status,
            COALESCE(NULLIF(trim(json_extract(fields_json, '$.asset_sent_to')), ''), '') as sentTo,
            COUNT(*) as count
-    FROM assets GROUP BY assetClass, customer, status, sentTo
-  `).all();
+    FROM assets GROUP BY assetClass, customerKey, status, sentTo
+  `).all().forEach((r) => {
+    const customer = r.customerKey ? (customers.get(r.customerKey)?.best || r.customerKey) : 'Unspecified';
+    const k = [r.assetClass, customer, r.status, r.sentTo].join('\u0001');
+    const row = classMerged.get(k) || { assetClass: r.assetClass, customer, status: r.status, sentTo: r.sentTo, count: 0 };
+    row.count += r.count;
+    classMerged.set(k, row);
+  });
+  const classRows = [...classMerged.values()];
 
   res.json({ total, byTech, byMonth, byQuarter, byYear, byCompany, classRows });
 });
@@ -466,6 +681,12 @@ router.patch('/:id', (req, res) => {
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
 
   const oldFields = JSON.parse(asset.fields_json || '{}');
+  const serialChanged = 'serial_number' in fields
+    && String(fields.serial_number ?? '').trim().toUpperCase() !== String(oldFields.serial_number ?? '').trim().toUpperCase();
+  if (serialChanged && !req.body.allowDuplicateSerial) {
+    const matches = serialConflicts(fields.serial_number, asset.id);
+    if (matches.length) return duplicateSerialResponse(res, fields.serial_number, matches);
+  }
   const defs = getFieldDefs();
   Object.keys(fields).forEach((key) => {
     const oldVal = oldFields[key];

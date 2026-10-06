@@ -32,6 +32,7 @@ import StorageCalculator from './pages/StorageCalculator';
 import StoragePalletLabels from './pages/StoragePalletLabels';
 import StorageRestore from './pages/StorageRestore';
 import RecordRestore from './pages/RecordRestore';
+import AssetBatches from './pages/AssetBatches';
 import PortalLogin from './pages/PortalLogin';
 import Portal from './pages/Portal';
 import { hasPortalSession } from './portal/portalApi';
@@ -104,6 +105,8 @@ function AppRoutes() {
       <Route path="/assets" element={<RequireModule module="assets"><AssetTracker /></RequireModule>} />
       <Route path="/assets/reports" element={<RequireAdmin><AssetReports /></RequireAdmin>} />
       <Route path="/assets/fields" element={<RequireAdmin><AssetFields /></RequireAdmin>} />
+      <Route path="/assets/batches" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
+      <Route path="/assets/batches/:id" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
 
       <Route path="/storage" element={<RequireModule module="storage"><StorageManifest /></RequireModule>} />
       <Route path="/storage/pallets" element={<RequireModule module="storage"><StoragePallets /></RequireModule>} />

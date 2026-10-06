@@ -39,7 +39,8 @@ export default function AssetReports() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
             <ReportPanel title="By Technician" rows={data.byTech.map((r) => [r.name, r.count])} color="var(--purple)" />
-            <ReportPanel title="By Customer" rows={data.byCompany.map((r) => [r.company, r.count])} color="var(--blue)" />
+            <ReportPanel title="By Customer" rows={data.byCompany.map((r) => [r.company, r.count])} color="var(--blue)"
+              linkFor={(label) => assetsLink({ customer: label === 'Unspecified' ? NONE : label })} />
             <ReportPanel title="By Month" rows={data.byMonth.map((r) => [r.period, r.count])} color="var(--teal)" />
             <ReportPanel title="By Quarter" rows={data.byQuarter.map((r) => [r.period, r.count])} color="var(--amber)" />
             <ReportPanel title="By Year" rows={data.byYear.map((r) => [r.period, r.count])} color="var(--green)" />
@@ -50,7 +51,15 @@ export default function AssetReports() {
   );
 }
 
-function ReportPanel({ title, rows, color }) {
+// Numbers link to the Asset Tracker showing exactly those assets.
+const NONE = '__none__';
+function assetsLink(filters) {
+  const p = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => { if (v) p.set(k, v); });
+  return `/assets?${p.toString()}`;
+}
+
+function ReportPanel({ title, rows, color, linkFor }) {
   return (
     <div className="panel" style={{ padding: 18, marginBottom: 18, borderLeft: `4px solid ${color}` }}>
       <h3 style={{ fontSize: 15, marginBottom: 12 }}>{title}</h3>
@@ -62,7 +71,7 @@ function ReportPanel({ title, rows, color }) {
             {rows.map(([label, count]) => (
               <tr key={label}>
                 <td>{label}</td>
-                <td style={{ textAlign: 'right', fontWeight: 600 }}>{count}</td>
+                <td style={{ textAlign: 'right', fontWeight: 600 }}>{linkFor ? <Link to={linkFor(label)} title="Show these assets">{count}</Link> : count}</td>
               </tr>
             ))}
           </tbody>
@@ -100,6 +109,10 @@ function AssetClassReport({ rows }) {
   }, [picked]);
   const sum = (fn) => classes.reduce((t, c) => t + (fn(c) || 0), 0);
   const cell = { textAlign: 'right' };
+  // Each number opens the Asset Tracker filtered to just those assets.
+  const cust = customer ? (customer === 'Unspecified' ? NONE : customer) : '';
+  const cls = (name) => (name === 'Unspecified' ? NONE : name);
+  const num = (n, filters) => (n ? <Link to={assetsLink({ customer: cust, ...filters })} title="Show these assets">{n}</Link> : '—');
 
   return (
     <div className="panel" style={{ padding: 18, marginBottom: 18, borderLeft: '4px solid var(--teal)' }}>
@@ -110,6 +123,7 @@ function AssetClassReport({ rows }) {
           {customers.map(([c, n]) => <option key={c} value={c}>{c} ({n})</option>)}
         </select>
       </div>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '-4px 0 10px' }}>Click any number to see those assets.</p>
       {classes.length === 0 ? <p style={{ fontSize: 13, color: 'var(--muted)' }}>No data yet.</p> : (
         <div style={{ overflowX: 'auto' }}>
           <table className="ticket-table">
@@ -125,16 +139,16 @@ function AssetClassReport({ rows }) {
               {classes.map((c) => (
                 <tr key={c.name}>
                   <td>{c.name}</td>
-                  <td style={{ ...cell, fontWeight: 600 }}>{c.total}</td>
-                  {statuses.map((s) => <td key={s} style={cell}>{c.status[s] || '—'}</td>)}
-                  {sentTos.map((s) => <td key={s} style={cell}>{c.sent[s] || '—'}</td>)}
+                  <td style={{ ...cell, fontWeight: 600 }}>{num(c.total, { category: cls(c.name) })}</td>
+                  {statuses.map((s) => <td key={s} style={cell}>{num(c.status[s], { category: cls(c.name), status: s })}</td>)}
+                  {sentTos.map((s) => <td key={s} style={cell}>{num(c.sent[s], { category: cls(c.name), sent_to: s })}</td>)}
                 </tr>
               ))}
               <tr style={{ fontWeight: 700 }}>
                 <td>Total</td>
-                <td style={cell}>{sum((c) => c.total)}</td>
-                {statuses.map((s) => <td key={s} style={cell}>{sum((c) => c.status[s])}</td>)}
-                {sentTos.map((s) => <td key={s} style={cell}>{sum((c) => c.sent[s])}</td>)}
+                <td style={cell}>{num(sum((c) => c.total), {})}</td>
+                {statuses.map((s) => <td key={s} style={cell}>{num(sum((c) => c.status[s]), { status: s })}</td>)}
+                {sentTos.map((s) => <td key={s} style={cell}>{num(sum((c) => c.sent[s]), { sent_to: s })}</td>)}
               </tr>
             </tbody>
           </table>
