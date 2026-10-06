@@ -951,3 +951,136 @@ input, select, textarea {
 /* Client Orders: compact one-line rows like the old app. */
 .orders-table td { padding-top: 10px; padding-bottom: 10px; font-size: 13px; }
 .orders-table th { white-space: nowrap; }
+
+/* ---------- ITF Asset Tracker: compact table that fits the screen ---------- */
+.ticket-table.asset-table { table-layout: fixed; }
+.asset-table th {
+  font-size: 11px;
+  padding: 9px 8px;
+  white-space: normal;
+  line-height: 1.25;
+  vertical-align: bottom;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.asset-table td {
+  font-size: 13px;
+  padding: 9px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.asset-table td.mono { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+.asset-table td.muted { color: var(--muted); }
+.asset-table td.actions { overflow: visible; padding-left: 2px; padding-right: 4px; }
+.asset-table td.actions .icon-btn { padding: 4px 6px; }
+.asset-table th:first-child, .asset-table td:first-child { padding-left: 12px; }
+
+/* ---------- Filter bar: labelled drop-downs ---------- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.filter-bar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding-right: 4px;
+}
+.filter-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 150px;
+  padding: 5px 34px 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #faf9f6;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, box-shadow 120ms;
+}
+.filter-field.wide { min-width: 230px; }
+.filter-field:hover { border-color: #c9c7bd; background: #fff; }
+.filter-field:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(21, 94, 107, 0.12); background: #fff; }
+.filter-field.active { border-color: var(--teal); background: #e9f3f4; }
+.filter-field::after {
+  content: '';
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.filter-field.active::after { border-color: var(--teal); }
+.filter-field-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.filter-field.active .filter-field-label { color: var(--teal); }
+.filter-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  padding: 1px 0 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  outline: none;
+  width: 100%;
+  text-overflow: ellipsis;
+}
+.filter-field.active select { font-weight: 600; color: var(--teal); }
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #faf9f6;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.filter-toggle:hover { border-color: #c9c7bd; background: #fff; }
+.filter-toggle.active { border-color: var(--teal); background: #e9f3f4; color: var(--teal); font-weight: 600; }
+.filter-toggle input { accent-color: var(--teal); }
+.filter-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  color: var(--coral);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.filter-clear:hover { background: #fdf0e8; }
