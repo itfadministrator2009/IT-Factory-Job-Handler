@@ -10,6 +10,10 @@ import { useAuth } from '../context/AuthContext';
 // fields, since showing all 24+ as columns would be unusable. Clicking a row opens
 // every field for that asset.
 const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'model_number', 'serial_number', 'customer', 'status', 'asset_sent_to', 'zoho_ticket_number'];
+// Share of the table width for each column, so all of them fit on screen. Long
+// values are cut short with "…" — hover a cell to see it in full.
+const COL_WIDTHS = { asset_tag: 9, category: 9, manufacturer: 7, model_name: 10, model_number: 7, serial_number: 12, customer: 12, status: 7, asset_sent_to: 9, zoho_ticket_number: 6 };
+const SHORT_HEADINGS = { zoho_ticket_number: 'Zoho #', asset_sent_to: 'Sent to', model_number: 'Model no.', serial_number: 'Serial number', manufacturer: 'Make' };
 
 // Exact-match filters (URL parameters, so a report can link straight to a list).
 // "__none__" = the field is blank. dupes=1: only assets whose serial is on more
@@ -469,8 +473,8 @@ export default function AssetTracker() {
         {isAdmin && <Link to="/assets/fields" className="btn btn-ghost btn-sm"><Sliders size={14} /> Manage fields</Link>}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        <Filter size={14} style={{ color: 'var(--muted)' }} />
+      <div className="filter-bar">
+        <span className="filter-bar-title"><Filter size={14} /> Filter</span>
         {FILTERS.map(({ param, label }) => {
           const opts = param === 'customer'
             ? (filterOptions?.customer || []).map((c) => ({ value: c.value, text: `${c.value} (${c.count})` }))
@@ -478,16 +482,19 @@ export default function AssetTracker() {
           const current = filters[param];
           const known = !current || current === NONE || opts.some((o) => o.value.toLowerCase() === current.toLowerCase());
           return (
-            <select key={param} aria-label={label} value={opts.find((o) => o.value.toLowerCase() === current.toLowerCase())?.value ?? current}
-              onChange={(e) => setFilter(param, e.target.value)} style={{ minWidth: 140, fontWeight: current ? 600 : 400 }}>
-              <option value="">{label}: any</option>
-              {opts.map((o) => <option key={o.value} value={o.value}>{o.text}</option>)}
-              <option value={NONE}>{label}: (blank)</option>
-              {!known && <option value={current}>{current}</option>}
-            </select>
+            <label key={param} className={`filter-field${current ? ' active' : ''}${param === 'customer' ? ' wide' : ''}`}>
+              <span className="filter-field-label">{label}</span>
+              <select aria-label={label} value={opts.find((o) => o.value.toLowerCase() === current.toLowerCase())?.value ?? current}
+                onChange={(e) => setFilter(param, e.target.value)}>
+                <option value="">All</option>
+                {opts.map((o) => <option key={o.value} value={o.value}>{o.text}</option>)}
+                <option value={NONE}>(blank)</option>
+                {!known && <option value={current}>{current}</option>}
+              </select>
+            </label>
           );
         })}
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+        <label className={`filter-toggle${filters.dupes === '1' ? ' active' : ''}`}>
           <input type="checkbox" checked={filters.dupes === '1'} onChange={(e) => setFilter('dupes', e.target.checked ? '1' : '')} /> Duplicate serials only
         </label>
         {filters.batch && (
@@ -497,7 +504,7 @@ export default function AssetTracker() {
           </span>
         )}
         {Object.keys(activeFilters).length > 0 && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}><X size={13} /> Clear filters</button>
+          <button type="button" className="filter-clear" onClick={clearFilters}><X size={13} /> Clear filters</button>
         )}
       </div>
 
@@ -611,13 +618,20 @@ export default function AssetTracker() {
           </div>
           )
         ) : (
-          <table className="ticket-table">
+          <table className="ticket-table asset-table">
+            <colgroup>
+              {isAdmin && <col style={{ width: 34 }} />}
+              {SUMMARY_KEYS.map((key) => <col key={key} style={{ width: `${COL_WIDTHS[key] || 8}%` }} />)}
+              <col style={{ width: 82 }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: isAdmin ? 84 : 44 }} />
+            </colgroup>
             <thead>
               <tr>
-                {isAdmin && <th style={{ width: 32 }}><input type="checkbox" checked={shown.length > 0 && shown.every((a) => selected.has(a.id))} onChange={toggleSelectAll} /></th>}
+                {isAdmin && <th><input type="checkbox" checked={shown.length > 0 && shown.every((a) => selected.has(a.id))} onChange={toggleSelectAll} /></th>}
                 {SUMMARY_KEYS.map((key) => {
                   const def = fieldDefs?.find((f) => f.field_key === key);
-                  return <th key={key}>{def?.label || key}</th>;
+                  return <th key={key} title={def?.label || key}>{SHORT_HEADINGS[key] || def?.label || key}</th>;
                 })}
                 <th>Date</th>
                 <th>By</th>
@@ -632,11 +646,14 @@ export default function AssetTracker() {
                       <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} />
                     </td>
                   )}
-                  {SUMMARY_KEYS.map((key) => <td key={key}>{displayValue(a.fields[key])}</td>)}
-                  <td style={{ color: 'var(--muted)' }}>{formatDate(a.created_at)}</td>
-                  <td style={{ color: 'var(--muted)' }}>{a.fields._imported_creator_name || a.creator?.name || '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                  {SUMMARY_KEYS.map((key) => {
+                    const v = displayValue(a.fields[key]);
+                    return <td key={key} title={v || undefined} className={key === 'serial_number' || key === 'asset_tag' ? 'mono' : undefined}>{v}</td>;
+                  })}
+                  <td className="muted" title={formatDate(a.created_at)}>{shortDate(a.created_at)}</td>
+                  <td className="muted" title={a.fields._imported_creator_name || a.creator?.name || ''}>{a.fields._imported_creator_name || a.creator?.name || '—'}</td>
+                  <td className="actions" onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: 'flex', gap: 2 }}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEditForm(a)} title="Edit"><Pencil size={13} /></button>
                       {isAdmin && (
                         <button type="button" className="btn btn-ghost btn-sm icon-btn" style={{ color: 'var(--danger)' }} onClick={(e) => handleDeleteAsset(a.id, e)} title="Delete">
@@ -851,6 +868,12 @@ export default function AssetTracker() {
       )}
     </Layout>
   );
+}
+
+// e.g. 07/10/26 — the full date and time shows on hover.
+function shortDate(s) {
+  const d = new Date(String(s || '').replace(' ', 'T') + 'Z');
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-AU', { timeZone: 'Australia/Sydney', day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 function formatDate(s) {
