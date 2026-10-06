@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil, BarChart3, Sliders } from 'lucide-react';
+import { Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil, BarChart3, Sliders, ListChecks, Copy } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +42,15 @@ export default function AssetTracker() {
   const importInputRef = useRef(null);
   const [importMsg, setImportMsg] = useState('');
 
+  // Bulk serial search: a pasted list of serials replaces the normal paged list
+  // until it's cleared. serialResult = { assets, searched, found, notFound, duplicates }.
+  const [showSerialModal, setShowSerialModal] = useState(false);
+  const [serialText, setSerialText] = useState('');
+  const [serialResult, setSerialResult] = useState(null);
+  const [serialBusy, setSerialBusy] = useState(false);
+  const [serialError, setSerialError] = useState('');
+  const [copiedMissing, setCopiedMissing] = useState(false);
+
   function loadFieldDefs() {
     api.get('/assets/field-defs').then((res) => setFieldDefs(res.data.fields));
   }
@@ -55,8 +64,36 @@ export default function AssetTracker() {
   }
   useEffect(() => { loadFieldDefs(); loadAssets(1, ''); }, []);
 
+  async function runSerialSearch(text = serialText, { selectAll = true } = {}) {
+    setSerialBusy(true);
+    setSerialError('');
+    try {
+      const { data } = await api.post('/assets/serial-search', { serials: text });
+      setSerialResult(data);
+      setShowSerialModal(false);
+      setCopiedMissing(false);
+      // Tick every match so bulk actions (Set field, Email, Export) apply straight away.
+      setSelected(selectAll ? new Set(data.assets.map((a) => a.id)) : new Set());
+    } catch (err) {
+      setSerialError(err.response?.data?.error || 'Could not search those serials');
+    } finally {
+      setSerialBusy(false);
+    }
+  }
+  function clearSerialSearch() {
+    setSerialResult(null);
+    setSelected(new Set());
+    loadAssets(1, query);
+  }
+  // Reload whichever list is on screen (after an edit, bulk change or delete).
+  function refreshList() {
+    if (serialResult) runSerialSearch(serialText, { selectAll: false });
+    else loadAssets();
+  }
+
   function handleSearch(e) {
     e.preventDefault();
+    setSerialResult(null);
     setSelected(new Set());
     loadAssets(1, query);
   }
@@ -89,7 +126,7 @@ export default function AssetTracker() {
         await api.post('/assets', { fields: formValues });
       }
       setShowForm(false);
-      loadAssets();
+      refreshList();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save');
     } finally {
@@ -101,7 +138,7 @@ export default function AssetTracker() {
     e.stopPropagation();
     if (!confirm('Delete this asset?')) return;
     await api.delete(`/assets/${id}`);
-    loadAssets();
+    refreshList();
   }
 
   function toggleSelect(id) {
@@ -112,8 +149,9 @@ export default function AssetTracker() {
     });
   }
   function toggleSelectAll() {
-    if (selected.size === assets.length) setSelected(new Set());
-    else setSelected(new Set(assets.map((a) => a.id)));
+    const list = serialResult ? serialResult.assets : assets;
+    if (list.every((a) => selected.has(a.id))) setSelected(new Set());
+    else setSelected(new Set(list.map((a) => a.id)));
   }
 
   async function handleSelectAllMatching() {
@@ -127,7 +165,7 @@ export default function AssetTracker() {
     try {
       await api.post('/assets/bulk-delete', { ids: Array.from(selected) });
       setSelected(new Set());
-      loadAssets();
+      refreshList();
     } finally {
       setBulkApplying(false);
     }
@@ -141,7 +179,7 @@ export default function AssetTracker() {
       setSelected(new Set());
       setBulkFieldKey('');
       setBulkFieldValue('');
-      loadAssets();
+      refreshList();
     } finally {
       setBulkApplying(false);
     }
@@ -187,7 +225,10 @@ export default function AssetTracker() {
     // requires — fetching via the API client and triggering a named download
     // client-side (same approach used for PDF downloads elsewhere in this app)
     // avoids that entirely.
-    const res = await api.get('/assets/export', { params: { q: query }, responseType: 'blob' });
+    // In a serial search, export the ticked assets (or all the matches if none are ticked).
+    const res = serialResult
+      ? await api.post('/assets/export', { ids: selected.size ? Array.from(selected) : serialResult.assets.map((a) => a.id) }, { responseType: 'blob' })
+      : await api.get('/assets/export', { params: { q: query }, responseType: 'blob' });
     const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
     const link = document.createElement('a');
     link.href = url;
@@ -260,6 +301,8 @@ export default function AssetTracker() {
   }
 
   const bulkFieldDef = fieldDefs?.find((f) => f.field_key === bulkFieldKey);
+  // The list on screen: a serial search result, or the normal page of assets.
+  const shown = serialResult ? serialResult.assets : assets;
 
   return (
     <Layout>
@@ -283,6 +326,7 @@ export default function AssetTracker() {
           />
           <button type="submit" className="btn btn-ghost btn-sm"><Search size={14} /> Search</button>
         </form>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSerialError(''); setShowSerialModal(true); }}><ListChecks size={14} /> Bulk serial search</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={handleExport}><Download size={14} /> Export</button>
         {isAdmin && (
           <>
@@ -308,7 +352,38 @@ export default function AssetTracker() {
         </div>
       )}
 
-      {isAdmin && selected.size > 0 && selected.size === assets?.length && total > assets.length && (
+      {serialResult && (
+        <div className="panel" style={{ padding: '12px 16px', marginBottom: 12, borderLeft: '4px solid var(--teal)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: 14 }}>Bulk serial search</strong>
+            <span style={{ fontSize: 13 }}>
+              {serialResult.found} of {serialResult.searched} serial{serialResult.searched === 1 ? '' : 's'} found
+              {' · '}{serialResult.assets.length} asset{serialResult.assets.length === 1 ? '' : 's'} shown
+              {isAdmin && serialResult.assets.length > 0 && ' (all ticked — use Set field below to allocate them)'}
+            </span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowSerialModal(true)}>Edit list</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={clearSerialSearch}><X size={13} /> Clear serial search</button>
+            </span>
+          </div>
+          {serialResult.notFound.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 13, color: 'var(--danger)' }}>
+              Not found ({serialResult.notFound.length}): <span style={{ fontFamily: 'monospace' }}>{serialResult.notFound.join(', ')}</span>{' '}
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 6 }}
+                onClick={() => { navigator.clipboard?.writeText(serialResult.notFound.join('\n')); setCopiedMissing(true); }}>
+                <Copy size={12} /> {copiedMissing ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          )}
+          {serialResult.duplicates.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 13, color: '#9a5b00' }}>
+              On more than one asset: {serialResult.duplicates.map((d) => `${d.serial} (×${d.count})`).join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isAdmin && !serialResult && selected.size > 0 && selected.size === assets?.length && total > assets.length && (
         <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--muted)' }}>
           All {assets.length} on this page are selected.{' '}
           <button type="button" onClick={handleSelectAllMatching} style={{ background: 'none', border: 'none', color: 'var(--teal)', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>
@@ -341,18 +416,22 @@ export default function AssetTracker() {
       )}
 
       <div className="panel" style={{ padding: 0 }}>
-        {!assets ? (
+        {!shown ? (
           <div className="empty-state">Loading…</div>
-        ) : assets.length === 0 ? (
+        ) : shown.length === 0 ? (
+          serialResult ? (
+            <div className="empty-state"><h3>None of those serials are on file</h3></div>
+          ) : (
           <div className="empty-state">
             <h3>No assets yet</h3>
             <p>Click "Add asset" to log your first entry.</p>
           </div>
+          )
         ) : (
           <table className="ticket-table">
             <thead>
               <tr>
-                {isAdmin && <th style={{ width: 32 }}><input type="checkbox" checked={selected.size === assets.length} onChange={toggleSelectAll} /></th>}
+                {isAdmin && <th style={{ width: 32 }}><input type="checkbox" checked={shown.length > 0 && shown.every((a) => selected.has(a.id))} onChange={toggleSelectAll} /></th>}
                 {SUMMARY_KEYS.map((key) => {
                   const def = fieldDefs?.find((f) => f.field_key === key);
                   return <th key={key}>{def?.label || key}</th>;
@@ -363,7 +442,7 @@ export default function AssetTracker() {
               </tr>
             </thead>
             <tbody>
-              {assets.map((a) => (
+              {shown.map((a) => (
                 <tr key={a.id} className="clickable" onClick={() => openEditForm(a)}>
                   {isAdmin && (
                     <td onClick={(e) => e.stopPropagation()}>
@@ -388,7 +467,7 @@ export default function AssetTracker() {
             </tbody>
           </table>
         )}
-        {assets && assets.length > 0 && totalPages > 1 && (
+        {!serialResult && assets && assets.length > 0 && totalPages > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', padding: '14px 0' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadAssets(page - 1)} disabled={page <= 1}>Previous</button>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>Page {page} of {totalPages}</span>
@@ -396,6 +475,32 @@ export default function AssetTracker() {
           </div>
         )}
       </div>
+
+      {showSerialModal && (
+        <div className="modal-overlay" onClick={() => !serialBusy && setShowSerialModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <h3>Bulk serial search</h3>
+              {!serialBusy && <button type="button" onClick={() => setShowSerialModal(false)}><X size={18} /></button>}
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+              Paste or scan serial numbers — one per line, or separated by commas or spaces. You can paste a column straight from Excel.
+              The matching assets are shown and ticked, ready to allocate to an order, ITF Australia or Wholesale.
+            </p>
+            {serialError && <div className="error-banner">{serialError}</div>}
+            <textarea value={serialText} onChange={(e) => setSerialText(e.target.value)} autoFocus rows={12}
+              placeholder={'5CG5513GZ8\n5CG5513GYR\nHZ83RK4'} style={{ width: '100%', fontFamily: 'monospace', fontSize: 13 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                {(() => { const n = new Set(serialText.split(/[\s,;]+/).map((v) => v.trim().toUpperCase()).filter(Boolean)).size; return `${n} serial${n === 1 ? '' : 's'}`; })()}
+              </span>
+              <button type="button" className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={serialBusy || !serialText.trim()} onClick={() => runSerialSearch()}>
+                <Search size={14} /> {serialBusy ? 'Searching…' : 'Find assets'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && fieldDefs && (
         <div className="modal-overlay" onClick={() => !saving && setShowForm(false)}>
