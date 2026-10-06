@@ -144,6 +144,51 @@ router.post('/', (req, res) => {
 // asset id (exactly the bug this ordering avoids).
 // ---------------------------------------------------------------------------
 
+// Bulk serial search: paste a list of serial numbers (one per line, or separated
+// by commas/spaces) and get back every asset with one of those serials — to pick
+// out a batch for an order, or to allocate a bunch to ITF Australia / Wholesale.
+// Matching ignores capitals and surrounding spaces. Serials with no asset come
+// back in notFound; serials on more than one asset come back in duplicates.
+function parseSerialList(input) {
+  const list = Array.isArray(input) ? input : String(input || '').split(/[\s,;]+/);
+  const seen = new Set(); const out = [];
+  list.map((v) => String(v || '').trim()).filter(Boolean).forEach((v) => {
+    const k = v.toUpperCase();
+    if (!seen.has(k)) { seen.add(k); out.push(v); }
+  });
+  return out;
+}
+
+function findBySerials(serials) {
+  const rows = [];
+  for (let i = 0; i < serials.length; i += 500) {
+    const chunk = serials.slice(i, i + 500).map((v) => v.toUpperCase());
+    rows.push(...db.prepare(`SELECT * FROM assets WHERE upper(trim(json_extract(fields_json, '$.serial_number'))) IN (${chunk.map(() => '?').join(',')})`).all(...chunk));
+  }
+  return rows;
+}
+
+router.post('/serial-search', (req, res) => {
+  const serials = parseSerialList(req.body?.serials);
+  if (!serials.length) return res.status(400).json({ error: 'Paste at least one serial number' });
+  if (serials.length > 5000) return res.status(400).json({ error: 'At most 5000 serials at a time' });
+  const bySerial = new Map();
+  findBySerials(serials).forEach((row) => {
+    const k = String(JSON.parse(row.fields_json || '{}').serial_number || '').trim().toUpperCase();
+    if (!bySerial.has(k)) bySerial.set(k, []);
+    bySerial.get(k).push(row);
+  });
+  // Keep the order the serials were pasted in.
+  const assets = []; const notFound = []; const duplicates = [];
+  serials.forEach((s) => {
+    const hits = bySerial.get(s.toUpperCase()) || [];
+    if (!hits.length) notFound.push(s);
+    if (hits.length > 1) duplicates.push({ serial: s, count: hits.length });
+    hits.forEach((r) => assets.push(withParsedFields(r)));
+  });
+  res.json({ assets, searched: serials.length, found: serials.length - notFound.length, notFound, duplicates });
+});
+
 router.post('/bulk-delete', (req, res) => {
   if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can bulk-delete assets' });
   const { ids } = req.body;
@@ -202,6 +247,18 @@ router.post('/bulk-email', async (req, res) => {
     console.error('[assets] Could not send report email:', err.message);
     res.status(500).json({ error: 'Could not send email' });
   }
+});
+
+// Export exactly these assets (e.g. a bulk serial search result) as CSV.
+router.post('/export', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const get = db.prepare('SELECT * FROM assets WHERE id = ?');
+  const rows = ids.map((id) => get.get(id)).filter(Boolean).map(withParsedFields);
+  const csv = buildCsv(rows, getFieldDefs());
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="asset-export-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(csv);
 });
 
 router.get('/email-defaults', (req, res) => {
@@ -376,7 +433,18 @@ router.get('/reports/summary', (req, res) => {
     FROM assets GROUP BY company ORDER BY count DESC
   `).all();
 
-  res.json({ total, byTech, byMonth, byQuarter, byYear, byCompany });
+  // Asset class (the Category field) — counted per customer, status and where it
+  // was sent, so the page can show the breakdown for all customers or just one.
+  const classRows = db.prepare(`
+    SELECT COALESCE(NULLIF(trim(json_extract(fields_json, '$.category')), ''), 'Unspecified') as assetClass,
+           COALESCE(NULLIF(trim(json_extract(fields_json, '$.customer')), ''), 'Unspecified') as customer,
+           COALESCE(NULLIF(trim(json_extract(fields_json, '$.status')), ''), '') as status,
+           COALESCE(NULLIF(trim(json_extract(fields_json, '$.asset_sent_to')), ''), '') as sentTo,
+           COUNT(*) as count
+    FROM assets GROUP BY assetClass, customer, status, sentTo
+  `).all();
+
+  res.json({ total, byTech, byMonth, byQuarter, byYear, byCompany, classRows });
 });
 
 // ---------------------------------------------------------------------------
