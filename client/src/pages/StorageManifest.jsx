@@ -232,9 +232,9 @@ export default function StorageManifest() {
       )}
 
       <div className="stat-grid" style={{ marginBottom: 12 }}>
-        <div className="stat-card"><div className="num">{stats.inStorage}</div><div className="label">Items in storage</div></div>
-        <div className="stat-card"><div className="num">{stats.clients}</div><div className="label">Clients</div></div>
-        <div className="stat-card"><div className="num">{stats.qty}</div><div className="label">Total quantity</div></div>
+        <div className="stat-card accent-blue"><div className="num">{stats.inStorage}</div><div className="label">Items in storage</div></div>
+        <div className="stat-card accent-aqua"><div className="num">{stats.clients}</div><div className="label">Clients</div></div>
+        <div className="stat-card accent-yellow"><div className="num">{stats.qty}</div><div className="label">Total quantity</div></div>
       </div>
       {clientFilter && stats.byType.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -242,31 +242,40 @@ export default function StorageManifest() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }} className="no-print">
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'stretch' }} className="no-print">
         <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 240, alignItems: 'center' }}>
           <Search size={14} style={{ marginLeft: 4 }} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search client, item, serial, location…" style={{ flex: 1, border: '1px solid var(--line)', borderRadius: 8, padding: '9px 12px' }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search client, item, serial, location…" style={{ flex: 1, alignSelf: 'stretch', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 12px', background: '#fff' }} />
         </div>
-        <select value={clients.find((c) => sameText(c, clientFilter)) ?? clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
-          <option value="">All clients</option>
-          {clients.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={centres.find((c) => sameText(c, centreFilter)) ?? centreFilter} onChange={(e) => setCentreFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
-          <option value="">All storage centres</option>
-          {centres.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '9px 10px' }}>
-          <option value="">Any status</option>
-          <option value="In storage">In storage</option>
-          <option value="Out of Storage">Out of Storage</option>
-        </select>
+        <label className={`filter-field wide${clientFilter ? ' active' : ''}`}>
+          <span className="filter-field-label">Client</span>
+          <select aria-label="Client" value={clients.find((c) => sameText(c, clientFilter)) ?? clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
+            <option value="">All clients</option>
+            {clients.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className={`filter-field${centreFilter ? ' active' : ''}`}>
+          <span className="filter-field-label">Storage centre</span>
+          <select aria-label="Storage centre" value={centres.find((c) => sameText(c, centreFilter)) ?? centreFilter} onChange={(e) => setCentreFilter(e.target.value)}>
+            <option value="">All</option>
+            {centres.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className={`filter-field${statusFilter ? ' active' : ''}`}>
+          <span className="filter-field-label">Status</span>
+          <select aria-label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">All</option>
+            <option value="In storage">In storage</option>
+            <option value="Out of Storage">Out of Storage</option>
+          </select>
+        </label>
         {locationFilter && (
           <span className="chip active" style={{ cursor: 'default' }}>
             Location: {locationFilter}
             <button type="button" onClick={() => setLocationFilter('')} aria-label="Clear location" style={{ background: 'none', border: 'none', color: 'inherit', marginLeft: 6, cursor: 'pointer', padding: 0 }}>×</button>
           </span>
         )}
-        {hasFilters && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setQuery(''); setClientFilter(''); setCentreFilter(''); setStatusFilter(''); setLocationFilter(''); }}>Clear filters</button>}
+        {hasFilters && <button type="button" className="filter-clear" onClick={() => { setQuery(''); setClientFilter(''); setCentreFilter(''); setStatusFilter(''); setLocationFilter(''); }}>Clear filters</button>}
       </div>
 
       {selected.size > 0 && (

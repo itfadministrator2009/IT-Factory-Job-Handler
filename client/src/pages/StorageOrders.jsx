@@ -193,16 +193,19 @@ export default function StorageOrders() {
         </div>
       </div>
 
-      <div className="no-print" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+      <div className="no-print" style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 420 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search order #, client, serial, address, contact…" style={{ width: '100%', paddingLeft: 30 }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search order #, client, serial, address, contact…" style={{ width: '100%', height: '100%', paddingLeft: 30, border: '1px solid var(--line)', borderRadius: 10, background: '#fff' }} />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">Any status</option>
-          {['Pending', ...STATUSES].map((st) => <option key={st} value={st}>{st}</option>)}
-        </select>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Click an order number or its devices for the full details.</span>
+        <label className={`filter-field${statusFilter ? ' active' : ''}`}>
+          <span className="filter-field-label">Status</span>
+          <select aria-label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">All</option>
+            {['Pending', ...STATUSES].map((st) => <option key={st} value={st}>{st}</option>)}
+          </select>
+        </label>
+        <span style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>Click an order number or its devices for the full details.</span>
       </div>
 
       <div className="panel" style={{ padding: 0 }}>
