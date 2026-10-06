@@ -368,13 +368,18 @@ function notifyStorageOrderTracking({ toEmail, orderNumber, clientName, tracking
   const html = brandedEmail({
     title: 'Your order is on its way',
     bodyHtml: `
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 12px;">Dear ${clientName ? e(clientName) : 'Customer'},</p>
       <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px;">
-        ${clientName ? `${e(clientName)}, your` : 'Your'} order <strong>${e(orderNumber)}</strong> has been dispatched.
+        Your order <strong>${e(orderNumber)}</strong> has been dispatched.
       </p>
       <div style="background:#f6f5f1; border-radius:6px; padding:14px 16px; margin:0 0 16px; font-size:14px; color:#333;">
         <strong>Order number:</strong> ${e(orderNumber)}${trackingNumber ? `<br><strong>Tracking number:</strong> ${e(trackingNumber)}` : ''}
       </div>
       ${message ? `<p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 16px; white-space:pre-wrap;">${e(message)}</p>` : ''}
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0 0 12px;">
+        We deeply appreciate your confidence in our services and look forward to continuing our work together.
+      </p>
+      <p style="font-size:14px; color:#333; line-height:1.6; margin:0;">Have a lovely day.<br><strong>IT Factory Team</strong></p>
     `,
   });
 
@@ -382,10 +387,12 @@ function notifyStorageOrderTracking({ toEmail, orderNumber, clientName, tracking
     to: toEmail,
     subject: `Your order ${orderNumber} is on its way`,
     text: [
-      'Hi,', '', `Your order ${orderNumber}${clientName ? ` for ${clientName}` : ''} is on its way.`,
+      `Dear ${clientName || 'Customer'},`, '', `Your order ${orderNumber} has been dispatched.`,
+      '', `Order number: ${orderNumber}`,
       ...(trackingNumber ? [`Tracking number: ${trackingNumber}`] : []),
       ...(message ? ['', message] : []),
-      '', 'Thanks,', 'IT Factory Storage Centre',
+      '', 'We deeply appreciate your confidence in our services and look forward to continuing our work together.',
+      '', 'Have a lovely day.', 'IT Factory Team',
     ].join('\n'),
     html,
   });
