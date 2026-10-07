@@ -91,6 +91,27 @@ test('portal orders email staff with the full order details', async () => {
   assert.equal(mail.devices, 'Laptop Dell 5420 S/N SER-1');
 });
 
+test('portal orders still email the team when STORAGE_NOTIFY_EMAILS is not set', async () => {
+  const saved = process.env.STORAGE_NOTIFY_EMAILS;
+  delete process.env.STORAGE_NOTIFY_EMAILS;
+  try {
+    db.prepare("INSERT INTO storage_clients (id, client_name, username, password_hash) VALUES ('c-g', 'Golf', 'golf', ?)").run(require('bcryptjs').hashSync('golf-password-1', 4));
+    const { data: login } = await client.post('/api/storage-portal/login', { body: { username: 'golf', password: 'golf-password-1' } });
+    db.prepare("INSERT INTO storage_items (id, client, item, make, model, serial, start_date) VALUES ('g1', 'Golf', 'Laptop', 'HP', '840', 'SER-2', '2026-09-01')").run();
+    sent.length = 0;
+    const res = await client.post('/api/storage-portal/orders', {
+      token: login.token,
+      body: { deviceIds: ['g1'], deliveryAddress: '3 Test Rd', requestedBy: 'Pat' },
+    });
+    assert.equal(res.status, 201);
+    const mail = sent.find((m) => m.type === 'order');
+    assert.ok(mail, 'an order email was sent');
+    assert.deepEqual(mail.toEmails, ['sam@itfactory.com.au', 'tom@itfactory.com.au', 'rnahas@itfactory.com.au', 'michael@itfactory.com.au', 'admin@itfactory.com.au', 'elina@itfactory.com.au']);
+  } finally {
+    process.env.STORAGE_NOTIFY_EMAILS = saved;
+  }
+});
+
 test('portal pallet count only counts locations classified as pallets', async () => {
   const item = db.prepare('INSERT INTO storage_items (id, client, storage_centre, location, start_date, end_date) VALUES (?,?,?,?,?,?)');
   item.run('f1', 'Foxtrot', 'WP', 'Pallet 7', '2026-09-01', null);
