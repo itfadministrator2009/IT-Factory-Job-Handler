@@ -10,6 +10,7 @@ const { randomUUID } = require('crypto');
 const { db, nextStorageOrderNumber } = require('../db');
 const { signStorageClientToken, storageClientRequired } = require('../auth');
 const { notifyStorageOrderSubmitted } = require('../email');
+const { orderNotifyList } = require('../storageNotify');
 const { parseStockParts } = require('../storageBilling');
 const { buildOrderPdf } = require('../storagePdf');
 
@@ -171,7 +172,8 @@ router.post('/orders', orderLimiter, (req, res) => {
     .run(id, orderNumber, client.client_name, devices, clean('deliveryAddress'), clean('siteContactName') || null,
       clean('siteContactPhone') || null, date || null, clean('configInformation') || null, clean('notes') || null, requestor);
 
-  const notifyList = (process.env.STORAGE_NOTIFY_EMAILS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  // Tell the team a client has placed an order (see storageNotify.js for the list).
+  const notifyList = orderNotifyList();
   if (notifyList.length) {
     notifyStorageOrderSubmitted({
       toEmails: notifyList, orderNumber, clientName: client.client_name, devices: deviceLines,

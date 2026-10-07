@@ -5,6 +5,7 @@ const { db, nextStorageOrderNumber } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole, requireModule } = require('../permissions');
 const { notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived } = require('../email');
+const { orderNotifyList } = require('../storageNotify');
 const {
   ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement, rdLinesInPeriod, round2,
 } = require('../storageBilling');
@@ -470,9 +471,8 @@ router.post('/orders', (req, res) => {
       b.siteContactPhone || null, b.dateToBeDelivered || null, b.configInformation || null, b.notes || null, b.requestor || req.user.name);
   const order = db.prepare('SELECT * FROM storage_orders WHERE id = ?').get(id);
 
-  // Internal notification — recipients configurable later; for now this is a no-op
-  // unless STORAGE_NOTIFY_EMAILS is set, since there's no admin UI for it yet.
-  const notifyList = (process.env.STORAGE_NOTIFY_EMAILS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  // Internal "new order placed" email to the team (see storageNotify.js for the list).
+  const notifyList = orderNotifyList();
   if (notifyList.length) {
     notifyStorageOrderSubmitted({
       toEmails: notifyList, orderNumber, clientName: b.client, devices: b.devices,
