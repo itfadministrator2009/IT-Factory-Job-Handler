@@ -1183,3 +1183,20 @@ a.stat-card:hover, .stat-card.clickable:hover { box-shadow: 0 4px 14px rgba(22, 
 /* Two charts side by side on report pages; one column on narrow screens. */
 .report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
 @media (max-width: 900px) { .report-grid { grid-template-columns: 1fr; } }
+
+/* Several email addresses in one box, each shown as a removable tag. */
+.email-chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  min-height: 40px; padding: 5px 8px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: #fff; cursor: text;
+}
+.email-chips.focused { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(21, 94, 107, 0.12); }
+.email-chips input { flex: 1; min-width: 160px; border: none !important; outline: none; box-shadow: none !important; padding: 4px 2px !important; background: transparent; font-size: 14px; }
+.email-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 4px 3px 10px; border-radius: 999px;
+  background: #e9f3f4; color: var(--teal); font-size: 13px; font-weight: 500;
+}
+.email-chip.bad { background: #fbe1e1; color: #b42f2e; }
+.email-chip button { display: inline-flex; align-items: center; border: none; background: none; color: inherit; cursor: pointer; padding: 2px; border-radius: 50%; }
+.email-chip button:hover { background: rgba(0, 0, 0, 0.08); }
