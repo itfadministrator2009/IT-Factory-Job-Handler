@@ -154,6 +154,46 @@ input, select, textarea {
   text-underline-offset: 2px;
 }
 
+/* "N online now" in the sidebar footer — click to list who's online. */
+.online-box { position: relative; }
+.online-avatar {
+  position: relative;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; color: var(--teal);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 12px; flex-shrink: 0;
+}
+.online-avatar.small { width: 28px; height: 28px; background: #e9f3f4; }
+.online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #4caf6a; margin-right: 5px; }
+.online-dot.on-avatar { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; margin: 0; border: 2px solid #fff; }
+.sidebar-footer .online-toggle {
+  display: inline-flex; align-items: center;
+  margin: 0; padding: 1px 6px 1px 0; border-radius: 6px;
+  color: #b7ccc7; font-size: 12px; text-decoration: none; cursor: pointer;
+}
+.sidebar-footer .online-toggle:hover, .sidebar-footer .online-toggle[aria-expanded="true"] { color: #fff; }
+.online-caret {
+  display: inline-block; width: 5px; height: 5px; margin-left: 6px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
+.online-caret.up { transform: rotate(45deg) translate(-2px, -2px); }
+.online-list {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 50;
+  width: 240px; max-height: 320px; overflow-y: auto;
+  background: #fff; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(22, 36, 31, 0.22);
+  padding: 8px;
+}
+.online-list-head { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 4px 6px 8px; }
+.online-list ul { list-style: none; margin: 0; padding: 0; }
+.online-list li { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; font-size: 13px; }
+.online-list li:hover { background: #f6f5f1; }
+.online-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.online-you { color: var(--muted); }
+.online-when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
 .main {
   flex: 1;
   min-width: 0;
