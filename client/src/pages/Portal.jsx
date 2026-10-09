@@ -64,7 +64,9 @@ function StockTab() {
 
   useEffect(() => {
     portalApi.get('/items')
-      .then((res) => setItems(res.data.items))
+      // Number order for locations (Pallet 2 before Pallet 10), then by device.
+      .then((res) => setItems([...res.data.items].sort((a, b) => naturalCompare(a.storageCentre, b.storageCentre)
+        || naturalCompare(a.location, b.location) || naturalCompare(a.item, b.item) || naturalCompare(a.serial, b.serial))))
       .catch((err) => setError(err.response?.data?.error || 'Could not load your stock'));
   }, []);
 
@@ -235,17 +237,35 @@ function NewOrderTab({ onSubmitted }) {
     return [i.item, i.make, i.model, i.serial].filter(Boolean).join(' ').toLowerCase().includes(q);
   };
 
+  // Pallets in number order (Pallet 1, 2, 3 … 10, 11). A location counts as a
+  // pallet if it's ticked as one on the Locations page, or its name says
+  // "pallet" — so a pallet that hasn't been ticked yet still gets its own
+  // heading instead of dropping into the list below. Everything is sorted the
+  // same "natural" way, so 2 comes before 10.
   const { palletGroups, loose } = useMemo(() => {
     const groups = {};
     const rest = [];
+    const tidy = (s) => String(s || '').trim().replace(/\s+/g, ' ');
+    const byDevice = (a, b) => naturalCompare(a.item, b.item) || naturalCompare(a.make, b.make)
+      || naturalCompare(a.model, b.model) || naturalCompare(a.serial, b.serial);
     (items || []).forEach((i) => {
-      if (i.onPallet) {
-        const key = `${i.storageCentre || ''}|||${i.location}`;
-        if (!groups[key]) groups[key] = { key, label: i.location, items: [] };
+      const loc = tidy(i.location);
+      if (loc && (i.onPallet || /\bpallet\b/i.test(loc))) {
+        const key = `${tidy(i.storageCentre).toLowerCase()}|||${loc.toLowerCase()}`;
+        if (!groups[key]) groups[key] = { key, label: loc, centre: tidy(i.storageCentre), items: [] };
         groups[key].items.push(i);
       } else rest.push(i);
     });
-    return { palletGroups: Object.values(groups).sort((a, b) => naturalCompare(a.label, b.label)), loose: rest };
+    const list = Object.values(groups);
+    list.forEach((g) => g.items.sort(byDevice));
+    list.sort((a, b) => naturalCompare(a.label, b.label) || naturalCompare(a.centre, b.centre));
+    // Same pallet number at two storage centres: say which centre each one is at.
+    list.forEach((g) => {
+      g.title = g.label;
+      if (g.centre && list.some((h) => h !== g && h.label.toLowerCase() === g.label.toLowerCase())) g.title = `${g.label} — ${g.centre}`;
+    });
+    rest.sort((a, b) => naturalCompare(tidy(a.location), tidy(b.location)) || byDevice(a, b));
+    return { palletGroups: list, loose: rest };
   }, [items]);
 
   function toggle(id) {
@@ -323,7 +343,7 @@ function NewOrderTab({ onSubmitted }) {
                     <input type="checkbox" checked={n === g.items.length}
                       ref={(el) => { if (el) el.indeterminate = n > 0 && n < g.items.length; }}
                       onChange={(e) => toggleGroup(g, e.target.checked)} />
-                    Pallet: {g.label} ({g.items.length} item{g.items.length === 1 ? '' : 's'})
+                    Pallet: {g.title} ({g.items.length} item{g.items.length === 1 ? '' : 's'})
                   </label>
                   {g.items.map(deviceRow)}
                 </div>
