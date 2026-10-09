@@ -4,6 +4,7 @@ import { Plus, X, FileText, Truck, Printer, Search } from 'lucide-react';
 import api from '../api';
 import { openPdf } from '../utils/pdf';
 import Layout from '../components/Layout';
+import EmailChips, { addEmails, isEmail } from '../components/EmailChips';
 import { useAuth } from '../context/AuthContext';
 import { dmy } from '../storage/common';
 
@@ -72,7 +73,8 @@ export default function StorageOrders() {
   // Delivered-status tracking-email modal — mirrors the original Apps Script app's
   // "email the customer their order is on its way" step.
   const [deliverModal, setDeliverModal] = useState(null); // { order }
-  const [toEmail, setToEmail] = useState('');
+  const [toEmails, setToEmails] = useState([]); // one or more customer addresses
+  const [emailDraft, setEmailDraft] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
   const [message, setMessage] = useState('');
   const [deliverBusy, setDeliverBusy] = useState(false);
@@ -135,7 +137,8 @@ export default function StorageOrders() {
     }
     if (newStatus === 'Delivered') {
       setDeliverModal(order);
-      setToEmail('');
+      setToEmails([]);
+      setEmailDraft('');
       setTrackingNumber('');
       setMessage('');
       setDeliverError('');
@@ -146,12 +149,21 @@ export default function StorageOrders() {
   }
 
   async function submitDeliver(skipEmail) {
+    // Include whatever is still typed in the box, not just the finished tags.
+    const recipients = addEmails(toEmails, emailDraft);
+    if (!skipEmail) {
+      const bad = recipients.filter((a) => !isEmail(a));
+      if (!recipients.length) { setDeliverError('Enter at least one email address, or use Skip email.'); return; }
+      if (bad.length) { setDeliverError(`Not a valid email address: ${bad.join(', ')}`); return; }
+      setToEmails(recipients);
+      setEmailDraft('');
+    }
     setDeliverBusy(true);
     setDeliverError('');
     try {
       await api.post(`/storage/orders/${deliverModal.id}/deliver`, {
         skipEmail,
-        toEmail: skipEmail ? undefined : toEmail,
+        toEmail: skipEmail ? undefined : recipients,
         trackingNumber: skipEmail ? undefined : trackingNumber,
         message: skipEmail ? undefined : message,
       });
@@ -162,7 +174,7 @@ export default function StorageOrders() {
     }
     // Delivered → straight on to a pre-filled dispatch entry (and the manifest end dates),
     // the same as "Send to dispatch".
-    const emailedTo = skipEmail ? null : toEmail.trim();
+    const emailedTo = skipEmail ? null : recipients.join(', ');
     try {
       const { data } = await api.post(`/storage/orders/${deliverModal.id}/dispatch`, {});
       setDeliverModal(null);
@@ -364,17 +376,21 @@ export default function StorageOrders() {
             </div>
             {deliverError && <div className="error-banner">{deliverError}</div>}
             <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
-              Optionally email the customer that their order is on its way (with a tracking number if you have one). Enter the recipient's address below, or Skip to mark it Delivered without emailing.
+              Optionally email the customer that their order is on its way (with a tracking number if you have one). Enter one or more addresses below, or Skip to mark it Delivered without emailing.
               Either way you'll then go to Receiving / Dispatch with the dispatch entry filled in, and the order's devices get today as their storage end date on the manifest.
             </p>
             <div className="form-grid">
-              <div className="field"><label>Customer email address</label><input type="email" value={toEmail} onChange={(e) => setToEmail(e.target.value)} placeholder="customer@example.com" /></div>
+              <div className="field span-2">
+                <label htmlFor="deliver-emails">Customer email addresses</label>
+                <EmailChips id="deliver-emails" value={toEmails} onChange={setToEmails} draft={emailDraft} onDraftChange={setEmailDraft} placeholder="customer@example.com" />
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Press Enter or comma after each address. You can also paste a list.</div>
+              </div>
               <div className="field"><label>Tracking number (optional)</label><input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} /></div>
               <div className="field span-2"><label>Message (optional)</label><textarea value={message} onChange={(e) => setMessage(e.target.value)} /></div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button type="button" className="btn btn-ghost" onClick={() => submitDeliver(true)} disabled={deliverBusy} style={{ flex: 1 }}>Skip email</button>
-              <button type="button" className="btn btn-accent" onClick={() => submitDeliver(false)} disabled={deliverBusy || !toEmail} style={{ flex: 1 }}>
+              <button type="button" className="btn btn-accent" onClick={() => submitDeliver(false)} disabled={deliverBusy || (!toEmails.length && !emailDraft.trim())} style={{ flex: 1 }}>
                 {deliverBusy ? 'Working…' : 'Send & mark Delivered'}
               </button>
             </div>
