@@ -523,20 +523,27 @@ router.post('/orders/:id/deliver', async (req, res) => {
   const { skipEmail, toEmail, trackingNumber, message } = req.body || {};
 
   if (!skipEmail) {
-    // Tracking number is optional, as in the old app; the email just leaves that line out.
-    if (!toEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(toEmail).trim())) {
-      return res.status(400).json({ error: 'A valid customer email is required unless skipEmail is true' });
-    }
+    // One or more addresses: an array, or text separated by commas, semicolons,
+    // spaces or new lines. Tracking number is optional, as in the old app.
+    const raw = Array.isArray(toEmail) ? toEmail.join(',') : String(toEmail || '');
+    const seen = new Set();
+    const recipients = raw.split(/[\s,;]+/).map((a) => a.trim()).filter(Boolean)
+      .filter((a) => { const k = a.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    const bad = recipients.filter((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a));
+    if (!recipients.length) return res.status(400).json({ error: 'A valid customer email is required unless skipEmail is true' });
+    if (bad.length) return res.status(400).json({ error: `Not a valid email address: ${bad.join(', ')}` });
+    if (recipients.length > 20) return res.status(400).json({ error: 'Up to 20 email addresses at a time' });
+    const sentTo = recipients.join(', ');
     try {
       await notifyStorageOrderTracking({
-        toEmail: String(toEmail).trim(), orderNumber: existing.order_number, clientName: existing.client, trackingNumber: trackingNumber || '', message,
+        toEmail: sentTo, orderNumber: existing.order_number, clientName: existing.client, trackingNumber: trackingNumber || '', message,
       });
     } catch (err) {
       console.error('[storage] tracking email failed:', err.message);
       return res.status(502).json({ error: 'Could not send the tracking email. The order was not marked Delivered — try again or use Skip.' });
     }
     db.prepare(`UPDATE storage_orders SET status = 'Delivered', tracking_number = ?, tracking_email_sent_to = ?, tracking_email_sent_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
-      .run(trackingNumber || null, String(toEmail).trim(), req.params.id);
+      .run(trackingNumber || null, sentTo, req.params.id);
   } else {
     db.prepare(`UPDATE storage_orders SET status = 'Delivered', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
   }
