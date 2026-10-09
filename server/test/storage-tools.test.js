@@ -163,6 +163,21 @@ test('order statuses are validated; tracking number is optional on Delivered', a
   assert.equal(sent[0].trackingNumber, '');
 });
 
+test('delivered email can go to several addresses at once', async () => {
+  db.prepare("INSERT INTO storage_orders (id, order_number, client, status) VALUES ('o2', 'SC-90002', 'Kilo', 'In Progress')").run();
+  const oneBad = await client.post('/api/storage/orders/o2/deliver', { token: staff.token, body: { toEmail: 'a@example.com, nope' } });
+  assert.equal(oneBad.status, 400);
+  assert.match(oneBad.data.error, /nope/);
+  sent.length = 0;
+  const ok = await client.post('/api/storage/orders/o2/deliver', {
+    token: staff.token, body: { toEmail: ['a@example.com', 'b@example.com; c@example.com', 'A@example.com'] },
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].toEmail, 'a@example.com, b@example.com, c@example.com');
+  assert.equal(ok.data.order.trackingEmailSentTo, 'a@example.com, b@example.com, c@example.com');
+});
+
 test('presence: heartbeat lists who is online; sign-out clears it', async () => {
   await client.post('/api/presence/heartbeat', { token: staff.token });
   const { data } = await client.post('/api/presence/heartbeat', { token: admin.token });
