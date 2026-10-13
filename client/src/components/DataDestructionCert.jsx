@@ -2,10 +2,11 @@ import { useRef, useState } from 'react';
 import { ShieldCheck, X, Upload } from 'lucide-react';
 import { readSpreadsheet } from '../storage/sheetReader';
 
-// "Data Destruction Certificate" on a job: uses the spreadsheet attached to the
-// job (newest .xlsx/.csv; pick another if there are several), shows what was
-// read, then downloads the PDF certificate. With no spreadsheet attached, a file
-// can be chosen from the computer instead. The columns are found
+// "Data Destruction Certificate" on a job: one click reads the equipment
+// spreadsheet uploaded to the job and downloads the PDF certificate straight
+// away (customer = the job's account, date of issue = today). If the job has
+// several spreadsheets, a window asks which one; with none, a file can be chosen
+// from the computer instead. The columns are found
 // by their headings (Category / Model Name / Model Number / Serial Number, or
 // the usual alternatives like Item, Make, Model, Serial).
 const COLS = [
@@ -65,6 +66,15 @@ export default function DataDestructionCert({ api, job }) {
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       setSheetFiles(files);
       if (!files.length) { setNoSheet(true); return; }
+      if (files.length === 1) {
+        // The usual case: one spreadsheet on the job — straight to the PDF.
+        const res = await api.get(`/attachments/${files[0].id}/download`, { responseType: 'blob' });
+        const parsed = await parse(new File([res.data], files[0].original_name));
+        if (!parsed.rows.length) { alert(`No devices found in ${files[0].original_name}.`); return; }
+        const err = await download(parsed.rows, job.account_name || job.contact_name || '', todayYmd());
+        if (err) alert(err);
+        return;
+      }
       await loadAttachment(files[0]);
     } catch {
       alert('Could not look up the files attached to this job');
@@ -88,13 +98,36 @@ export default function DataDestructionCert({ api, job }) {
     await readFile(file);
   }
 
+  async function parse(file) {
+    const { headers, data } = await readSpreadsheet(file);
+    const map = matchColumns(headers);
+    const rows = data.map((r) => Object.fromEntries(COLS.map((c) => [c.key, map[c.key] != null ? cellText(r[map[c.key]]) : ''])))
+      .filter((r) => r.item || r.make || r.model || r.serial);
+    return { headers, map, rows };
+  }
+
+  // Builds the PDF and saves it. Returns an error message, or '' when done.
+  async function download(rows, cust, date) {
+    try {
+      const res = await api.post(`/jobs/${job.id}/data-destruction-certificate`, { rows, customer: cust, issueDate: date }, { responseType: 'blob' });
+      const name = res.headers['x-filename'] || `${job.job_number}_Certificate_of_Data_Destruction.pdf`;
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+      return '';
+    } catch (err) {
+      let msg = 'Could not create the certificate';
+      try { msg = JSON.parse(await err.response.data.text()).error || msg; } catch { /* not JSON */ }
+      return msg;
+    }
+  }
+
   async function readFile(file) {
     setError('');
     try {
-      const { headers, data } = await readSpreadsheet(file);
-      const map = matchColumns(headers);
-      const rows = data.map((r) => Object.fromEntries(COLS.map((c) => [c.key, map[c.key] != null ? cellText(r[map[c.key]]) : ''])))
-        .filter((r) => r.item || r.make || r.model || r.serial);
+      const { headers, map, rows } = await parse(file);
       setSheet({ fileName: file.name, headers, map, rows });
       setNoSheet(false);
       setCustomer(job.account_name || job.contact_name || '');
@@ -110,28 +143,15 @@ export default function DataDestructionCert({ api, job }) {
   async function create() {
     setBusy(true);
     setError('');
-    try {
-      const res = await api.post(`/jobs/${job.id}/data-destruction-certificate`, { rows: sheet.rows, customer, issueDate }, { responseType: 'blob' });
-      const name = res.headers['x-filename'] || `${job.job_number}_Certificate_of_Data_Destruction.pdf`;
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => window.URL.revokeObjectURL(url), 10000);
-      setSheet(null);
-    } catch (err) {
-      let msg = 'Could not create the certificate';
-      try { msg = JSON.parse(await err.response.data.text()).error || msg; } catch { /* not JSON */ }
-      setError(msg);
-    } finally {
-      setBusy(false);
-    }
+    const err = await download(sheet.rows, customer, issueDate);
+    if (err) setError(err); else setSheet(null);
+    setBusy(false);
   }
 
   return (
     <>
       <button className="btn btn-ghost btn-sm" onClick={start} disabled={finding} title="Make a Certificate of Data Destruction from the spreadsheet attached to this job">
-        <ShieldCheck size={14} /> {finding ? 'Reading spreadsheet…' : 'Data Destruction Certificate'}
+        <ShieldCheck size={14} /> {finding ? 'Creating certificate…' : 'Data Destruction Certificate'}
       </button>
       <input ref={fileRef} type="file" accept=".xlsx,.csv" style={{ display: 'none' }} onChange={onFile} />
 
