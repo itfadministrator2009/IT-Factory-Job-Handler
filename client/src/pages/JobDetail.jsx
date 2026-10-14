@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Paperclip, Pencil, CheckCircle2, X, FileText, Mail, PenLine, Wrench, MapPin, History, AlertTriangle, Trash2 } from 'lucide-react';
+import { Paperclip, Pencil, CheckCircle2, X, FileText, PenLine, Wrench, MapPin, History, AlertTriangle, Trash2 } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import AttachmentManager from '../components/AttachmentManager';
 import ItemsManager from '../components/ItemsManager';
 import SignaturePad from '../components/SignaturePad';
 import DataDestructionCert from '../components/DataDestructionCert';
+import EmailJobSheet from '../components/EmailJobSheet';
 import { openJobPdf } from '../utils/pdf';
 import { formatDMY } from '../utils/date';
 import { StatusPill, PriorityPill } from '../components/Pill';
@@ -34,7 +35,6 @@ export default function JobDetail() {
   const [error, setError] = useState('');
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
-  const [emailingPdf, setEmailingPdf] = useState(false);
   const [emailSentMsg, setEmailSentMsg] = useState('');
   const [deleting, setDeleting] = useState(false);
 
@@ -107,19 +107,6 @@ export default function JobDetail() {
     }
   }
 
-  async function handleEmailPdf() {
-    setEmailingPdf(true);
-    setEmailSentMsg('');
-    try {
-      const { data } = await api.post(`/jobs/${id}/email-pdf`);
-      setEmailSentMsg(`Job sheet emailed to ${data.sentTo}`);
-    } catch (err) {
-      setEmailSentMsg(err.response?.data?.error || 'Could not send email');
-    } finally {
-      setEmailingPdf(false);
-    }
-  }
-
   if (error) return <Layout><div className="empty-state"><h3>{error}</h3></div></Layout>;
   if (!job) return <Layout><div className="empty-state">Loading…</div></Layout>;
 
@@ -153,9 +140,7 @@ export default function JobDetail() {
             <FileText size={14} /> {generatingPdf ? 'Generating…' : 'Job Sheet PDF'}
           </button>
           <DataDestructionCert api={api} job={job} />
-          <button className="btn btn-ghost btn-sm" onClick={handleEmailPdf} disabled={emailingPdf || !job.email} title={!job.email ? 'No contact email on file' : ''}>
-            <Mail size={14} /> {emailingPdf ? 'Sending…' : 'Email Job Sheet'}
-          </button>
+          <EmailJobSheet api={api} job={job} onResult={setEmailSentMsg} />
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${id}/edit`)}>
             <Pencil size={14} /> Edit details
           </button>
