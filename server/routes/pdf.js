@@ -16,20 +16,34 @@ router.get('/:id/pdf', async (req, res) => {
   if (!ok) res.status(404).json({ error: 'Job not found' });
 });
 
+// Job sheet email. The person sending picks the recipients (admin@ is filled in
+// by default); with none given it goes to JOB_SHEET_DEFAULT_EMAIL (admin@).
+const JOB_SHEET_DEFAULT_EMAIL = process.env.JOB_SHEET_DEFAULT_EMAIL || 'admin@itfactory.com.au';
+
 router.post('/:id/email-pdf', async (req, res) => {
   const data = loadJobData(req.params.id);
   if (!data || !canAccessJob(req.user, data.job)) return res.status(404).json({ error: 'Job not found' });
-  if (!data.job.email) return res.status(400).json({ error: 'This job has no contact email on file' });
+
+  const given = req.body?.toEmails;
+  const raw = Array.isArray(given) ? given.join(',') : String(given || JOB_SHEET_DEFAULT_EMAIL);
+  const seen = new Set();
+  const recipients = raw.split(/[\s,;]+/).map((a) => a.trim()).filter(Boolean)
+    .filter((a) => { const k = a.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  const bad = recipients.filter((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a));
+  if (!recipients.length) return res.status(400).json({ error: 'Add at least one email address' });
+  if (bad.length) return res.status(400).json({ error: `Not a valid email address: ${bad.join(', ')}` });
+  if (recipients.length > 20) return res.status(400).json({ error: 'Up to 20 email addresses at a time' });
+  const sentTo = recipients.join(', ');
 
   try {
     const pdfBuffer = await buildJobSheetBuffer(req.params.id);
     await sendJobSheetEmail({
-      toEmail: data.job.email,
+      toEmail: sentTo,
       jobNumber: data.job.job_number,
       subject: data.job.subject,
       pdfBuffer,
     });
-    res.json({ ok: true, sentTo: data.job.email });
+    res.json({ ok: true, sentTo });
   } catch (err) {
     res.status(500).json({ error: 'Could not generate or send the job sheet' });
   }
