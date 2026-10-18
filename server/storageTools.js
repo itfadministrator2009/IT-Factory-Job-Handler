@@ -3,6 +3,7 @@
 // spreadsheet import's value coercion. Billing rules come from storageBilling.js
 // so every screen agrees with the invoices.
 const { db } = require('./db');
+const { currencyMap, currencyFor, formatMoney, totalsByCurrency } = require('./storageCurrency');
 const {
   round2, getPalletRate, overlapDays, storageCostLines, computeStorageCostForClient, parsePeriod,
 } = require('./storageBilling');
@@ -97,17 +98,20 @@ function calculator({ from, to, client, centre, groupBy = 'all' }, items = loadI
   const period = parsePeriod(from, to);
   if (!period) throw new Error('from and to must be YYYY-MM-DD with from <= to');
   const { fromDate, toDate } = period;
+  const cmap = currencyMap();
+  const cur = (c) => currencyFor(c, cmap);
   // Items with no client aren't billed anywhere, so they're left out here too.
   const scoped = items.filter((i) => i.client && (!client || norm(i.client) === norm(client)) && (!centre || norm(i.storageCentre) === norm(centre)));
 
   if (groupBy === 'none') {
     const rows = scoped.map((i) => {
       const days = overlapDays(i, fromDate, toDate);
-      return { id: i.id, client: i.client, jobNumber: i.jobNumber, item: i.item, make: i.make, model: i.model, serial: i.serial, ratePerWeek: Number(i.priceWeek) || 0, days, cost: ((Number(i.priceWeek) || 0) / 7) * days };
+      return { id: i.id, client: i.client, currency: cur(i.client), jobNumber: i.jobNumber, item: i.item, make: i.make, model: i.model, serial: i.serial, ratePerWeek: Number(i.priceWeek) || 0, days, cost: ((Number(i.priceWeek) || 0) / 7) * days };
     }).filter((r) => r.days > 0)
       .sort((a, b) => naturalCompare(a.client, b.client) || naturalCompare(a.jobNumber, b.jobNumber));
     const total = rows.reduce((t, r) => t + r.cost, 0);
-    return { from, to, groupBy, rows: rows.map((r) => ({ ...r, cost: round2(r.cost) })), itemCount: rows.length, total: round2(total) };
+    const out = rows.map((r) => ({ ...r, cost: round2(r.cost) }));
+    return { from, to, groupBy, rows: out, itemCount: rows.length, total: round2(total), totals: totalsByCurrency(out, 'cost') };
   }
 
   const groups = {};
@@ -125,9 +129,9 @@ function calculator({ from, to, client, centre, groupBy = 'all' }, items = loadI
     if (pallet) {
       const cost = storageCostLines(g.client, g.items, [pallet], fromDate, toDate).reduce((t, l) => t + l.amount, 0);
       if (groupBy === 'location') {
-        rows.push({ type: 'Location', client: g.client, storageCentre: g.storageCentre, location: g.location, itemCount: g.items.length, billedAs: `Pallet rate (${money(pallet.priceWeek)}/wk)`, cost: round2(cost) });
+        rows.push({ type: 'Location', client: g.client, currency: cur(g.client), storageCentre: g.storageCentre, location: g.location, itemCount: g.items.length, billedAs: `Pallet rate (${money(pallet.priceWeek, cur(g.client))}/wk)`, cost: round2(cost) });
       } else if (cost > 0) {
-        rows.push({ type: 'Pallet', client: g.client, storageCentre: g.storageCentre, location: g.location, itemCount: g.items.length, billedAs: `Pallet rate (${money(pallet.priceWeek)}/wk)`, cost: round2(cost) });
+        rows.push({ type: 'Pallet', client: g.client, currency: cur(g.client), storageCentre: g.storageCentre, location: g.location, itemCount: g.items.length, billedAs: `Pallet rate (${money(pallet.priceWeek, cur(g.client))}/wk)`, cost: round2(cost) });
       }
       if (cost > 0 || groupBy === 'location') { palletCount += 1; itemsOnPallets += g.items.length; }
       total += cost;
@@ -141,19 +145,19 @@ function calculator({ from, to, client, centre, groupBy = 'all' }, items = loadI
       groupCost += cost;
       if (groupBy === 'all') {
         itemRows += 1;
-        rows.push({ type: 'Item', id: i.id, client: i.client, storageCentre: g.storageCentre, location: g.location, item: i.item, jobNumber: i.jobNumber, serial: i.serial, days, billedAs: 'Per item', cost: round2(cost) });
+        rows.push({ type: 'Item', id: i.id, client: i.client, currency: cur(i.client), storageCentre: g.storageCentre, location: g.location, item: i.item, jobNumber: i.jobNumber, serial: i.serial, days, billedAs: 'Per item', cost: round2(cost) });
       }
     });
     if (groupBy === 'location') {
       palletCount += 1; itemsOnPallets += g.items.length;
-      rows.push({ type: 'Location', client: g.client, storageCentre: g.storageCentre, location: g.location || '(none)', itemCount: g.items.length, billedAs: 'Sum of items', cost: round2(groupCost) });
+      rows.push({ type: 'Location', client: g.client, currency: cur(g.client), storageCentre: g.storageCentre, location: g.location || '(none)', itemCount: g.items.length, billedAs: 'Sum of items', cost: round2(groupCost) });
     }
     total += groupCost;
   });
-  return { from, to, groupBy, rows, palletCount, itemRows, itemCount: groupBy === 'location' ? itemsOnPallets : undefined, total: round2(total) };
+  return { from, to, groupBy, rows, palletCount, itemRows, itemCount: groupBy === 'location' ? itemsOnPallets : undefined, total: round2(total), totals: totalsByCurrency(rows, 'cost') };
 }
 
-function money(n) { return `$${(Number(n) || 0).toFixed(2)}`; }
+const money = (n, cur) => formatMoney(n, cur);
 
 // ---------------------------------------------------------------------------
 // Dashboard — the old renderDashboard figures.
@@ -161,8 +165,9 @@ function money(n) { return `$${(Number(n) || 0).toFixed(2)}`; }
 function dashboard(date = new Date(), items = loadItems(), pallets = loadPallets()) {
   const ranges = Object.fromEntries(PRESETS.map((p) => [p, presetRange(p, date)]));
   const clients = [...new Set(items.map((i) => i.client).filter(Boolean))].sort(naturalCompare);
+  const cmap = currencyMap();
   const costByClient = clients.map((client) => {
-    const row = { client };
+    const row = { client, currency: currencyFor(client, cmap) };
     PRESETS.forEach((p) => {
       const { fromDate, toDate } = parsePeriod(ranges[p].from, ranges[p].to);
       row[p] = round2(computeStorageCostForClient(client, items, pallets, fromDate, toDate));

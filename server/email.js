@@ -479,9 +479,14 @@ function notifyStorageStockReceived({ toEmails, entry, loggedBy }) {
 
 // The old app's Monday-morning "Weekly invoicing reminder": last week's storage,
 // receiving and dispatch fees per client. `rows` come from storageBilling.summary.
-function notifyStorageWeeklyInvoicing({ toEmails, fromLabel, toLabel, rows, grandTotal }) {
+function notifyStorageWeeklyInvoicing({ toEmails, fromLabel, toLabel, rows, grandTotal, totals }) {
   const e = escapeEmailHtml;
-  const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+  // Each client's amounts in their own currency (US$ for USD clients); a grand
+  // total per currency, since AUD and USD are never added together.
+  const sym = (cur) => (cur === 'USD' ? 'US$' : '$');
+  const money = (n, cur) => `${sym(cur)}${(Number(n) || 0).toFixed(2)}`;
+  const grand = totals && totals.length ? totals : [{ currency: 'AUD', total: grandTotal }];
+  const grandLabel = (t) => (grand.length > 1 ? `Grand total (${t.currency})` : 'Grand total');
   const period = `${fromLabel} – ${toLabel}`;
   const cell = 'padding:7px 8px; font-size:12.5px; text-align:right;';
   const table = rows.length === 0
@@ -491,9 +496,9 @@ function notifyStorageWeeklyInvoicing({ toEmails, fromLabel, toLabel, rows, gran
           <th style="${cell} text-align:left;">Client</th><th style="${cell}">Storage</th><th style="${cell}">Receiving</th><th style="${cell}">Dispatch</th><th style="${cell}">Total</th>
         </tr></thead>
         <tbody>${rows.map((r) => `<tr style="border-bottom:1px solid #e2e0d8;">
-          <td style="${cell} text-align:left;">${e(r.client)}</td><td style="${cell}">${money(r.storageCost)}</td><td style="${cell}">${money(r.receivingFees)}</td><td style="${cell}">${money(r.dispatchFees)}</td><td style="${cell} font-weight:700;">${money(r.total)}</td>
+          <td style="${cell} text-align:left;">${e(r.client)}${r.currency && r.currency !== 'AUD' ? ` <span style="color:#6b7570;">(${e(r.currency)})</span>` : ''}</td><td style="${cell}">${money(r.storageCost, r.currency)}</td><td style="${cell}">${money(r.receivingFees, r.currency)}</td><td style="${cell}">${money(r.dispatchFees, r.currency)}</td><td style="${cell} font-weight:700;">${money(r.total, r.currency)}</td>
         </tr>`).join('')}
-        <tr><td style="${cell} text-align:left; font-weight:700;" colspan="4">Grand total</td><td style="${cell} font-weight:700;">${money(grandTotal)}</td></tr>
+        ${grand.map((t) => `<tr><td style="${cell} text-align:left; font-weight:700;" colspan="4">${grandLabel(t)}</td><td style="${cell} font-weight:700;">${money(t.total, t.currency)}</td></tr>`).join('')}
         </tbody></table>`;
   const html = brandedEmail({
     title: 'Weekly invoicing reminder',
@@ -502,7 +507,7 @@ function notifyStorageWeeklyInvoicing({ toEmails, fromLabel, toLabel, rows, gran
   });
   const text = rows.length === 0
     ? `Weekly invoicing reminder for ${period}\n\nNo billable storage or receiving/dispatch activity found for this period.`
-    : `Weekly invoicing reminder for ${period}\n\n${rows.map((r) => `${r.client}\n  Storage: ${money(r.storageCost)}\n  Receiving: ${money(r.receivingFees)}\n  Dispatch: ${money(r.dispatchFees)}\n  Total: ${money(r.total)}`).join('\n\n')}\n\nGRAND TOTAL: ${money(grandTotal)}`;
+    : `Weekly invoicing reminder for ${period}\n\n${rows.map((r) => `${r.client}${r.currency && r.currency !== 'AUD' ? ` (${r.currency})` : ''}\n  Storage: ${money(r.storageCost, r.currency)}\n  Receiving: ${money(r.receivingFees, r.currency)}\n  Dispatch: ${money(r.dispatchFees, r.currency)}\n  Total: ${money(r.total, r.currency)}`).join('\n\n')}\n\n${grand.map((t) => `${grandLabel(t).toUpperCase()}: ${money(t.total, t.currency)}`).join('\n')}`;
   return sendMail({ to: toEmails.join(','), subject: `Weekly invoicing reminder — ${period}`, text, html });
 }
 

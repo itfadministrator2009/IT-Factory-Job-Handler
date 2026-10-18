@@ -15,6 +15,8 @@ const GST_RATE = Number(process.env.STORAGE_GST_RATE || 0) || 0;
 // Optional payment details printed at the foot of invoices ("|" = new line).
 const PAYMENT_LINES = (process.env.STORAGE_INVOICE_PAYMENT_DETAILS || '').split('|').map((s) => s.trim()).filter(Boolean);
 
+const { formatMoney, DEFAULT_CURRENCY } = require('./storageCurrency');
+
 const TEAL = '#1e4d4b';
 const LINE = '#c9c7bd';
 const MUTED = '#6b7570';
@@ -213,6 +215,9 @@ function invoiceReference(statement) {
 
 // `statement` comes from storageBilling.clientStatement.
 function buildInvoicePdf(statement) {
+  // Amounts in the client's currency (US$ for USD clients).
+  const cur = statement.currency || DEFAULT_CURRENCY;
+  const money = (n) => formatMoney(n, cur);
   const subtotal = statement.total;
   const gst = GST_RATE ? Math.round(subtotal * GST_RATE) / 100 : 0;
   const total = Math.round((subtotal + gst) * 100) / 100;
@@ -222,6 +227,7 @@ function buildInvoicePdf(statement) {
       ['INVOICE DATE:', dmy(todaySydney())],
       ['PERIOD:', `${dmy(statement.from)} – ${dmy(statement.to)}`],
       ['BILL TO:', statement.client],
+      ...(cur !== DEFAULT_CURRENCY ? [['CURRENCY:', cur]] : []),
     ]);
 
     y = sectionTitle(doc, 'STORAGE', y);
@@ -290,13 +296,16 @@ function buildInvoicePdf(statement) {
 }
 
 // Receiving / dispatch only — the old Invoicing tab's per-client PDF.
-function buildRdInvoicePdf({ client, from, to, lines, total }) {
+function buildRdInvoicePdf({ client, from, to, lines, total, currency }) {
+  const cur = currency || DEFAULT_CURRENCY;
+  const money = (n) => formatMoney(n, cur);
   return toBuffer((doc) => {
     let y = header(doc, 'RECEIVING / DISPATCH INVOICE', [
       ['INVOICE REF:', `RD-${invoiceReference({ client, to })}`],
       ['INVOICE DATE:', dmy(todaySydney())],
       ['PERIOD:', `${dmy(from)} – ${dmy(to)}`],
       ['BILL TO:', client],
+      ...(cur !== DEFAULT_CURRENCY ? [['CURRENCY:', cur]] : []),
     ]);
     if (lines.length) {
       y = table(doc, [
