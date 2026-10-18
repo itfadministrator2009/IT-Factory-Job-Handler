@@ -7,6 +7,19 @@ import Layout from '../components/Layout';
 import RangePicker from '../storage/RangePicker';
 import { presetRange, downloadCsv, dmy, money, sameText } from '../storage/common';
 
+// One totals row per currency — AUD and US$ clients are never added together.
+function totalsPerCurrency(rows, fields) {
+  const by = {};
+  rows.forEach((r) => {
+    const c = r.currency || 'AUD';
+    const t = by[c] || (by[c] = Object.fromEntries(fields.map((f) => [f, 0])));
+    fields.forEach((f) => { t[f] += Number(r[f]) || 0; });
+  });
+  return Object.keys(by).sort((a, b) => (a === 'AUD' ? -1 : b === 'AUD' ? 1 : a.localeCompare(b))).map((c) => ({ currency: c, ...by[c] }));
+}
+const totalLabel = (list, t) => (list.length > 1 ? `Total (${t.currency})` : 'Total');
+const usdTag = (r) => (r.currency === 'USD' ? <span style={{ color: 'var(--muted)', fontSize: 12 }}> (USD)</span> : null);
+
 // Previous Monday–Sunday, in local (Sydney) dates.
 const lastWeekRange = () => presetRange('lastWeek');
 
@@ -33,9 +46,7 @@ function StorageInvoicing({ clients }) {
   }
 
   const rows = report ? report.summary.filter((s) => !client || sameText(s.client, client)) : [];
-  const totals = rows.reduce((t, s) => ({
-    storage: t.storage + s.storageCost, receiving: t.receiving + (s.receivingFees ?? 0), dispatch: t.dispatch + (s.dispatchFees ?? 0), total: t.total + s.total,
-  }), { storage: 0, receiving: 0, dispatch: 0, total: 0 });
+  const totalsList = totalsPerCurrency(rows, ['storageCost', 'receivingFees', 'dispatchFees', 'total']);
 
   return (
     <div className="panel panel-pad">
@@ -54,9 +65,9 @@ function StorageInvoicing({ clients }) {
           <button type="button" className="btn btn-accent" onClick={run} disabled={loading}>{loading ? 'Calculating…' : 'Calculate'}</button>
           <button type="button" className="btn btn-ghost" disabled={!report || !rows.length} onClick={() => downloadCsv('storage-invoicing.csv', [
             [`Period: ${dmy(report.from)} – ${dmy(report.to)}`],
-            ['Client', 'Storage cost (ex GST)', 'Receiving (ex GST)', 'Dispatch (ex GST)', 'Total (ex GST)'],
-            ...rows.map((s) => [s.client, s.storageCost.toFixed(2), (s.receivingFees ?? 0).toFixed(2), (s.dispatchFees ?? 0).toFixed(2), s.total.toFixed(2)]),
-            ['Total', totals.storage.toFixed(2), totals.receiving.toFixed(2), totals.dispatch.toFixed(2), totals.total.toFixed(2)],
+            ['Client', 'Currency', 'Storage cost (ex GST)', 'Receiving (ex GST)', 'Dispatch (ex GST)', 'Total (ex GST)'],
+            ...rows.map((s) => [s.client, s.currency || 'AUD', s.storageCost.toFixed(2), (s.receivingFees ?? 0).toFixed(2), (s.dispatchFees ?? 0).toFixed(2), s.total.toFixed(2)]),
+            ...totalsList.map((t) => [totalLabel(totalsList, t), t.currency, t.storageCost.toFixed(2), t.receivingFees.toFixed(2), t.dispatchFees.toFixed(2), t.total.toFixed(2)]),
           ])}><Download size={14} /> Export CSV</button>
           <button type="button" className="btn btn-ghost" disabled={!report} onClick={() => window.print()}><Printer size={14} /> Print</button>
           <button type="button" className="btn btn-ghost" onClick={() => { setClient(''); setRange(null); setReport(null); }}>Clear</button>
@@ -72,11 +83,11 @@ function StorageInvoicing({ clients }) {
           <tbody>
             {rows.map((s) => (
               <tr key={s.client}>
-                <td>{s.client}</td>
-                <td style={{ textAlign: 'right' }}>{money(s.storageCost)}</td>
-                <td style={{ textAlign: 'right' }}>{money(s.receivingFees ?? 0)}</td>
-                <td style={{ textAlign: 'right' }}>{money(s.dispatchFees ?? 0)}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(s.total)}</td>
+                <td>{s.client}{usdTag(s)}</td>
+                <td style={{ textAlign: 'right' }}>{money(s.storageCost, s.currency)}</td>
+                <td style={{ textAlign: 'right' }}>{money(s.receivingFees ?? 0, s.currency)}</td>
+                <td style={{ textAlign: 'right' }}>{money(s.dispatchFees ?? 0, s.currency)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(s.total, s.currency)}</td>
                 <td className="no-print">
                   <button type="button" className="btn btn-ghost btn-sm" title="Invoice PDF for this client and period"
                     onClick={() => openPdf(api, '/storage/reports/invoice.pdf', { client: s.client, from: report.from, to: report.to }).catch((err) => alert(err.message))}>
@@ -87,14 +98,16 @@ function StorageInvoicing({ clients }) {
             ))}
           </tbody>
           <tfoot>
-            <tr>
-              <td style={{ fontWeight: 700 }}>Total</td>
-              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.storage)}</td>
-              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.receiving)}</td>
-              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.dispatch)}</td>
-              <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(totals.total)}</td>
-              <td className="no-print"></td>
-            </tr>
+            {totalsList.map((t) => (
+              <tr key={t.currency}>
+                <td style={{ fontWeight: 700 }}>{totalLabel(totalsList, t)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.storageCost, t.currency)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.receivingFees, t.currency)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.dispatchFees, t.currency)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.total, t.currency)}</td>
+                <td className="no-print"></td>
+              </tr>
+            ))}
           </tfoot>
         </table>
       ))}
@@ -110,6 +123,7 @@ function RdInvoicing({ clients }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const rdTotals = result ? totalsPerCurrency(result.clients, ['receiving', 'dispatch', 'total']) : [];
 
   async function run() {
     if (!range) { alert('Choose a date range above first.'); return; }
@@ -141,9 +155,9 @@ function RdInvoicing({ clients }) {
           <button type="button" className="btn btn-accent" onClick={run} disabled={loading}>{loading ? 'Calculating…' : 'Calculate'}</button>
           <button type="button" className="btn btn-ghost" disabled={!result} onClick={() => downloadCsv('receiving-dispatch-fees.csv', [
             [`Period: ${dmy(result.from)} – ${dmy(result.to)}`],
-            ['Client', 'Receiving fee (ex GST)', 'Dispatch fee (ex GST)', 'Total (ex GST)'],
-            ...result.clients.map((c) => [c.client, c.receiving.toFixed(2), c.dispatch.toFixed(2), c.total.toFixed(2)]),
-            ['Total', result.receiving.toFixed(2), result.dispatch.toFixed(2), result.total.toFixed(2)],
+            ['Client', 'Currency', 'Receiving fee (ex GST)', 'Dispatch fee (ex GST)', 'Total (ex GST)'],
+            ...result.clients.map((c) => [c.client, c.currency || 'AUD', c.receiving.toFixed(2), c.dispatch.toFixed(2), c.total.toFixed(2)]),
+            ...rdTotals.map((t) => [totalLabel(rdTotals, t), t.currency, t.receiving.toFixed(2), t.dispatch.toFixed(2), t.total.toFixed(2)]),
           ])}><Download size={14} /> Export CSV</button>
           <button type="button" className="btn btn-ghost" disabled={!result} onClick={() => window.print()}><Printer size={14} /> Print</button>
           <button type="button" className="btn btn-ghost" onClick={() => { setClient(''); setRange(null); setResult(null); }}>Clear</button>
@@ -156,10 +170,10 @@ function RdInvoicing({ clients }) {
           <tbody>
             {result.clients.map((c) => (
               <tr key={c.client}>
-                <td>{c.client}</td>
-                <td style={{ textAlign: 'right' }}>{money(c.receiving)}</td>
-                <td style={{ textAlign: 'right' }}>{money(c.dispatch)}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(c.total)}</td>
+                <td>{c.client}{usdTag(c)}</td>
+                <td style={{ textAlign: 'right' }}>{money(c.receiving, c.currency)}</td>
+                <td style={{ textAlign: 'right' }}>{money(c.dispatch, c.currency)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(c.total, c.currency)}</td>
                 <td className="no-print">
                   <button type="button" className="btn btn-ghost btn-sm" title="Receiving / dispatch invoice PDF"
                     onClick={() => openPdf(api, '/storage/reports/rd-invoice.pdf', { client: c.client, from: result.from, to: result.to }).catch((err) => alert(err.message))}>
@@ -170,7 +184,9 @@ function RdInvoicing({ clients }) {
             ))}
           </tbody>
           <tfoot>
-            <tr><td style={{ fontWeight: 700 }}>Total</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(result.receiving)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(result.dispatch)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(result.total)}</td><td className="no-print"></td></tr>
+            {rdTotals.map((t) => (
+              <tr key={t.currency}><td style={{ fontWeight: 700 }}>{totalLabel(rdTotals, t)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.receiving, t.currency)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.dispatch, t.currency)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(t.total, t.currency)}</td><td className="no-print"></td></tr>
+            ))}
           </tfoot>
         </table>
       ))}
@@ -200,7 +216,7 @@ export default function StorageReports() {
               if (!confirm("Email last week's invoicing summary now?")) return;
               try {
                 const { data } = await api.post('/storage/reports/weekly-reminder');
-                alert(`Sent to ${data.sentTo.join(', ')} — ${data.clients} client(s), $${data.grandTotal.toFixed(2)}.`);
+                alert(`Sent to ${data.sentTo.join(', ')} — ${data.clients} client(s), ${(data.totals || [{ currency: 'AUD', total: data.grandTotal }]).map((t) => money(t.total, t.currency)).join(' + ')}.`);
               } catch (err) { alert(err.response?.data?.error || 'Could not send'); }
             }}>
             <Mail size={14} /> Email weekly summary
