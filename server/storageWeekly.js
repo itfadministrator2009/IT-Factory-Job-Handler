@@ -11,6 +11,7 @@
 const { db } = require('./db');
 const { summary } = require('./storageBilling');
 const { notifyStorageWeeklyInvoicing } = require('./email');
+const { totalsByCurrency } = require('./storageCurrency');
 
 const TZ = process.env.BACKUP_TIMEZONE || 'Australia/Sydney';
 const SEND_DAY = 1; // Monday (0 = Sunday)
@@ -52,9 +53,11 @@ async function sendWeeklyInvoicingReminder({ toEmails = recipients(), range = la
   const report = summary(range.from, range.to);
   // Like the old email: only clients with something to bill.
   const rows = report.summary.filter((r) => r.total > 0);
-  const grandTotal = Math.round(rows.reduce((t, r) => t + r.total, 0) * 100) / 100;
-  await notifyStorageWeeklyInvoicing({ toEmails, fromLabel: dmy(range.from), toLabel: dmy(range.to), rows, grandTotal });
-  return { ok: true, from: range.from, to: range.to, clients: rows.length, grandTotal, sentTo: toEmails };
+  // Totals per currency — AUD and US$ clients are never added together.
+  const totals = totalsByCurrency(rows);
+  const grandTotal = (totals.find((t) => t.currency === 'AUD') || { total: 0 }).total;
+  await notifyStorageWeeklyInvoicing({ toEmails, fromLabel: dmy(range.from), toLabel: dmy(range.to), rows, grandTotal, totals });
+  return { ok: true, from: range.from, to: range.to, clients: rows.length, grandTotal, totals, sentTo: toEmails };
 }
 
 // Sends at most once per week, at/after the configured hour on Monday.

@@ -431,6 +431,8 @@ addColumnIfMissing('project_entries', 'assigned_to', 'TEXT');
 // Manage Users). Existing users keep access; admins always have both.
 addColumnIfMissing('users', 'access_assets', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'access_storage', 'INTEGER NOT NULL DEFAULT 1');
+// Currency a Storage Centre client is charged in (AUD unless set to USD).
+addColumnIfMissing('storage_clients', 'currency', "TEXT NOT NULL DEFAULT 'AUD'");
 
 function migrateJobsStatusConstraint() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").get()?.sql;
