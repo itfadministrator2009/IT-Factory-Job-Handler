@@ -12,7 +12,24 @@ export function dmy(s) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : (s || '');
 }
 
-export const money = (n) => `$${(Number(n) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Clients are charged in AUD unless set to USD on the Clients page. Amounts are
+// shown in the client's currency (US$ for USD) — never converted — and totals
+// are kept per currency.
+export const CURRENCY_SYMBOL = { AUD: '$', USD: 'US$' };
+export const money = (n, currency = 'AUD') => {
+  const v = Number(n) || 0;
+  return `${v < 0 ? '-' : ''}${CURRENCY_SYMBOL[currency] || '$'}${Math.abs(v).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+// [{ currency, total }] from rows carrying `currency` (AUD first).
+export function totalsByCurrency(rows, field = 'total') {
+  const t = {};
+  rows.forEach((r) => { const c = r.currency || 'AUD'; t[c] = (t[c] || 0) + (Number(typeof field === 'function' ? field(r) : r[field]) || 0); });
+  return Object.keys(t).sort((a, b) => (a === 'AUD' ? -1 : b === 'AUD' ? 1 : a.localeCompare(b))).map((c) => ({ currency: c, total: t[c] }));
+}
+
+// "$1,200.00 + US$350.00" — one amount per currency.
+export const moneyTotals = (totals) => (totals.length ? totals.map((t) => money(t.total, t.currency)).join(' + ') : money(0));
 
 export const PRESET_LABELS = {
   lastWeek: 'Last week', lastMonth: 'Last month', lastQuarter: 'Last quarter', lastYear: 'Last year', lastFY: 'Last financial year',

@@ -3,6 +3,7 @@ import { Edit3, Printer } from 'lucide-react';
 import api from '../api';
 import Drawer from './Drawer';
 import NotesPanel from './NotesPanel';
+import useClientCurrency from './useClientCurrency';
 import { GROUP_FIELDS, dmy, money, itemStatus, isInStorage, naturalCompare, palletRateFor } from './common';
 
 // The old app's group drawer (double-click a client, job #, PO, centre or
@@ -12,6 +13,7 @@ export default function GroupDrawer({ field, value, items, onClose, onOpenItem, 
   const label = GROUP_FIELDS.find(([k]) => k === field)?.[1] || field;
   const [pallets, setPallets] = useState([]);
   const [onlyInStorage, setOnlyInStorage] = useState(false);
+  const currencyOf = useClientCurrency();
   useEffect(() => { api.get('/storage/pallets').then((r) => setPallets(r.data.pallets)).catch(() => {}); }, []);
 
   const norm = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -23,8 +25,9 @@ export default function GroupDrawer({ field, value, items, onClose, onOpenItem, 
 
   const billedAs = (i) => {
     const p = palletRateFor(pallets, i);
-    if (p) return `Pallet rate (${money(p.priceWeek)}/wk)`;
-    return Number(i.priceWeek) > 0 ? `Per item (${money(i.priceWeek)}/wk)` : 'Per item ($0 — no rate)';
+    const cur = currencyOf(i.client);
+    if (p) return `Pallet rate (${money(p.priceWeek, cur)}/wk)`;
+    return Number(i.priceWeek) > 0 ? `Per item (${money(i.priceWeek, cur)}/wk)` : 'Per item (no rate)';
   };
 
   return (
