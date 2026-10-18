@@ -14,6 +14,7 @@ import ModelCleanupDrawer from '../storage/ModelCleanupDrawer';
 import ImportDrawer from '../storage/ImportDrawer';
 import BulkEditDrawer from '../storage/BulkEditDrawer';
 import GroupDrawer from '../storage/GroupDrawer';
+import useClientCurrency from '../storage/useClientCurrency';
 import MatchUpdateDrawer from '../storage/MatchUpdateDrawer';
 import NotesPanel from '../storage/NotesPanel';
 
@@ -28,6 +29,7 @@ function StatusPill({ item }) {
 }
 
 export default function StorageManifest() {
+  const currencyOf = useClientCurrency();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const [params, setParams] = useSearchParams();
@@ -304,7 +306,7 @@ export default function StorageManifest() {
                 <tr>
                   <th style={{ width: 32 }} className="no-print"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} aria-label="Select all shown" /></th>
                   <th>Client</th><th>Job #</th><th>Item</th><th>Make</th><th>Model</th><th>Serial</th><th>Storage centre</th><th>Location</th>
-                  <th>Qty</th><th style={{ textAlign: 'right' }}>$/wk</th><th>Start</th><th>End</th><th>Status</th>
+                  <th>Qty</th><th style={{ textAlign: 'right' }}>Rate/wk</th><th>Start</th><th>End</th><th>Status</th>
                   <th className="no-print"></th>
                 </tr>
               </thead>
@@ -318,7 +320,7 @@ export default function StorageManifest() {
                     {groupCell('jobNumber', it.jobNumber, it.jobNumber)}<td>{it.item}</td><td>{it.make}</td><td>{it.model}</td>
                     <td style={{ fontFamily: 'var(--font-mono, monospace)' }}>{it.serial}</td>
                     {groupCell('storageCentre', it.storageCentre, it.storageCentre)}{groupCell('location', it.location, it.location)}<td>{it.quantity}</td>
-                    <td style={{ textAlign: 'right' }}>{Number(it.priceWeek) > 0 ? money(it.priceWeek) : '—'}</td>
+                    <td style={{ textAlign: 'right' }}>{Number(it.priceWeek) > 0 ? money(it.priceWeek, currencyOf(it.client)) : '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(it.startDate)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(it.endDate)}</td>
                     <td><StatusPill item={it} /></td>
