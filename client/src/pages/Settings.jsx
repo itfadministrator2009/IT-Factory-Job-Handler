@@ -4,11 +4,12 @@ import { Link } from 'react-router-dom';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import DiskUsage from '../components/DiskUsage';
 
 export default function Settings() {
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'agent';
-  const [tab, setTab] = useState('users'); // 'users' | 'backup'
+  const [tab, setTab] = useState('users'); // 'users' | 'backup' | 'disk'
 
   if (!isAdmin) {
     return (
@@ -38,9 +39,12 @@ export default function Settings() {
         <span className={'settings-tab' + (tab === 'backup' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('backup')}>
           Backup
         </span>
+        <span className={'settings-tab' + (tab === 'disk' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('disk')}>
+          Disk usage
+        </span>
       </div>
 
-      {tab === 'users' ? <ManageUsersTab currentUser={currentUser} /> : <BackupTab />}
+      {tab === 'users' ? <ManageUsersTab currentUser={currentUser} /> : tab === 'disk' ? <DiskUsage /> : <BackupTab />}
     </Layout>
   );
 }

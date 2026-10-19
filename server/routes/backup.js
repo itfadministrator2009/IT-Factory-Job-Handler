@@ -40,6 +40,16 @@ router.get('/status', adminRequired, (req, res) => {
   res.json(out);
 });
 
+// What is filling the server's disk (Settings → Backup → Disk usage). Read-only.
+router.get('/disk-usage', adminRequired, (req, res) => {
+  try {
+    res.json(require('../diskUsage').diskUsage());
+  } catch (err) {
+    console.error('[disk-usage] failed:', err);
+    res.status(500).json({ error: 'Could not measure disk usage' });
+  }
+});
+
 router.get('/list', adminRequired, async (req, res) => {
   const result = await listBackups();
   if (!result.ok) {
