@@ -40,7 +40,18 @@ router.get('/status', adminRequired, (req, res) => {
   res.json(out);
 });
 
-// What is filling the server's disk (Settings → Backup → Disk usage). Read-only.
+// Shrink the photos already stored (Settings → Disk usage). Runs in the
+// background; the page checks progress with GET.
+router.post('/shrink-photos', adminRequired, (req, res) => {
+  const { startShrinkExisting, shrinkStatus } = require('../photoShrink');
+  startShrinkExisting();
+  res.status(202).json(shrinkStatus());
+});
+router.get('/shrink-photos', adminRequired, (req, res) => {
+  res.json(require('../photoShrink').shrinkStatus());
+});
+
+// What is filling the server's disk (Settings → Disk usage). Read-only.
 router.get('/disk-usage', adminRequired, (req, res) => {
   try {
     res.json(require('../diskUsage').diskUsage());

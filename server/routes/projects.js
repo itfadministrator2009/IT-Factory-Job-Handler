@@ -7,6 +7,7 @@ const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { isAdminRole, currentRole } = require('../permissions');
 const { buildProjectEntryPdf } = require('../projectPdfBuilder');
+const { shrinkUpload } = require('../photoShrink');
 const { notifyProjectEntryComplete, notifyProjectEntryAssigned } = require('../email');
 
 // Fixed internal distribution list notified whenever a project entry is submitted —
@@ -546,7 +547,7 @@ router.delete('/:id/entries/:entryId', (req, res) => {
 // repeat instance index, for photos inside a repeatable section)
 // ---------------------------------------------------------------------------
 
-router.post('/:id/entries/:entryId/photos', upload.single('file'), (req, res) => {
+router.post('/:id/entries/:entryId/photos', upload.single('file'), async (req, res) => {
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ? AND project_id = ?').get(req.params.entryId, req.params.id);
   if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Entry not found' });
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -554,11 +555,13 @@ router.post('/:id/entries/:entryId/photos', upload.single('file'), (req, res) =>
   const { field_id, repeat_index } = req.body;
   if (!field_id) return res.status(400).json({ error: 'field_id is required' });
 
+  // Shrink the photo (fit 1600 px, normal-quality JPEG) before it's stored.
+  const file = await shrinkUpload(req.file);
   const id = uuid();
   db.prepare(`
     INSERT INTO project_entry_photos (id, entry_id, field_id, repeat_index, stored_name, original_name, mime_type)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, entry.id, field_id, repeat_index !== undefined && repeat_index !== '' ? Number(repeat_index) : null, req.file.filename, req.file.originalname, req.file.mimetype);
+  `).run(id, entry.id, field_id, repeat_index !== undefined && repeat_index !== '' ? Number(repeat_index) : null, file.filename, file.originalname, file.mimetype);
 
   const photo = db.prepare('SELECT id, field_id, repeat_index, original_name, mime_type, created_at FROM project_entry_photos WHERE id = ?').get(id);
   res.status(201).json({ photo });

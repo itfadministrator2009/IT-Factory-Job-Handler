@@ -6,6 +6,7 @@ const { v4: uuid } = require('uuid');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { canAccessJob } = require('../permissions');
+const { shrinkUpload } = require('../photoShrink');
 
 const router = express.Router();
 // This router is mounted at /api, so the staff sign-in check is limited to its own
@@ -23,19 +24,22 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-router.post('/jobs/:jobId/attachments', upload.array('files', 10), (req, res) => {
+router.post('/jobs/:jobId/attachments', upload.array('files', 10), async (req, res) => {
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.jobId);
   if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Job not found' });
   if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
 
-  const inserted = req.files.map((file) => {
+  // Photos are shrunk (fit 1600 px, normal-quality JPEG) before they're stored.
+  const inserted = [];
+  for (const raw of req.files) {
+    const file = await shrinkUpload(raw);
     const id = uuid();
     db.prepare(`
       INSERT INTO attachments (id, job_id, stored_name, original_name, mime_type, size, uploaded_by)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, req.params.jobId, file.filename, file.originalname, file.mimetype, file.size, req.user.id);
-    return db.prepare('SELECT id, original_name, mime_type, size, created_at, uploaded_by FROM attachments WHERE id = ?').get(id);
-  });
+    inserted.push(db.prepare('SELECT id, original_name, mime_type, size, created_at, uploaded_by FROM attachments WHERE id = ?').get(id));
+  }
 
   res.status(201).json({ attachments: inserted });
 });
