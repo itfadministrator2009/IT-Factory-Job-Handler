@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HardDrive, RefreshCw } from 'lucide-react';
+import { HardDrive, RefreshCw, Minimize2 } from 'lucide-react';
 import api from '../api';
 
 // Settings → Disk usage: what is filling the server's disk. Read-only.
@@ -37,6 +37,73 @@ function Bars({ rows, total, sub }) {
 }
 
 const card = { padding: 20, marginBottom: 18 };
+
+// Shrinks the photos already on the server (new uploads are shrunk anyway).
+function ShrinkPhotos({ onDone }) {
+  const [status, setStatus] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get('/backup/shrink-photos').then((res) => setStatus(res.data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!status?.running) return undefined;
+    const t = setTimeout(() => {
+      api.get('/backup/shrink-photos').then((res) => {
+        setStatus(res.data);
+        if (!res.data.running) onDone();
+      }).catch(() => {});
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [status, onDone]);
+
+  async function start() {
+    setConfirming(false); setError('');
+    try { setStatus((await api.post('/backup/shrink-photos')).data); } catch (err) { setError(err.response?.data?.error || 'Could not start'); }
+  }
+
+  const saved = status ? status.before - status.after : 0;
+  const pct = status?.total ? Math.round((status.done / status.total) * 100) : 0;
+
+  return (
+    <div className="panel" style={card}>
+      <h3 style={{ fontSize: 15, marginBottom: 6 }}><Minimize2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Shrink photos</h3>
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5 }}>
+        New photos are now shrunk automatically when they're uploaded (to fit 1600 px, about 200–400 KB each — still sharp on screen and on job sheets).
+        This shrinks the photos already stored the same way. It replaces the full-size files on the server; the nightly OneDrive backups keep the originals, so run <strong>Back up now</strong> on the Backup tab first if today's backup hasn't run.
+      </p>
+      {error && <div className="error-banner" style={{ marginBottom: 10 }}>{error}</div>}
+      {status?.running ? (
+        <div>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>Shrinking… {status.done} of {status.total} photos · {formatBytes(saved)} saved so far</div>
+          <div style={{ height: 8, background: 'var(--border, #e2e0d8)', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: BAR }} />
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>You can leave this page — it keeps going on the server.</div>
+        </div>
+      ) : (
+        <>
+          {status?.finishedAt && (
+            <div className="success-banner" style={{ marginBottom: 12 }}>
+              Done: {status.shrunk} photo(s) shrunk, {formatBytes(saved)} freed{status.skipped ? ` · ${status.skipped} already small or not readable, left as they were` : ''}{status.failed ? ` · ${status.failed} failed` : ''}.
+            </div>
+          )}
+          {confirming ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13 }}>Shrink all stored photos now?</span>
+              <button type="button" className="btn btn-accent btn-sm" onClick={start}>Yes, shrink them</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
+            </div>
+          ) : (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(true)}>Shrink existing photos</button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 const h3 = { fontSize: 15, marginBottom: 12 };
 
 export default function DiskUsage() {
@@ -86,6 +153,8 @@ export default function DiskUsage() {
         <Bars rows={overview} total={counted} />
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>Measured {new Date(data.measuredAt).toLocaleString('en-AU')}.</div>
       </div>
+
+      <ShrinkPhotos onDone={load} />
 
       <div className="panel" style={card}>
         <h3 style={h3}>Uploaded files — {formatBytes(uploadsTotal)} in {uploads.byArea.reduce((t, a) => t + a.files, 0)} files</h3>
