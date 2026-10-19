@@ -3,12 +3,14 @@ import { Pencil } from 'lucide-react';
 import api from '../api';
 import Drawer from './Drawer';
 import { money, naturalCompare } from './common';
+import useClientCurrency from './useClientCurrency';
 
 // Old "Individual item rates" drawer: pick a client, search their items, and
 // set one item's weekly rate (ex GST).
 export default function ItemRatesDrawer({ items, userName, onClose, onSaved }) {
   const clients = useMemo(() => [...new Set(items.map((i) => i.client).filter(Boolean))].sort(naturalCompare), [items]);
   const [client, setClient] = useState('');
+  const currencyOf = useClientCurrency();
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [rate, setRate] = useState('');
@@ -45,7 +47,7 @@ export default function ItemRatesDrawer({ items, userName, onClose, onSaved }) {
             {[editing.client, editing.item, editing.serial && `S/N ${editing.serial}`].filter(Boolean).join(' — ')}
           </p>
           {error && <div className="error-banner">{error}</div>}
-          <div className="field"><label>Weekly rate (ex GST)</label>
+          <div className="field"><label>Weekly rate (ex GST) in {currencyOf(editing.client) === 'USD' ? 'US dollars' : 'Australian dollars'}</label>
             <input type="number" min="0" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} autoFocus />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -70,12 +72,12 @@ export default function ItemRatesDrawer({ items, userName, onClose, onSaved }) {
           </div>
           {client && (rows.length === 0 ? <div className="empty-state">No items match.</div> : (
             <table className="ticket-table">
-              <thead><tr><th>Job #</th><th>Item</th><th>Serial</th><th>Storage centre</th><th style={{ textAlign: 'right' }}>$/wk ex GST</th><th></th></tr></thead>
+              <thead><tr><th>Job #</th><th>Item</th><th>Serial</th><th>Storage centre</th><th style={{ textAlign: 'right' }}>{currencyOf(client) === 'USD' ? 'US$' : '$'}/wk ex GST</th><th></th></tr></thead>
               <tbody>
                 {rows.map((i) => (
                   <tr key={i.id}>
                     <td>{i.jobNumber}</td><td>{i.item}</td><td>{i.serial}</td><td>{i.storageCentre}</td>
-                    <td style={{ textAlign: 'right' }}>{Number(i.priceWeek) > 0 ? money(i.priceWeek) : '—'}</td>
+                    <td style={{ textAlign: 'right' }}>{Number(i.priceWeek) > 0 ? money(i.priceWeek, currencyOf(i.client)) : '—'}</td>
                     <td><button type="button" className="btn btn-ghost btn-sm icon-btn" title="Edit rate" onClick={() => { setEditing(i); setRate(i.priceWeek ?? ''); setError(''); }}><Pencil size={13} /></button></td>
                   </tr>
                 ))}

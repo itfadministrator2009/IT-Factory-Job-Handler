@@ -3,7 +3,7 @@ import { Printer, Download } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import RangePicker from '../storage/RangePicker';
-import { dmy, money, downloadCsv, PRESET_LABELS } from '../storage/common';
+import { dmy, money, moneyTotals, downloadCsv, PRESET_LABELS } from '../storage/common';
 
 // Old "Storage calculator": storage cost for a period, by pallet/item, by
 // location, or per item, filtered by client and storage centre.
@@ -15,14 +15,14 @@ const MODES = [
 
 function columns(groupBy) {
   if (groupBy === 'none') {
-    return [['Client', (r) => r.client], ['Job #', (r) => r.jobNumber], ['Item', (r) => r.item], ['Make', (r) => r.make], ['Model', (r) => r.model], ['Serial', (r) => r.serial], ['Weekly rate', (r) => money(r.ratePerWeek), true], ['Days in period', (r) => r.days, true], ['Cost', (r) => money(r.cost), true]];
+    return [['Client', (r) => r.client], ['Job #', (r) => r.jobNumber], ['Item', (r) => r.item], ['Make', (r) => r.make], ['Model', (r) => r.model], ['Serial', (r) => r.serial], ['Weekly rate', (r) => money(r.ratePerWeek, r.currency), true], ['Days in period', (r) => r.days, true], ['Cost', (r) => money(r.cost, r.currency), true]];
   }
   if (groupBy === 'location') {
-    return [['Location', (r) => r.location], ['Client', (r) => r.client], ['Storage centre', (r) => r.storageCentre], ['Items on pallet', (r) => r.itemCount, true], ['Billed as', (r) => r.billedAs], ['Cost', (r) => money(r.cost), true]];
+    return [['Location', (r) => r.location], ['Client', (r) => r.client], ['Storage centre', (r) => r.storageCentre], ['Items on pallet', (r) => r.itemCount, true], ['Billed as', (r) => r.billedAs], ['Cost', (r) => money(r.cost, r.currency), true]];
   }
   return [['Type', (r) => r.type], ['Client', (r) => r.client], ['Storage centre', (r) => r.storageCentre],
     ['Location / item', (r) => (r.type === 'Pallet' ? `${r.location} (${r.itemCount} item${r.itemCount === 1 ? '' : 's'})` : [r.item, r.location && `@ ${r.location}`].filter(Boolean).join(' '))],
-    ['Job #', (r) => (r.type === 'Pallet' ? '—' : r.jobNumber)], ['Serial', (r) => (r.type === 'Pallet' ? '—' : r.serial)], ['Billed as', (r) => r.billedAs], ['Total cost', (r) => money(r.cost), true]];
+    ['Job #', (r) => (r.type === 'Pallet' ? '—' : r.jobNumber)], ['Serial', (r) => (r.type === 'Pallet' ? '—' : r.serial)], ['Billed as', (r) => r.billedAs], ['Total cost', (r) => money(r.cost, r.currency), true]];
 }
 
 export default function StorageCalculator() {
@@ -59,7 +59,7 @@ export default function StorageCalculator() {
     ['Client', result.client || 'All clients'],
     ...(result.centre ? [['Storage centre', result.centre]] : []),
     ['Items', itemsLine],
-    ['Total cost (ex GST)', money(result.total)],
+    ['Total cost (ex GST)', result.totals ? moneyTotals(result.totals) : money(result.total)],
   ] : [];
 
   return (
@@ -119,7 +119,7 @@ export default function StorageCalculator() {
                 <table className="ticket-table">
                   <thead><tr>{cols.map(([l, , right]) => <th key={l} style={right ? { textAlign: 'right' } : undefined}>{l}</th>)}</tr></thead>
                   <tbody>{result.rows.map((r, i) => <tr key={r.id || i}>{cols.map(([l, f, right]) => <td key={l} style={right ? { textAlign: 'right' } : undefined}>{f(r)}</td>)}</tr>)}</tbody>
-                  <tfoot><tr><td colSpan={cols.length - 1} style={{ textAlign: 'right', fontWeight: 700 }}>Total</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(result.total)}</td></tr></tfoot>
+                  <tfoot><tr><td colSpan={cols.length - 1} style={{ textAlign: 'right', fontWeight: 700 }}>Total</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{result.totals ? moneyTotals(result.totals) : money(result.total)}</td></tr></tfoot>
                 </table>
               </div>
             )}

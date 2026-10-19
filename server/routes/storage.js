@@ -6,6 +6,7 @@ const { authRequired } = require('../auth');
 const { isAdminRole, requireModule } = require('../permissions');
 const { notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived } = require('../email');
 const { orderNotifyList } = require('../storageNotify');
+const { normCurrency, DEFAULT_CURRENCY, currencyMap, currencyFor, totalsByCurrency } = require('../storageCurrency');
 const {
   ALL_PALLETS, ALL_PALLETS_AT_CENTRE, rdFees, parsePeriod, summary: billingSummary, clientStatement, rdLinesInPeriod, round2,
 } = require('../storageBilling');
@@ -336,7 +337,7 @@ router.delete('/pallets/:id', (req, res) => {
 
 function rowToClient(row) {
   if (!row) return row;
-  return { id: row.id, clientName: row.client_name, username: row.username, hasPortalLogin: !!row.password_hash, addedBy: row.added_by, createdAt: row.created_at };
+  return { id: row.id, clientName: row.client_name, username: row.username, hasPortalLogin: !!row.password_hash, addedBy: row.added_by, createdAt: row.created_at, currency: normCurrency(row.currency) || DEFAULT_CURRENCY };
 }
 
 // The client list (like the old app's Clients sheet) plus, under `unlisted`,
@@ -398,10 +399,11 @@ router.post('/clients', (req, res) => {
   if (password && !username) return res.status(400).json({ error: 'Set a username to go with the portal password' });
   const problem = checkPortalLogin(username, password);
   if (problem) return res.status(400).json({ error: problem });
+  if (req.body.currency !== undefined && !normCurrency(req.body.currency)) return res.status(400).json({ error: 'Currency must be AUD or USD' });
   const id = randomUUID();
   const passwordHash = password ? bcrypt.hashSync(password, 10) : null;
-  db.prepare('INSERT INTO storage_clients (id, client_name, username, password_hash, added_by) VALUES (?, ?, ?, ?, ?)')
-    .run(id, clientName.trim(), username || null, passwordHash, req.user.name);
+  db.prepare('INSERT INTO storage_clients (id, client_name, username, password_hash, added_by, currency) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, clientName.trim(), username || null, passwordHash, req.user.name, normCurrency(req.body.currency) || DEFAULT_CURRENCY);
   res.status(201).json({ client: rowToClient(db.prepare('SELECT * FROM storage_clients WHERE id = ?').get(id)) });
 });
 
@@ -423,6 +425,11 @@ router.patch('/clients/:id', (req, res) => {
     sets.push('client_name = ?'); vals.push(String(clientName).trim());
   }
   if (username !== undefined) { sets.push('username = ?'); vals.push(username); }
+  if (req.body.currency !== undefined) {
+    const cur = normCurrency(req.body.currency);
+    if (!cur) return res.status(400).json({ error: 'Currency must be AUD or USD' });
+    sets.push('currency = ?'); vals.push(cur);
+  }
   if (removePortalAccess) { sets.push('password_hash = NULL'); }
   else if (password) { sets.push('password_hash = ?'); vals.push(bcrypt.hashSync(password, 10)); }
   if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
@@ -916,14 +923,16 @@ function rdReport(from, to, client) {
     if (l.kind === 'Receiving') c.receiving += l.amount; else c.dispatch += l.amount;
     c.lines.push(l);
   });
+  const cmap = currencyMap();
   const clients = Object.values(byClient)
-    .map((c) => ({ ...c, receiving: round2(c.receiving), dispatch: round2(c.dispatch), total: round2(c.receiving + c.dispatch) }))
+    .map((c) => ({ ...c, currency: currencyFor(c.client, cmap), receiving: round2(c.receiving), dispatch: round2(c.dispatch), total: round2(c.receiving + c.dispatch) }))
     .sort((a, b) => a.client.localeCompare(b.client, undefined, { sensitivity: 'base' }));
   return {
     from, to, clients,
     receiving: round2(clients.reduce((t, c) => t + c.receiving, 0)),
     dispatch: round2(clients.reduce((t, c) => t + c.dispatch, 0)),
     total: round2(clients.reduce((t, c) => t + c.total, 0)),
+    totals: totalsByCurrency(clients),
   };
 }
 
@@ -941,7 +950,7 @@ router.get('/reports/rd-invoice.pdf', async (req, res) => {
   try {
     const report = rdReport(from, to, client);
     const c = report.clients[0] || { client, lines: [], total: 0 };
-    const pdf = await buildRdInvoicePdf({ client, from, to, lines: c.lines, total: c.total });
+    const pdf = await buildRdInvoicePdf({ client, from, to, lines: c.lines, total: c.total, currency: currencyFor(client) });
     sendPdf(res, pdf, `RD-${invoiceReference({ client, to })}.pdf`, req.query.download === '1');
   } catch (err) {
     console.error('[storage] R/D invoice PDF failed:', err);

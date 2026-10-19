@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, DatabaseBackup, MapPin } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
-import { PRESET_LABELS, dmy, money } from '../storage/common';
+import { PRESET_LABELS, dmy, money, totalsByCurrency, moneyTotals } from '../storage/common';
 
 const PERIODS = ['lastWeek', 'lastMonth', 'lastQuarter', 'lastYear', 'lastFY'];
 
@@ -18,9 +18,9 @@ function BarList({ rows, format, total, color = '#2a78d6' }) {
         return (
           <div key={r.label} style={{ display: 'contents' }}>
             <div style={{ fontSize: 13, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.label}>{r.label}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={`${r.label}: ${format(r.value)}${share}`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={`${r.label}: ${format(r.value, r)}${share}`}>
               <div style={{ height: 18, width: `${Math.max((r.value / max) * 100, 0.5)}%`, maxWidth: 'calc(100% - 110px)', background: color, borderRadius: 4 }} />
-              <span style={{ fontSize: 12, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{format(r.value)}<span style={{ color: 'var(--muted)' }}>{share}</span></span>
+              <span style={{ fontSize: 12, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{format(r.value, r)}<span style={{ color: 'var(--muted)' }}>{share}</span></span>
             </div>
           </div>
         );
@@ -42,7 +42,10 @@ export default function StorageDashboard() {
     api.get('/storage/dashboard').then((r) => setData(r.data)).catch(() => setError('Could not load the dashboard'));
   }, []);
 
-  const costRows = useMemo(() => (data ? data.costByClient.map((r) => ({ label: r.client, value: r[period] })).filter((r) => r.value > 0).sort((a, b) => b.value - a.value) : []), [data, period]);
+  const costRows = useMemo(() => (data ? data.costByClient.map((r) => ({ label: r.client, value: r[period], currency: r.currency || 'AUD' })).filter((r) => r.value > 0).sort((a, b) => b.value - a.value) : []), [data, period]);
+  // Totals per currency — US$ clients aren't added to the AUD total. Shares are
+  // worked out within each currency.
+  const costTotals = totalsByCurrency(costRows, 'value');
   const costTotal = costRows.reduce((t, r) => t + r.value, 0);
   const itemRows = useMemo(() => (data ? data.itemsByClient.map((r) => ({ label: r.client, value: r.count })) : []), [data]);
 
@@ -93,9 +96,9 @@ export default function StorageDashboard() {
             </div>
             {costRows.length === 0 ? <div className="empty-state">No storage charges in this period.</div> : (
               <>
-                <BarList rows={costRows.slice(0, 10)} format={money} total={costTotal} />
+                <BarList rows={costRows.slice(0, 10)} format={(n, r) => money(n, r?.currency)} total={costTotals.length > 1 ? null : costTotal} />
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
-                  Total {money(costTotal)}{costRows.length > 10 ? ` · showing top 10 of ${costRows.length} clients` : ''}
+                  Total {moneyTotals(costTotals)}{costRows.length > 10 ? ` · showing top 10 of ${costRows.length} clients` : ''}
                 </div>
               </>
             )}
@@ -107,7 +110,7 @@ export default function StorageDashboard() {
                 <thead><tr><th>Client</th>{PERIODS.map((p) => <th key={p} style={{ textAlign: 'right' }}>{PRESET_LABELS[p]}</th>)}</tr></thead>
                 <tbody>
                   {data.costByClient.map((r) => (
-                    <tr key={r.client}><td>{r.client}</td>{PERIODS.map((p) => <td key={p} style={{ textAlign: 'right' }}>{money(r[p])}</td>)}</tr>
+                    <tr key={r.client}><td>{r.client}{r.currency === 'USD' && <span style={{ color: 'var(--muted)', fontSize: 12 }}> (USD)</span>}</td>{PERIODS.map((p) => <td key={p} style={{ textAlign: 'right' }}>{money(r[p], r.currency)}</td>)}</tr>
                   ))}
                 </tbody>
               </table>

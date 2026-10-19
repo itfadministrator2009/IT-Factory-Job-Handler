@@ -4,7 +4,8 @@ import { Plus, Trash2, X, Pencil, Printer, Search } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { sameText, distinctText } from '../storage/common';
+import { sameText, distinctText, money, totalsByCurrency, moneyTotals } from '../storage/common';
+import useClientCurrency from '../storage/useClientCurrency';
 
 const ALL = '__all__';
 
@@ -38,16 +39,12 @@ function feesFor(v) {
   return { received, dispatched, total: received + dispatched };
 }
 
-function money(n) {
-  return `$${(Number(n) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
 // "Pallets: 3 @ $25.00" — the old app's display format. Blank when there's no stock.
-function stockLabel(type, qty, rate) {
+function stockLabel(type, qty, rate, cur = 'AUD') {
   if (!type && (qty == null || qty === '')) return '';
   // Already written in the old app's "Type: Qty @ $Rate" form — show it as-is.
   if (parseStockParts(type).length) return String(type).split(/[;\n]+/).map((s) => s.trim()).filter(Boolean).join('; ');
-  const r = rate != null && rate !== '' ? ` @ ${money(rate)}` : '';
+  const r = rate != null && rate !== '' ? ` @ ${money(rate, cur)}` : '';
   return `${type || 'Stock'}: ${qty ?? 0}${r}`;
 }
 
@@ -74,7 +71,7 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function printEntry(e) {
+function printEntry(e, cur = 'AUD') {
   const fees = feesFor(e);
   const row = (label, value) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value) || '&mdash;'}</td></tr>`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Receiving / Dispatch — ${escapeHtml(e.client)}</title>
@@ -93,12 +90,12 @@ function printEntry(e) {
 <table>
   ${row('Client', e.client)}
   ${row('Date received', dmy(e.dateReceived))}
-  ${row('Stock received', stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate))}
-  ${row('Receiving fee', fees.received ? money(fees.received) : '')}
+  ${row('Stock received', stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate, cur))}
+  ${row('Receiving fee', fees.received ? money(fees.received, cur) : '')}
   ${row('Date dispatched', dmy(e.dateDispatched))}
-  ${row('Stock dispatched', stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate))}
-  ${row('Dispatch fee', fees.dispatched ? money(fees.dispatched) : '')}
-  <tr class="total"><th>Total fee</th><td>${money(fees.total)}</td></tr>
+  ${row('Stock dispatched', stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate, cur))}
+  ${row('Dispatch fee', fees.dispatched ? money(fees.dispatched, cur) : '')}
+  <tr class="total"><th>Total fee</th><td>${money(fees.total, cur)}</td></tr>
   <tr><th>Receiving notes</th><td class="notes">${escapeHtml(e.receiving) || '&mdash;'}</td></tr>
   <tr><th>Dispatch notes</th><td class="notes">${escapeHtml(e.dispatch) || '&mdash;'}</td></tr>
   ${row('Saved by', e.savedBy)}
@@ -137,7 +134,7 @@ function linesFee(lines) {
   return lines.reduce((t, l) => t + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
 }
 
-function StockLines({ label, lines, onChange }) {
+function StockLines({ label, lines, onChange, currency = 'AUD' }) {
   const [type, setType] = useState('Individual Item');
   const [qty, setQty] = useState('');
   const [rate, setRate] = useState('5');
@@ -154,8 +151,8 @@ function StockLines({ label, lines, onChange }) {
       <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{label}</label>
       {lines.map((l, idx) => (
         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--bg, #f5f6f7)', borderRadius: 6, marginBottom: 4, fontSize: 13 }}>
-          <span style={{ flex: 1 }}>{l.type}: <strong>{l.qty}</strong>{l.rate !== '' ? ` @ ${money(l.rate)}` : ''}</span>
-          <span style={{ color: 'var(--muted)' }}>{money((Number(l.qty) || 0) * (Number(l.rate) || 0))}</span>
+          <span style={{ flex: 1 }}>{l.type}: <strong>{l.qty}</strong>{l.rate !== '' ? ` @ ${money(l.rate, currency)}` : ''}</span>
+          <span style={{ color: 'var(--muted)' }}>{money((Number(l.qty) || 0) * (Number(l.rate) || 0), currency)}</span>
           <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Remove" onClick={() => onChange(lines.filter((_, i) => i !== idx))}><Trash2 size={13} /></button>
         </div>
       ))}
@@ -186,7 +183,7 @@ function StockLines({ label, lines, onChange }) {
         )}
         <button type="button" className="btn btn-ghost" onClick={add}><Plus size={14} /> Add</button>
       </div>
-      {lines.length > 0 && <div style={{ fontSize: 13, marginTop: 6 }}>Fee: <strong>{money(linesFee(lines))}</strong></div>}
+      {lines.length > 0 && <div style={{ fontSize: 13, marginTop: 6 }}>Fee: <strong>{money(linesFee(lines), currency)}</strong></div>}
     </div>
   );
 }
@@ -238,7 +235,9 @@ export default function StorageReceiving() {
     });
   }, [entries, clientFilter, query]);
 
-  const visibleTotal = useMemo(() => (visible || []).reduce((t, e) => t + (Number(e.fee) || 0), 0), [visible]);
+  const currencyOf = useClientCurrency();
+  // Fees are added up per currency — a US$ client's fees are never added to AUD ones.
+  const visibleTotals = useMemo(() => totalsByCurrency((visible || []).map((e) => ({ currency: currencyOf(e.client), fee: Number(e.fee) || 0 })), 'fee'), [visible, currencyOf]);
 
   function openAdd(prefill) {
     setFormValues({ ...EMPTY_FORM, client: clientFilter === ALL ? '' : clientFilter, ...(prefill || {}) });
@@ -331,7 +330,7 @@ export default function StorageReceiving() {
         <div>
           <h1>Storage Centre — Receiving / Dispatch</h1>
           <div className="subtitle">
-            {visible ? `${visible.length} entr${visible.length === 1 ? 'y' : 'ies'} · fees ${money(visibleTotal)}` : 'Loading…'}
+            {visible ? `${visible.length} entr${visible.length === 1 ? 'y' : 'ies'} · fees ${moneyTotals(visibleTotals)}` : 'Loading…'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -381,16 +380,16 @@ export default function StorageReceiving() {
                   <tr key={e.id} className="clickable" onClick={() => setDetails(e)} title="Show the full entry">
                     <Cell width={170}>{e.client}</Cell>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(e.dateReceived)}</td>
-                    <Cell width={210}>{stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate)}</Cell>
+                    <Cell width={210}>{stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate, currencyOf(e.client))}</Cell>
                     <td style={{ whiteSpace: 'nowrap' }}>{dmy(e.dateDispatched)}</td>
-                    <Cell width={210}>{stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate)}</Cell>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{money(e.fee)}</td>
+                    <Cell width={210}>{stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate, currencyOf(e.client))}</Cell>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{money(e.fee, currencyOf(e.client))}</td>
                     <Cell width={230} style={{ color: 'var(--muted)' }}>{e.receiving}</Cell>
                     <Cell width={230} style={{ color: 'var(--muted)' }}>{e.dispatch}</Cell>
                     <Cell width={200} style={{ color: 'var(--muted)', fontSize: 12 }}>{[e.savedBy, e.savedOn].filter(Boolean).join(' · ')}</Cell>
                     <td style={{ whiteSpace: 'nowrap' }} onClick={(ev) => ev.stopPropagation()}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Edit" onClick={() => openEdit(e)}><Pencil size={13} /></button>
-                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Print" onClick={() => printEntry(e)}><Printer size={13} /></button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Print" onClick={() => printEntry(e, currencyOf(e.client))}><Printer size={13} /></button>
                       {isAdmin && (
                         <button type="button" className="btn btn-ghost btn-sm icon-btn" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(e.id)}><Trash2 size={13} /></button>
                       )}
@@ -406,14 +405,15 @@ export default function StorageReceiving() {
       {details && (() => {
         const e = details;
         const fees = feesFor(e);
+        const cur = currencyOf(e.client);
         const rows = [
           ['Date received', dmy(e.dateReceived)],
-          ['Stock received', stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate)],
-          ['Receiving fee', fees.received ? money(fees.received) : ''],
+          ['Stock received', stockLabel(e.stockReceivedType, e.stockReceivedQty, e.rate, cur)],
+          ['Receiving fee', fees.received ? money(fees.received, cur) : ''],
           ['Date dispatched', dmy(e.dateDispatched)],
-          ['Stock dispatched', stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate)],
-          ['Dispatch fee', fees.dispatched ? money(fees.dispatched) : ''],
-          ['Total fee', money(e.fee ?? fees.total)],
+          ['Stock dispatched', stockLabel(e.stockDispatchedType, e.stockDispatchedQty, e.rate, cur)],
+          ['Dispatch fee', fees.dispatched ? money(fees.dispatched, cur) : ''],
+          ['Total fee', money(e.fee ?? fees.total, cur)],
           ['Receiving notes', e.receiving],
           ['Dispatch notes', e.dispatch],
           ['Saved', [e.savedBy, e.savedOn].filter(Boolean).join(' · ')],
@@ -444,7 +444,7 @@ export default function StorageReceiving() {
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setDetails(null); openEdit(e); }}><Pencil size={13} /> Edit</button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => printEntry(e)}><Printer size={13} /> Print</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => printEntry(e, currencyOf(e.client))}><Printer size={13} /> Print</button>
                 {isAdmin && (
                   <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => { setDetails(null); handleDelete(e.id); }}><Trash2 size={13} /> Delete</button>
                 )}
@@ -498,7 +498,7 @@ export default function StorageReceiving() {
                   <>
                     <div className="field"><label>Date received</label><input type="date" value={formValues.dateReceived} onChange={set('dateReceived')} /></div>
                     <div className="field" />
-                    <StockLines label="Stock received" lines={formValues.receivedLines} onChange={setLines('receivedLines')} />
+                    <StockLines label="Stock received" lines={formValues.receivedLines} onChange={setLines('receivedLines')} currency={currencyOf(formValues.client)} />
                     <div className="field span-2"><label>Receiving notes</label><textarea rows={2} value={formValues.receiving} onChange={set('receiving')} /></div>
                   </>
                 )}
@@ -506,14 +506,14 @@ export default function StorageReceiving() {
                   <>
                     <div className="field"><label>Date dispatched</label><input type="date" value={formValues.dateDispatched} onChange={set('dateDispatched')} /></div>
                     <div className="field" />
-                    <StockLines label="Stock dispatched" lines={formValues.dispatchedLines} onChange={setLines('dispatchedLines')} />
+                    <StockLines label="Stock dispatched" lines={formValues.dispatchedLines} onChange={setLines('dispatchedLines')} currency={currencyOf(formValues.client)} />
                     <div className="field span-2"><label>Dispatch notes</label><textarea rows={4} value={formValues.dispatch} onChange={set('dispatch')} /></div>
                   </>
                 )}
               </div>
 
               <div style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
-                Total fee: <strong style={{ color: 'var(--text, inherit)' }}>{money(preview.total)}</strong>
+                Total fee: <strong style={{ color: 'var(--text, inherit)' }}>{money(preview.total, currencyOf(formValues.client))}</strong>
               </div>
 
               <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 16 }}>{saving ? 'Saving…' : 'Save'}</button>

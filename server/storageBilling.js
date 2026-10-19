@@ -11,6 +11,7 @@
 // Receiving/dispatch fees: see rdFees below.
 
 const { db } = require('./db');
+const { currencyMap, currencyFor, totalsByCurrency, DEFAULT_CURRENCY } = require('./storageCurrency');
 
 const ALL_PALLETS = '__ALL__';
 const ALL_PALLETS_AT_CENTRE = '__ALL_AT_CENTRE__';
@@ -174,7 +175,7 @@ function clientStatement(client, from, to, data = loadBillingData()) {
   const rdLines = rdLinesInPeriod(data.rdRows.filter((r) => lc(r.client) === lc(client)), from, to);
   const storageTotal = round2(computeStorageCostForClient(client, data.allItems, data.pallets, period.fromDate, period.toDate));
   const rdTotal = round2(rdLines.reduce((t, l) => t + l.amount, 0));
-  return { client, from, to, storageLines, rdLines, storageTotal, rdTotal, total: round2(storageTotal + rdTotal) };
+  return { client, from, to, currency: currencyFor(client), storageLines, rdLines, storageTotal, rdTotal, total: round2(storageTotal + rdTotal) };
 }
 
 // One name per client however it's capitalised: the most common spelling wins.
@@ -199,15 +200,19 @@ function summary(from, to, data = loadBillingData()) {
     if (l.kind === 'Receiving') f.receiving += l.amount; else f.dispatch += l.amount;
   });
   const clients = displayNames([...data.allItems.map((i) => i.client), ...data.rdRows.filter((r) => feesByClient[lc(r.client)]).map((r) => r.client)]);
+  const cmap = currencyMap();
   const rows = clients.map((client) => {
     const storageCost = round2(computeStorageCostForClient(client, data.allItems, data.pallets, period.fromDate, period.toDate));
     const f = feesByClient[lc(client)] || { receiving: 0, dispatch: 0 };
     const receivingFees = round2(f.receiving);
     const dispatchFees = round2(f.dispatch);
     const receivingDispatchFees = round2(f.receiving + f.dispatch);
-    return { client, storageCost, receivingFees, dispatchFees, receivingDispatchFees, total: round2(storageCost + receivingDispatchFees) };
+    return { client, currency: currencyFor(client, cmap), storageCost, receivingFees, dispatchFees, receivingDispatchFees, total: round2(storageCost + receivingDispatchFees) };
   });
-  return { from, to, summary: rows, grandTotal: round2(rows.reduce((t, s) => t + s.total, 0)) };
+  // Totals are per currency (AUD and US$ are never added together). grandTotal
+  // is the AUD total, as before.
+  const totals = totalsByCurrency(rows);
+  return { from, to, summary: rows, totals, grandTotal: (totals.find((t) => t.currency === DEFAULT_CURRENCY) || { total: 0 }).total };
 }
 
 module.exports = {

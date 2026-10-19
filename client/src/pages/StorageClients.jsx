@@ -4,6 +4,7 @@ import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import QrCode from '../storage/QrCode';
+import { resetClientCurrencies } from '../storage/useClientCurrency';
 
 // Old "Get client portal link": the same link for every client — they still
 // sign in with their own username and password. Copy it, or show a QR code to
@@ -46,6 +47,7 @@ export default function StorageClients() {
   const [clientName, setClientName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [currency, setCurrency] = useState('AUD');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -66,18 +68,19 @@ export default function StorageClients() {
   }
   useEffect(() => { load(); }, []);
 
-  function openAdd() { setEditing(null); setClientName(''); setUsername(''); setPassword(''); setError(''); setShowForm(true); }
-  function openEdit(c) { setEditing(c); setClientName(c.clientName); setUsername(c.username || ''); setPassword(''); setError(''); setShowForm(true); }
+  function openAdd() { setEditing(null); setClientName(''); setUsername(''); setPassword(''); setCurrency('AUD'); setError(''); setShowForm(true); }
+  function openEdit(c) { setEditing(c); setClientName(c.clientName); setUsername(c.username || ''); setPassword(''); setCurrency(c.currency || 'AUD'); setError(''); setShowForm(true); }
 
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
     setError('');
     try {
-      const payload = { clientName, username: username || null };
+      const payload = { clientName, username: username || null, currency };
       if (password) payload.password = password;
       if (editing) await api.patch(`/storage/clients/${editing.id}`, payload);
       else await api.post('/storage/clients', payload);
+      resetClientCurrencies();
       setShowForm(false);
       load();
     } catch (err) {
@@ -115,11 +118,12 @@ export default function StorageClients() {
           <div className="empty-state"><h3>No clients yet</h3></div>
         ) : (
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th style={{ textAlign: 'right' }}>In storage</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
+            <thead><tr><th>Client</th><th>Currency</th><th style={{ textAlign: 'right' }}>In storage</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
             <tbody>
               {clients.map((c) => (
                 <tr key={c.id} className="clickable" onClick={() => openEdit(c)}>
                   <td>{c.clientName}</td>
+                  <td>{c.currency === 'USD' ? <span className="pill" style={{ background: '#e3eefb', color: '#1d5fae' }}>USD</span> : <span style={{ color: 'var(--muted)' }}>AUD</span>}</td>
                   <td style={{ textAlign: 'right', color: c.inStorageCount ? undefined : 'var(--muted)' }} title={`${c.itemCount} item(s) on record`}>{c.inStorageCount}</td>
                   <td>{c.username || '—'}</td>
                   <td>{c.hasPortalLogin ? 'Enabled' : '—'}</td>
@@ -178,6 +182,14 @@ export default function StorageClients() {
             <form onSubmit={handleSave}>
               <div className="form-grid">
                 <div className="field"><label>Client name</label><input value={clientName} onChange={(e) => setClientName(e.target.value)} required /></div>
+                <div className="field">
+                  <label>Charged in</label>
+                  <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                    <option value="AUD">AUD — Australian dollars ($)</option>
+                    <option value="USD">USD — US dollars (US$)</option>
+                  </select>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Enter this client's rates in this currency. Their reports and invoices show it; amounts aren't converted.</div>
+                </div>
                 <div className="field"><label>Portal username (optional)</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
                 <div className="field"><label>Portal password (8+ characters){editing ? ' — leave blank to keep' : ''}</label><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
               </div>
