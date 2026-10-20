@@ -5,6 +5,8 @@ import api from '../api';
 import Layout from '../components/Layout';
 import AttachmentManager from '../components/AttachmentManager';
 import ItemsManager from '../components/ItemsManager';
+import SelectOrCustom from '../components/SelectOrCustom';
+import { CLASSIFICATIONS, DATA_DESTRUCTION } from '../utils/jobOptions';
 
 const STATUSES = ['Open', 'In Progress', 'On Hold', 'Complete', 'Collected', 'Closed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
@@ -22,7 +24,7 @@ const EMPTY = {
   contact_name: '', account_name: '', email: '', phone: '',
   subject: '', description: '', status: 'Open', owner_id: '',
   product_name: '', due_date: '', scheduled_time: '', language: '', priority: '',
-  channel: 'Phone', classifications: '', site_address: '', access_notes: '', customer_reference: '',
+  channel: 'Phone', classifications: '', data_destruction: '', site_address: '', access_notes: '', customer_reference: '',
 };
 
 export default function JobForm() {
@@ -84,7 +86,7 @@ export default function JobForm() {
         owner_id: j.owner_id || '', product_name: j.product_name || '',
         due_date: j.due_date || '', scheduled_time: j.scheduled_time || '', language: j.language || '',
         priority: j.priority || '', channel: j.channel || 'Phone',
-        classifications: j.classifications || '', site_address: j.site_address || '',
+        classifications: j.classifications || '', data_destruction: j.data_destruction || '', site_address: j.site_address || '',
         access_notes: j.access_notes || '', customer_reference: j.customer_reference || '',
       });
       setExistingAttachments(res.data.attachments || []);
@@ -263,14 +265,19 @@ export default function JobForm() {
               </div>
 
               <div className="field">
+                <label htmlFor="classifications">Classification</label>
+                <SelectOrCustom id="classifications" value={form.classifications} onChange={(v) => set('classifications', v)} options={CLASSIFICATIONS} placeholder="Type the classification" />
+              </div>
+              <div className="field">
+                <label htmlFor="data_destruction">Data Destruction</label>
+                <SelectOrCustom id="data_destruction" value={form.data_destruction} onChange={(v) => set('data_destruction', v)} options={DATA_DESTRUCTION} placeholder="Type the data destruction method" />
+              </div>
+
+              <div className="field">
                 <label htmlFor="channel">Channel</label>
                 <select id="channel" value={form.channel} onChange={(e) => set('channel', e.target.value)}>
                   {CHANNELS.map((c) => <option key={c}>{c}</option>)}
                 </select>
-              </div>
-              <div className="field">
-                <label htmlFor="classifications">Classifications</label>
-                <input id="classifications" value={form.classifications} onChange={(e) => set('classifications', e.target.value)} placeholder="e.g. Hardware, Billing" />
               </div>
 
               <div className="field span-2">
