@@ -8,6 +8,7 @@ import ItemsManager from '../components/ItemsManager';
 import SignaturePad from '../components/SignaturePad';
 import DataDestructionCert from '../components/DataDestructionCert';
 import EmailJobSheet from '../components/EmailJobSheet';
+import PrintJobLabel from '../components/PrintJobLabel';
 import { openJobPdf } from '../utils/pdf';
 import { formatDMY } from '../utils/date';
 import { StatusPill, PriorityPill } from '../components/Pill';
@@ -139,6 +140,7 @@ export default function JobDetail() {
           <button className="btn btn-ghost btn-sm" onClick={handleDownloadPdf} disabled={generatingPdf}>
             <FileText size={14} /> {generatingPdf ? 'Generating…' : 'Job Sheet PDF'}
           </button>
+          <PrintJobLabel job={job} />
           <DataDestructionCert api={api} job={job} />
           <EmailJobSheet api={api} job={job} onResult={setEmailSentMsg} />
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${id}/edit`)}>
