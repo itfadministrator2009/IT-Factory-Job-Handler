@@ -487,6 +487,8 @@ function migrateJobsStatusConstraint() {
   console.log('[db] Migrated jobs table: removed the outdated status CHECK constraint.');
 }
 migrateJobsStatusConstraint();
+// How the job's data was destroyed (Blancco, LazySoft, …) — chosen next to Classification.
+addColumnIfMissing('jobs', 'data_destruction', 'TEXT');
 
 function migrateUsersEmailUnique() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql;
