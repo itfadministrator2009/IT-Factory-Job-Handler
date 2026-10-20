@@ -14,6 +14,7 @@ const FIELDS = [
   'contact_name', 'account_name', 'email', 'phone', 'subject', 'description',
   'status', 'owner_id', 'product_name', 'due_date', 'scheduled_time', 'language', 'priority',
   'channel', 'classifications', 'site_address', 'access_notes', 'customer_reference',
+  'data_destruction',
 ];
 
 const OPEN_STATUSES = ['Open', 'In Progress', 'On Hold'];
@@ -169,6 +170,7 @@ router.get('/export.csv', (req, res) => {
     ['account_name', 'Account'], ['email', 'Email'], ['phone', 'Phone'],
     ['status', 'Status'], ['priority', 'Priority'], ['due_date', 'Due Date'],
     ['scheduled_time', 'Time'], ['language', 'Vehicle'], ['classifications', 'Classification'],
+    ['data_destruction', 'Data Destruction'],
     ['site_address', 'Site Address'], ['customer_reference', 'Reference'],
     ['created_at', 'Created'],
   ];
