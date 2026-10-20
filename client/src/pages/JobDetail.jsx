@@ -288,12 +288,13 @@ export default function JobDetail() {
             {job.phone && <div className="side-row"><label>Phone</label><span>{job.phone}</span></div>}
           </div>
 
-          {(job.product_name || job.language || job.classifications || job.customer_reference) && (
+          {(job.product_name || job.language || job.classifications || job.data_destruction || job.customer_reference) && (
             <div className="panel side-block">
               <h4>Additional info</h4>
               {job.product_name && <div className="side-row"><label>Product</label><span>{job.product_name}</span></div>}
               {job.language && <div className="side-row"><label>Vehicle</label><span>{job.language}</span></div>}
               {job.classifications && <div className="side-row"><label>Classification</label><span>{job.classifications}</span></div>}
+              {job.data_destruction && <div className="side-row"><label>Data Destruction</label><span>{job.data_destruction}</span></div>}
               {job.customer_reference && <div className="side-row"><label>Reference</label><span>{job.customer_reference}</span></div>}
             </div>
           )}

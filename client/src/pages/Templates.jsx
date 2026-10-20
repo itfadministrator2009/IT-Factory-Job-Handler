@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Trash2, Plus } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
+import SelectOrCustom from '../components/SelectOrCustom';
+import { CLASSIFICATIONS, DATA_DESTRUCTION } from '../utils/jobOptions';
 
 export default function Templates() {
   const [templates, setTemplates] = useState([]);
@@ -11,6 +13,7 @@ export default function Templates() {
   const [subject, setSubject] = useState('');
   const [priority, setPriority] = useState('');
   const [classifications, setClassifications] = useState('');
+  const [dataDestruction, setDataDestruction] = useState('');
   const [items, setItems] = useState([]);
   const [itemDesc, setItemDesc] = useState('');
   const [saving, setSaving] = useState(false);
@@ -37,9 +40,10 @@ export default function Templates() {
     if (subject) fields.subject = subject;
     if (priority) fields.priority = priority;
     if (classifications) fields.classifications = classifications;
+    if (dataDestruction) fields.data_destruction = dataDestruction;
     try {
       await api.post('/templates', { name, fields, items });
-      setName(''); setSubject(''); setPriority(''); setClassifications(''); setItems([]);
+      setName(''); setSubject(''); setPriority(''); setClassifications(''); setDataDestruction(''); setItems([]);
       setShowForm(false);
       load();
     } finally {
@@ -84,9 +88,13 @@ export default function Templates() {
                   <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
                 </select>
               </div>
-              <div className="field span-2">
-                <label htmlFor="tclass">Default classifications</label>
-                <input id="tclass" value={classifications} onChange={(e) => setClassifications(e.target.value)} />
+              <div className="field">
+                <label htmlFor="tclass">Default classification</label>
+                <SelectOrCustom id="tclass" value={classifications} onChange={setClassifications} options={CLASSIFICATIONS} placeholder="Type the classification" />
+              </div>
+              <div className="field">
+                <label htmlFor="tdd">Default data destruction</label>
+                <SelectOrCustom id="tdd" value={dataDestruction} onChange={setDataDestruction} options={DATA_DESTRUCTION} placeholder="Type the data destruction method" />
               </div>
             </div>
 
