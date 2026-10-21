@@ -273,16 +273,75 @@ router.get('/:id/entries', (req, res) => {
   const whereClause = scoped ? 'WHERE project_id = ? AND assigned_to = ?' : 'WHERE project_id = ?';
   const whereParams = scoped ? [req.params.id, req.user.id] : [req.params.id];
 
-  const total = db.prepare(`SELECT COUNT(*) as c FROM project_entries ${whereClause}`).get(...whereParams).c;
-  const entries = db.prepare(`SELECT * FROM project_entries ${whereClause} ORDER BY entry_number DESC LIMIT ? OFFSET ?`).all(...whereParams, limit, offset);
-
-  const withNames = entries.map((e) => ({
+  const withAssignee = (e) => ({
     ...e,
     answers: JSON.parse(e.answers_json),
     assignee: e.assigned_to ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(e.assigned_to) : null,
-  }));
-  res.json({ entries: withNames, total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
+  });
+
+  // Search: every word typed must appear somewhere in the entry — its number,
+  // site, status, who it's assigned to, or any answer on the form.
+  const q = String(req.query.q || '').trim();
+  if (q) {
+    const template = JSON.parse(db.prepare('SELECT template_json FROM projects WHERE id = ?').get(req.params.id).template_json || '{}');
+    const terms = q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 10);
+    const all = db.prepare(`SELECT * FROM project_entries ${whereClause} ORDER BY entry_number DESC`).all(...whereParams).map(withAssignee);
+    const matched = [];
+    all.forEach((e) => {
+      const parts = searchableParts(e, template);
+      const text = parts.map((p) => p.value).join(' \n ').toLowerCase();
+      if (!terms.every((t) => text.includes(t))) return;
+      // Show which form answer matched (when it wasn't just the site/number/status).
+      const hit = parts.find((p) => p.label && terms.some((t) => p.value.toLowerCase().includes(t)));
+      matched.push(hit ? { ...e, match: { label: hit.label, value: hit.value.length > 120 ? `${hit.value.slice(0, 117)}…` : hit.value } } : e);
+    });
+    const total = matched.length;
+    return res.json({ entries: matched.slice(offset, offset + limit), total, page, totalPages: Math.max(1, Math.ceil(total / limit)), q });
+  }
+
+  const total = db.prepare(`SELECT COUNT(*) as c FROM project_entries ${whereClause}`).get(...whereParams).c;
+  const entries = db.prepare(`SELECT * FROM project_entries ${whereClause} ORDER BY entry_number DESC LIMIT ? OFFSET ?`).all(...whereParams, limit, offset);
+
+  res.json({ entries: entries.map(withAssignee), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
 });
+
+// Everything on an entry that search looks at, as { label, value } pieces.
+// Form answers carry their field label; photos and signatures are skipped.
+function searchableParts(entry, template) {
+  const parts = [
+    { value: `#${entry.entry_number}` },
+    { value: String(entry.entry_number) },
+    { value: entry.site_name || '' },
+    { value: entry.status || '' },
+    { value: entry.assignee?.name || '' },
+  ];
+  const answers = entry.answers || {};
+  const show = (v) => {
+    if (v === true) return 'Yes';
+    if (v === false) return 'No';
+    if (v == null) return '';
+    if (Array.isArray(v)) return v.map(show).filter(Boolean).join(', ');
+    if (typeof v === 'object') return Object.values(v).map(show).filter(Boolean).join(', ');
+    const s = String(v);
+    return s.startsWith('data:') ? '' : s; // drawn signatures are images
+  };
+  const known = new Set();
+  (template.sections || []).forEach((sec) => {
+    const secAnswers = answers[sec.id];
+    known.add(sec.id);
+    const instances = Array.isArray(secAnswers) ? secAnswers : [secAnswers || {}];
+    instances.forEach((inst, i) => {
+      (sec.fields || []).forEach((f) => {
+        if (f.type === 'photo' || f.type === 'signature') return;
+        const value = show(inst?.[f.id]);
+        if (value) parts.push({ label: instances.length > 1 ? `${f.label} (${sec.title} ${i + 1})` : f.label, value });
+      });
+    });
+  });
+  // Answers for fields no longer on the form still count.
+  Object.entries(answers).forEach(([k, v]) => { if (!known.has(k)) { const value = show(v); if (value) parts.push({ label: 'Other', value }); } });
+  return parts.filter((p) => p.value);
+}
 
 // Admin-only: create a new entry with just a site name and who it's assigned to —
 // the assigned person fills in the rest of the form themselves later.
