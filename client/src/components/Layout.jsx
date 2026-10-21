@@ -94,7 +94,7 @@ export default function Layout({ children }) {
           )}
         </nav>
         <div className="sidebar-footer">
-          <WhoIsOnline me={user?.name} meId={user?.id} />
+          <WhoIsOnline me={user?.name} meId={user?.id} isAdmin={user?.role === 'admin' || user?.role === 'agent'} />
           <button onClick={logout}><LogOut size={12} style={{ verticalAlign: -1, marginRight: 4 }} />Log out</button>
         </div>
       </aside>

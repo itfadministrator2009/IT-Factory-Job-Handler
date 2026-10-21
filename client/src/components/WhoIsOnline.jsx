@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LogOut } from 'lucide-react';
 import api from '../api';
 
 // "N online now" — the old Storage Centre's presence indicator. A heartbeat
@@ -17,9 +18,29 @@ async function beat() {
 }
 
 // Click "N online now" to see who they are.
-export default function WhoIsOnline({ me, meId }) {
+export default function WhoIsOnline({ me, meId, isAdmin = false }) {
   const [users, setUsers] = useState(cache.users);
   const [open, setOpen] = useState(false);
+  const [confirmId, setConfirmId] = useState(null); // user id, or 'all'
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  // Admin: log someone (or everyone else) out of Work Desk.
+  async function logOut(target) {
+    setBusy(true); setNotice('');
+    try {
+      const { data } = target === 'all'
+        ? await api.post('/presence/logout-all')
+        : await api.post(`/presence/${target.id}/logout`);
+      cache = { at: Date.now(), users: data.users };
+      listeners.forEach((fn) => fn(cache.users));
+      setNotice(target === 'all' ? `Logged out ${data.count} ${data.count === 1 ? 'person' : 'people'}.` : `${data.name} has been logged out.`);
+    } catch (err) {
+      setNotice(err.response?.data?.error || 'Could not log them out');
+    } finally {
+      setBusy(false); setConfirmId(null);
+    }
+  }
   const boxRef = useRef(null);
   useEffect(() => {
     listeners.add(setUsers);
@@ -33,7 +54,7 @@ export default function WhoIsOnline({ me, meId }) {
 
   // Refresh the list when it's opened; close on a click elsewhere or Escape.
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) { setConfirmId(null); setNotice(''); return undefined; }
     beat();
     const onDown = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
@@ -71,11 +92,41 @@ export default function WhoIsOnline({ me, meId }) {
                 <li key={u.id}>
                   <span className="online-avatar small" aria-hidden="true">{initialOf(u.name)}<span className="online-dot on-avatar" /></span>
                   <span className="online-name">{u.name || 'Unknown user'}{mine && <span className="online-you"> (you)</span>}</span>
-                  <span className="online-when">{seenText(u.lastSeenMs, mine)}</span>
+                  {confirmId === u.id ? (
+                    <span className="online-confirm">
+                      <button type="button" className="online-btn danger" disabled={busy} onClick={() => logOut(u)}>{busy ? '…' : 'Log out'}</button>
+                      <button type="button" className="online-btn" disabled={busy} onClick={() => setConfirmId(null)}>Cancel</button>
+                    </span>
+                  ) : (
+                    <>
+                      <span className="online-when">{seenText(u.lastSeenMs, mine)}</span>
+                      {isAdmin && !mine && (
+                        <button type="button" className="online-kick" title={`Log ${u.name || 'this user'} out of Work Desk`} aria-label={`Log ${u.name || 'this user'} out`} onClick={() => setConfirmId(u.id)}>
+                          <LogOut size={13} />
+                        </button>
+                      )}
+                    </>
+                  )}
                 </li>
               );
             })}
           </ul>
+          {notice && <div className="online-notice">{notice}</div>}
+          {isAdmin && sorted.length > 1 && (
+            <div className="online-foot">
+              {confirmId === 'all' ? (
+                <>
+                  <span>Log out everyone except you?</span>
+                  <span className="online-confirm">
+                    <button type="button" className="online-btn danger" disabled={busy} onClick={() => logOut('all')}>{busy ? '…' : 'Yes'}</button>
+                    <button type="button" className="online-btn" disabled={busy} onClick={() => setConfirmId(null)}>Cancel</button>
+                  </span>
+                </>
+              ) : (
+                <button type="button" className="online-btn" onClick={() => setConfirmId('all')}><LogOut size={12} /> Log out everyone else</button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
