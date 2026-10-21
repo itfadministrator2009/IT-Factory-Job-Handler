@@ -180,7 +180,7 @@ input, select, textarea {
 .online-caret.up { transform: rotate(45deg) translate(-2px, -2px); }
 .online-list {
   position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 50;
-  width: 240px; max-height: 320px; overflow-y: auto;
+  width: 264px; max-height: 360px; overflow-y: auto;
   background: #fff; color: var(--ink);
   border: 1px solid var(--line); border-radius: 12px;
   box-shadow: 0 10px 30px rgba(22, 36, 31, 0.22);
@@ -193,6 +193,26 @@ input, select, textarea {
 .online-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .online-you { color: var(--muted); }
 .online-when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* Admin: log-out button on each person in the online list (shown on touch screens too). */
+.online-kick { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: none; border: none; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.online-kick:hover { background: #f6e4dd; color: var(--danger); }
+.online-confirm { display: inline-flex; gap: 4px; flex: none; }
+.online-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
+.online-btn:hover { background: #f6f5f1; }
+.online-btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.online-btn.danger:hover { background: #a8350f; }
+.online-btn:disabled { opacity: 0.6; cursor: default; }
+.online-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); margin-top: 6px; padding: 8px 6px 2px; font-size: 12px; color: var(--ink); }
+/* The online list sits in the sidebar footer, whose buttons are styled as
+   pale underlined links — undo that for the list's own buttons. */
+.sidebar-footer .online-list button { margin: 0; text-decoration: none; font-family: var(--font-body); }
+.sidebar-footer .online-list .online-btn { color: var(--ink); background: var(--panel); border: 1px solid var(--line); padding: 3px 8px; font-size: 12px; }
+.sidebar-footer .online-list .online-btn:hover { background: #f6f5f1; color: var(--ink); }
+.sidebar-footer .online-list .online-btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.sidebar-footer .online-list .online-btn.danger:hover { background: #a8350f; color: #fff; }
+.sidebar-footer .online-list .online-kick { color: #8a938f; background: transparent; padding: 0; border: none; }
+.sidebar-footer .online-list .online-kick:hover { background: #f6e4dd; color: var(--danger); }
+.online-notice { margin: 6px 6px 0; padding: 6px 8px; border-radius: 6px; background: #eaf3ee; color: var(--green); font-size: 12px; }
 
 .main {
   flex: 1;
