@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, Trash2, Mail, X, Pencil } from 'lucide-react';
+import { Plus, Trash2, Mail, X, Pencil, Search } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -39,22 +39,37 @@ export default function ProjectDetail() {
 
   const [entriesPage, setEntriesPage] = useState(1);
   const [totalEntryPages, setTotalEntryPages] = useState(1);
+  const [totalEntries, setTotalEntries] = useState(0);
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState(''); // what was last searched (search box, after a short pause)
 
-  function load(page = entriesPage) {
-    api.get(`/projects/${id}`).then((res) => setProject(res.data.project)).catch(() => setError('Could not load project'));
-    api.get(`/projects/${id}/entries`, { params: { page } }).then((res) => {
+  function loadEntries(page = entriesPage, q = query) {
+    return api.get(`/projects/${id}/entries`, { params: { page, q: q || undefined } }).then((res) => {
       setEntries(res.data.entries);
       setTotalEntryPages(res.data.totalPages);
+      setTotalEntries(res.data.total);
       setEntriesPage(res.data.page);
     });
   }
+  function load(page = entriesPage) {
+    api.get(`/projects/${id}`).then((res) => setProject(res.data.project)).catch(() => setError('Could not load project'));
+    loadEntries(page);
+  }
   useEffect(() => { load(1); }, [id]);
+
+  // Search all fields: runs a moment after typing stops, from page 1.
+  useEffect(() => {
+    const q = search.trim();
+    if (q === query) return undefined;
+    const t = setTimeout(() => { setQuery(q); setSelected(new Set()); loadEntries(1, q); }, 300);
+    return () => clearTimeout(t);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
   useEffect(() => { setSelected(new Set()); }, [entries?.length === 0]);
 
   function goToPage(page) {
     if (page < 1 || page > totalEntryPages) return;
-    load(page);
+    loadEntries(page);
   }
 
   async function handleCreateEntry(e) {
@@ -318,9 +333,30 @@ export default function ProjectDetail() {
       )}
 
       <div className="panel" style={{ padding: 18 }}>
-        <div className="comment-meta"><strong style={{ color: 'var(--ink)' }}>Entries</strong></div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div className="comment-meta" style={{ margin: 0 }}>
+            <strong style={{ color: 'var(--ink)' }}>Entries</strong>
+            {query && entries && <span style={{ marginLeft: 8 }}>{totalEntries} {totalEntries === 1 ? 'match' : 'matches'} for “{query}”</span>}
+          </div>
+          <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 380 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search all fields — site, serial, department, notes…"
+              aria-label="Search entries"
+              style={{ width: '100%', paddingLeft: 30 }}
+            />
+          </div>
+        </div>
         {!entries ? (
           <p style={{ color: 'var(--muted)' }}>Loading…</p>
+        ) : entries.length === 0 && query ? (
+          <div className="empty-state">
+            <h3>No entries match “{query}”</h3>
+            <p>Try fewer or different words. <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear search</button></p>
+          </div>
         ) : entries.length === 0 ? (
           <div className="empty-state">
             <h3>No entries yet</h3>
@@ -352,7 +388,14 @@ export default function ProjectDetail() {
                     </td>
                   )}
                   <td className="ticket-num">#{e.entry_number}</td>
-                  <td>{e.site_name || <span style={{ color: 'var(--muted)' }}>Untitled</span>}</td>
+                  <td>
+                    {e.site_name || <span style={{ color: 'var(--muted)' }}>Untitled</span>}
+                    {e.match && (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                        {e.match.label}: <Highlight text={e.match.value} query={query} />
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <span className={'pill ' + (e.status === 'Submitted' ? 'pill-status-Complete' : 'pill-status-Open')}>{e.status}</span>
                   </td>
@@ -435,4 +478,14 @@ export default function ProjectDetail() {
 function formatDate(s) {
   const d = new Date(s.replace(' ', 'T') + 'Z');
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Marks the searched words inside a matched answer.
+function Highlight({ text, query }) {
+  const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return text;
+  const re = new RegExp(`(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  return String(text).split(re).map((part, i) => (terms.includes(part.toLowerCase())
+    ? <mark key={i} style={{ background: '#fdf0c4', color: 'inherit', padding: 0 }}>{part}</mark>
+    : part));
 }
