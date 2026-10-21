@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff, RotateCcw, AlertTriangle, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../api';
 import Layout from '../components/Layout';
@@ -53,6 +53,7 @@ function ManageUsersTab({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
 
   const [name, setName] = useState('');
@@ -122,6 +123,18 @@ function ManageUsersTab({ currentUser }) {
     } catch (err) {
       setError(err.response?.data?.error || 'Could not update access');
       load();
+    }
+  }
+
+  // Log someone out of Work Desk on every device (they can log straight back in).
+  async function handleLogOut(u) {
+    if (!confirm(`Log ${u.name} out of Work Desk? They'll be sent to the login page on every device they're signed in on.`)) return;
+    setError(''); setNotice('');
+    try {
+      await api.post(`/presence/${u.id}/logout`);
+      setNotice(`${u.name} has been logged out.`);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not log them out');
     }
   }
 
@@ -200,6 +213,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="success-banner" style={{ marginBottom: 12 }}><span>{notice}</span><button type="button" onClick={() => setNotice('')}><X size={15} /></button></div>}
       {resetDoneFor && (
         <div className="success-banner">
           <span>Password reset for {resetDoneFor}. Let them know their new password directly.</span>
@@ -305,6 +319,10 @@ function ManageUsersTab({ currentUser }) {
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openReset(u)} title="Reset password"><KeyRound size={13} /></button>
+                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => handleLogOut(u)}
+                        disabled={u.id === currentUser.id} title={u.id === currentUser.id ? 'Use Log out to sign yourself out' : 'Log out of Work Desk'}>
+                        <LogOut size={13} />
+                      </button>
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm icon-btn"
