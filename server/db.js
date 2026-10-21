@@ -489,6 +489,8 @@ function migrateJobsStatusConstraint() {
 migrateJobsStatusConstraint();
 // How the job's data was destroyed (Blancco, LazySoft, …) — chosen next to Classification.
 addColumnIfMissing('jobs', 'data_destruction', 'TEXT');
+// Bumped when an admin logs someone out; sign-ins made before that stop working.
+addColumnIfMissing('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0');
 
 function migrateUsersEmailUnique() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql;
