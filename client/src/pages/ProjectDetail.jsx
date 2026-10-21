@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Plus, Trash2, Mail, X, Pencil } from 'lucide-react';
 import SearchField from '../components/SearchField';
@@ -45,8 +45,13 @@ export default function ProjectDetail() {
   const [query, setQuery] = useState(''); // what was last searched (search box, after a short pause)
   const [searching, setSearching] = useState(false);
 
+  // Only the newest request may update the list: while typing, the reply for
+  // "mo" can arrive after the one for "moe" and must not replace it.
+  const latestRequest = useRef(0);
   function loadEntries(page = entriesPage, q = query) {
+    const requestNo = ++latestRequest.current;
     return api.get(`/projects/${id}/entries`, { params: { page, q: q || undefined } }).then((res) => {
+      if (requestNo !== latestRequest.current) return;
       setEntries(res.data.entries);
       setTotalEntryPages(res.data.totalPages);
       setTotalEntries(res.data.total);
@@ -66,7 +71,9 @@ export default function ProjectDetail() {
     setSearching(true);
     const t = setTimeout(() => {
       setQuery(q); setSelected(new Set());
-      loadEntries(1, q).finally(() => setSearching(false));
+      const req = loadEntries(1, q);
+      const mine = latestRequest.current;
+      req.finally(() => { if (mine === latestRequest.current) setSearching(false); });
     }, 300);
     return () => clearTimeout(t);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
