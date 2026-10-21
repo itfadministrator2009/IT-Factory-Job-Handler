@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, Trash2, Mail, X, Pencil, Search } from 'lucide-react';
+import { Plus, Trash2, Mail, X, Pencil } from 'lucide-react';
+import SearchField from '../components/SearchField';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +43,7 @@ export default function ProjectDetail() {
   const [totalEntries, setTotalEntries] = useState(0);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState(''); // what was last searched (search box, after a short pause)
+  const [searching, setSearching] = useState(false);
 
   function loadEntries(page = entriesPage, q = query) {
     return api.get(`/projects/${id}/entries`, { params: { page, q: q || undefined } }).then((res) => {
@@ -60,8 +62,12 @@ export default function ProjectDetail() {
   // Search all fields: runs a moment after typing stops, from page 1.
   useEffect(() => {
     const q = search.trim();
-    if (q === query) return undefined;
-    const t = setTimeout(() => { setQuery(q); setSelected(new Set()); loadEntries(1, q); }, 300);
+    if (q === query) { setSearching(false); return undefined; }
+    setSearching(true);
+    const t = setTimeout(() => {
+      setQuery(q); setSelected(new Set());
+      loadEntries(1, q).finally(() => setSearching(false));
+    }, 300);
     return () => clearTimeout(t);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
@@ -336,19 +342,20 @@ export default function ProjectDetail() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <div className="comment-meta" style={{ margin: 0 }}>
             <strong style={{ color: 'var(--ink)' }}>Entries</strong>
-            {query && entries && <span style={{ marginLeft: 8 }}>{totalEntries} {totalEntries === 1 ? 'match' : 'matches'} for “{query}”</span>}
+            {query && entries && !searching && (
+              <span className={'search-count' + (totalEntries ? '' : ' none')}>
+                {totalEntries} {totalEntries === 1 ? 'match' : 'matches'}
+              </span>
+            )}
           </div>
-          <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 380 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search all fields — site, serial, department, notes…"
-              aria-label="Search entries"
-              style={{ width: '100%', paddingLeft: 30 }}
-            />
-          </div>
+          <SearchField
+            value={search}
+            onChange={setSearch}
+            busy={searching}
+            label="Search entries"
+            placeholder="Search site, serial, department, notes…"
+            style={{ flex: '1 1 280px', maxWidth: 420 }}
+          />
         </div>
         {!entries ? (
           <p style={{ color: 'var(--muted)' }}>Loading…</p>
@@ -486,6 +493,6 @@ function Highlight({ text, query }) {
   if (!terms.length) return text;
   const re = new RegExp(`(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
   return String(text).split(re).map((part, i) => (terms.includes(part.toLowerCase())
-    ? <mark key={i} style={{ background: '#fdf0c4', color: 'inherit', padding: 0 }}>{part}</mark>
+    ? <mark key={i} className="search-hit">{part}</mark>
     : part));
 }
