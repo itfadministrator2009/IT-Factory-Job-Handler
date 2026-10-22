@@ -33,6 +33,37 @@ router.get('/', (req, res) => {
   res.json({ users: activeUsers() });
 });
 
+// Admin: log someone out of Work Desk on every device. Their current sign-in
+// stops working at once (the page sends them to the login screen within a
+// minute, or on their next click) and they drop off the online list.
+function isAdmin(userId) {
+  const row = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+  return !!row && (row.role === 'admin' || row.role === 'agent');
+}
+function logOut(userId) {
+  db.prepare('UPDATE users SET session_version = COALESCE(session_version, 0) + 1 WHERE id = ?').run(userId);
+  db.prepare('DELETE FROM user_presence WHERE user_id = ?').run(String(userId));
+}
+
+router.post('/:userId/logout', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can log people out' });
+  if (String(req.params.userId) === String(req.user.id)) return res.status(400).json({ error: "Use Log out to sign yourself out" });
+  const target = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  logOut(target.id);
+  console.log(`[presence] ${req.user.name || req.user.id} logged out ${target.name}`);
+  res.json({ ok: true, name: target.name, users: activeUsers() });
+});
+
+// Admin: log out everyone except yourself.
+router.post('/logout-all', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can log people out' });
+  const others = db.prepare('SELECT id FROM users WHERE id != ?').all(req.user.id);
+  db.transaction(() => others.forEach((u) => logOut(u.id)))();
+  console.log(`[presence] ${req.user.name || req.user.id} logged out everyone else (${others.length})`);
+  res.json({ ok: true, count: others.length, users: activeUsers() });
+});
+
 router.delete('/', (req, res) => {
   db.prepare('DELETE FROM user_presence WHERE user_id = ?').run(String(req.user.id));
   res.json({ ok: true });

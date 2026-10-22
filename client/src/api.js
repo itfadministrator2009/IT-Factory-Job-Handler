@@ -14,4 +14,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Logged out by an admin: clear this sign-in and go to the login page (which
+// explains why). Other errors are left to the page that made the request.
+let signingOut = false;
+api.interceptors.response.use((res) => res, (err) => {
+  if (err.response?.status === 401 && err.response.data?.code === 'signed_out' && !signingOut) {
+    signingOut = true;
+    localStorage.removeItem('helpdesk_token');
+    localStorage.removeItem('helpdesk_user');
+    window.location.assign('/login?signedOut=1');
+  }
+  return Promise.reject(err);
+});
+
 export default api;

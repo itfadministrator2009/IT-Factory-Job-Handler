@@ -4,7 +4,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
 function signToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role, name: user.name },
+    { id: user.id, email: user.email, role: user.role, name: user.name, sv: user.session_version || 0 },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -27,6 +27,13 @@ function authRequired(req, res, next) {
   if (payload && payload.kind === 'storage_client') {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  // Logged out by an admin: a sign-in from before that no longer works.
+  try {
+    const row = require('./db').db.prepare('SELECT session_version FROM users WHERE id = ?').get(payload.id);
+    if (row && (row.session_version || 0) !== (payload.sv || 0)) {
+      return res.status(401).json({ error: 'You were logged out by an admin. Please log in again.', code: 'signed_out' });
+    }
+  } catch (err) { /* column not there yet: carry on */ }
   req.user = payload;
   next();
 }

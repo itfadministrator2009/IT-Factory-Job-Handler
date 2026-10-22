@@ -14,6 +14,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const signedOut = new URLSearchParams(location.search).get('signedOut') === '1';
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -38,6 +39,9 @@ export default function Login() {
         </div>
         <h1>Welcome back</h1>
         <p className="subtitle">Log in to your helpdesk account.</p>
+        {signedOut && !error && (
+          <div className="error-banner" style={{ marginBottom: 14 }}>You were logged out by an admin. Please log in again.</div>
+        )}
 
         {error && <div className="error-banner">{error}</div>}
 
