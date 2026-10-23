@@ -2,7 +2,7 @@
 // Approvals (approve / decline sent timesheets) and Approved (print and CSV).
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Check, X, Download, Printer, ChevronDown, BellRing, UserPlus } from 'lucide-react';
+import { Check, X, Download, Printer, ChevronDown, BellRing, UserPlus, Upload, AlertTriangle } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { Donut, StatTile, SERIES, CHART_COLORS } from '../components/Charts';
@@ -17,6 +17,7 @@ function Tabs({ pending }) {
       <NavLink to="/timecard/approvals" className={cls}>Approvals{pending ? ` (${pending})` : ''}</NavLink>
       <NavLink to="/timecard/dashboard" className={cls}>Dashboard</NavLink>
       <NavLink to="/timecard/approved" className={cls}>Approved</NavLink>
+      <NavLink to="/timecard/import" className={cls}>Import from old app</NavLink>
     </div>
   );
 }
@@ -316,10 +317,133 @@ function Approved({ state }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Import from the old Time Card app (its Google Sheet, downloaded as .xlsx)
+// ---------------------------------------------------------------------------
+const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
+  r.onerror = () => reject(new Error('Could not read that file'));
+  r.readAsDataURL(file);
+});
+const ACTION_TEXT = {
+  create: 'New login', existing: 'Already in Work Desk', staff: 'Uses a staff login', skip: 'Not imported (no email)',
+};
+
+function ImportOld({ reload }) {
+  const [file, setFile] = useState(null);
+  const [b64, setB64] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [done, setDone] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function choose(f) {
+    setFile(f); setPreview(null); setDone(null); setErr('');
+    if (!f) return;
+    setBusy(true);
+    try {
+      const data = await fileToBase64(f); setB64(data);
+      const r = await api.post('/timecard/admin/import/preview', { fileBase64: data });
+      setPreview(r.data);
+    } catch (e) { setErr(e.response?.data?.error || e.message || 'Could not read that file'); } finally { setBusy(false); }
+  }
+  async function runImport() {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.post('/timecard/admin/import', { fileBase64: b64 });
+      setDone(r.data); setPreview(null); reload();
+    } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  }
+
+  const p = done || preview;
+  return (
+    <>
+      <div className="panel tc-panel">
+        <h2 className="tc-h2">Bring across the old Time Card app</h2>
+        <p className="tc-muted" style={{ marginBottom: 12 }}>
+          In the old Time Card Google Sheet choose <strong>File → Download → Microsoft Excel (.xlsx)</strong>, then pick that file here.
+          You'll see what will come across before anything is saved. You can import again later (for example on the day you switch over) —
+          weeks are refreshed from the sheet, but anything approved or declined in Work Desk is left as it is.
+        </p>
+        <label className="btn btn-ghost" style={{ cursor: busy ? 'default' : 'pointer' }}>
+          <Upload size={15} /> {file ? 'Choose a different file' : 'Choose the .xlsx file'}
+          <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden disabled={busy}
+            onChange={(e) => { choose(e.target.files?.[0] || null); e.target.value = ''; }} />
+        </label>
+        {file && <span className="tc-muted" style={{ marginLeft: 10 }}>{file.name}</span>}
+        {busy && <span className="tc-muted" style={{ marginLeft: 10 }}>Working…</span>}
+        {err && <div className="tc-err" style={{ marginTop: 10 }}>{err}</div>}
+      </div>
+
+      {done && (
+        <div className="success-banner" style={{ marginBottom: 16 }}>
+          <span>Imported: {done.result.contractorsCreated} new contractor login{done.result.contractorsCreated === 1 ? '' : 's'}, {done.result.weeksAdded} week{done.result.weeksAdded === 1 ? '' : 's'} added{done.result.weeksUpdated ? `, ${done.result.weeksUpdated} refreshed` : ''}{done.result.weeksKept ? `, ${done.result.weeksKept} left as changed in Work Desk` : ''}.</span>
+        </div>
+      )}
+
+      {p && (
+        <>
+          <div className="tc-tiles">
+            <StatTile label="Contractors" value={p.contractors.filter((c) => c.action !== 'skip').length} sub={`${p.contractors.filter((c) => c.action === 'create').length} new logins`} accent={CHART_COLORS.aqua} />
+            <StatTile label="Weeks" value={p.weeks.total} sub={`${p.weeks.approved} approved · ${p.weeks.waiting} waiting`} accent="#16241f" />
+            <StatTile label="Entries" value={p.entries} sub={`${hrs(p.hours)} hrs`} accent={CHART_COLORS.blue} />
+            <StatTile label="Expenses" value={p.expenses} sub="claims" accent={CHART_COLORS.orange} />
+          </div>
+          {p.warnings.length > 0 && (
+            <div className="tc-info" style={{ display: 'flex', gap: 10 }}>
+              <AlertTriangle size={16} style={{ flex: 'none', marginTop: 2 }} />
+              <div>{p.warnings.map((w) => <div key={w}>{w}</div>)}</div>
+            </div>
+          )}
+          <div className="panel tc-panel">
+            <h2 className="tc-h2">Contractors</h2>
+            <div className="tc-table-wrap">
+              <table className="tc-table">
+                <thead><tr><th>Name</th><th>Email (their Work Desk login)</th><th>Old username</th><th className="num">Rate</th><th className="num">Weeks</th><th>Login</th></tr></thead>
+                <tbody>{p.contractors.map((c) => (
+                  <tr key={c.username}>
+                    <td className="strong">{c.name}</td><td>{c.email || '—'}</td><td>{c.username}</td>
+                    <td className="num">{c.hourlyRate ? `${money(c.hourlyRate)}/hr` : '—'}</td><td className="num">{c.weeks}</td>
+                    <td>{ACTION_TEXT[c.action]}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <p className="tc-muted" style={{ marginTop: 10 }}>
+              New contractors log in to Work Desk with their <strong>email</strong> and their <strong>existing Time Card password</strong> — no reset needed.
+              Admins in the old sheet aren't imported; Work Desk admins already approve.
+            </p>
+          </div>
+          <div className="panel tc-panel">
+            <h2 className="tc-h2">Weeks</h2>
+            <ul className="tc-muted" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+              <li>{p.weeks.approved} approved, {p.weeks.waiting} waiting on approval, {p.weeks.declined} declined, {p.weeks.notSent} not sent yet (with hours in them).</li>
+              {!done && <li>{p.weeks.add} new{p.weeks.update ? `, ${p.weeks.update} already imported (will be refreshed from the sheet)` : ''}{p.weeks.keep ? `, ${p.weeks.keep} changed in Work Desk since (left as they are)` : ''}.</li>}
+              {p.skipped.emptyDrafts > 0 && <li>{p.skipped.emptyDrafts} empty “Not sent” week{p.skipped.emptyDrafts === 1 ? '' : 's'} skipped.</li>}
+              {p.skipped.duplicates > 0 && <li>{p.skipped.duplicates} empty duplicate{p.skipped.duplicates === 1 ? '' : 's'} left behind by the old app skipped (they repeated a sent week).</li>}
+              <li>Dates are kept exactly as the old app showed them.</li>
+            </ul>
+          </div>
+          {preview && (
+            <div className="panel tc-panel tc-sendbar">
+              <div><h2 className="tc-h2" style={{ marginBottom: 4 }}>Ready to import</h2><p className="tc-muted">Nothing has been saved yet.</p></div>
+              <div className="tc-sendbtns">
+                <button type="button" className="btn btn-accent" disabled={busy} onClick={runImport}><Upload size={15} /> Import now</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 const SUBTITLES = {
   approvals: 'Approve or decline the timesheets contractors have sent.',
   dashboard: 'Approved hours at a glance, by period and by client / project.',
   approved: 'Every approved timesheet — print it or download a CSV for payroll.',
+  import: 'Bring contractors and their timesheets across from the old Time Card app.',
 };
 
 export default function TimeCardAdmin({ view = 'approvals' }) {
@@ -335,6 +459,7 @@ export default function TimeCardAdmin({ view = 'approvals' }) {
       {!state ? <div className="empty-state">{error ? '' : 'Loading…'}</div> : (
         view === 'dashboard' ? <Dashboard state={state} />
           : view === 'approved' ? <Approved state={state} />
+          : view === 'import' ? <ImportOld reload={load} />
             : <Approvals state={state} reload={load} />
       )}
     </Layout>

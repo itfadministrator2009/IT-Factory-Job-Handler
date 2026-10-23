@@ -508,8 +508,7 @@ CREATE TABLE IF NOT EXISTS timecard_weeks (
   approved_by TEXT,
   approval_date TEXT,
   decline_reason TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (user_id, week_ending)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_timecard_weeks_status ON timecard_weeks(status);
 CREATE TABLE IF NOT EXISTS timecard_entries (
@@ -540,6 +539,37 @@ CREATE TABLE IF NOT EXISTS timecard_expenses (
 CREATE INDEX IF NOT EXISTS idx_timecard_expenses_week ON timecard_expenses(week_id);
 CREATE TABLE IF NOT EXISTS timecard_meta (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
 `);
+
+// Weeks brought across from the old Time Card sheet: the old app sometimes gave a
+// contractor two timesheets with the same "week ending" (it changed it to the date
+// sent), so one week ending per contractor is no longer enforced by the table.
+function migrateTimecardWeeksUnique() {
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='timecard_weeks'").get()?.sql || '';
+  if (!/UNIQUE\s*\(\s*user_id\s*,\s*week_ending\s*\)/i.test(sql)) return;
+  db.transaction(() => {
+    db.exec(`CREATE TABLE timecard_weeks_new (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, full_name TEXT, email TEXT, week_ending TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Not sent', submitted_date TEXT, approved_by TEXT, approval_date TEXT,
+      decline_reason TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+    db.exec(`INSERT INTO timecard_weeks_new (id, user_id, full_name, email, week_ending, status, submitted_date, approved_by, approval_date, decline_reason, created_at)
+      SELECT id, user_id, full_name, email, week_ending, status, submitted_date, approved_by, approval_date, decline_reason, created_at FROM timecard_weeks`);
+    db.exec('DROP TABLE timecard_weeks');
+    db.exec('ALTER TABLE timecard_weeks_new RENAME TO timecard_weeks');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_timecard_weeks_status ON timecard_weeks(status)');
+  })();
+  console.log('[db] timecard_weeks: removed the one-week-ending-per-contractor rule (old Time Card data).');
+}
+migrateTimecardWeeksUnique();
+db.exec('CREATE INDEX IF NOT EXISTS idx_timecard_weeks_user_ending ON timecard_weeks(user_id, week_ending)');
+// Old sheet's WeekId, and the status it had when last imported (so a re-import
+// never undoes an approval made in Work Desk).
+addColumnIfMissing('timecard_weeks', 'legacy_id', 'TEXT');
+addColumnIfMissing('timecard_weeks', 'imported_status', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_timecard_weeks_legacy ON timecard_weeks(legacy_id) WHERE legacy_id IS NOT NULL');
+// Contractors brought across keep their old Time Card password until their first
+// Work Desk login, when it's swapped for a normal Work Desk password.
+addColumnIfMissing('users', 'legacy_pw_hash', 'TEXT');
+addColumnIfMissing('users', 'legacy_pw_salt', 'TEXT');
 
 function migrateUsersEmailUnique() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql;

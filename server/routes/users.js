@@ -140,7 +140,7 @@ router.post('/admin/:id/reset-password', adminRequired, (req, res) => {
   }
 
   const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?')
+  db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL, legacy_pw_hash = NULL, legacy_pw_salt = NULL WHERE id = ?')
     .run(password_hash, req.params.id);
 
   res.json({ ok: true });

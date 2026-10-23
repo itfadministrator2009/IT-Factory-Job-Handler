@@ -7,7 +7,7 @@
 // when you switch this on. The last Friday sent is recorded in the database, so
 // restarts or redeploys never send twice.
 const { db } = require('./db');
-const { todayYmd, sundayOnOrAfter } = require('./timecard');
+const { todayYmd, sundayOnOrAfter, addDays } = require('./timecard');
 const { sendReminder } = require('./timecardEmail');
 
 const TZ = process.env.BACKUP_TIMEZONE || 'Australia/Sydney';
@@ -22,13 +22,16 @@ function nowParts(date = new Date()) {
   return { hour: Number(p.hour) % 24, weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday) };
 }
 
-// Contractors (with an email) who still need to send hours for the week ending this
-// coming Sunday, or who have a declined week to fix.
+// Contractors (with an email) who still need to send hours for this week (Monday to
+// Sunday), or who have a declined week to fix. A timesheet counts if its week ends
+// this week or it was sent this week — the old app dated weeks by the day they were sent.
 function contractorsToRemind(date = new Date()) {
   const ending = sundayOnOrAfter(todayYmd(date));
+  const monday = addDays(ending, -6);
   return db.prepare("SELECT id, name, email FROM users WHERE role = 'contractor' AND email IS NOT NULL AND email != '' ORDER BY name").all()
     .filter((u) => {
-      const sent = db.prepare("SELECT 1 FROM timecard_weeks WHERE user_id = ? AND week_ending = ? AND status IN ('Waiting on approval','Approved')").get(u.id, ending);
+      const sent = db.prepare(`SELECT 1 FROM timecard_weeks WHERE user_id = ? AND status IN ('Waiting on approval','Approved')
+        AND ((week_ending BETWEEN ? AND ?) OR (submitted_date BETWEEN ? AND ?))`).get(u.id, monday, ending, monday, ending);
       const declined = db.prepare("SELECT 1 FROM timecard_weeks WHERE user_id = ? AND status = 'Declined'").get(u.id);
       return !sent || declined;
     });
