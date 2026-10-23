@@ -62,6 +62,7 @@ function ManageUsersTab({ currentUser }) {
   const [role, setRole] = useState('user');
   const [newAccessAssets, setNewAccessAssets] = useState(true);
   const [newAccessStorage, setNewAccessStorage] = useState(true);
+  const [newRate, setNewRate] = useState('');
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -76,6 +77,7 @@ function ManageUsersTab({ currentUser }) {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState('user');
+  const [editRate, setEditRate] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -93,8 +95,8 @@ function ManageUsersTab({ currentUser }) {
     setSaving(true);
     setError('');
     try {
-      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage });
-      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true);
+      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, hourlyRate: role === 'contractor' ? newRate : undefined });
+      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewRate('');
       setShowForm(false);
       load();
     } catch (err) {
@@ -161,6 +163,7 @@ function ManageUsersTab({ currentUser }) {
     setEditName(u.name);
     setEditEmail(u.email);
     setEditRole(u.role === 'agent' ? 'admin' : u.role);
+    setEditRate(u.hourlyRate ?? '');
     setEditError('');
   }
 
@@ -169,7 +172,7 @@ function ManageUsersTab({ currentUser }) {
     setEditSaving(true);
     setEditError('');
     try {
-      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole });
+      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole, hourlyRate: editRole === 'contractor' ? editRate : undefined });
       setEditTarget(null);
       load();
     } catch (err) {
@@ -258,9 +261,17 @@ function ManageUsersTab({ currentUser }) {
               <select id="urole" value={role} onChange={(e) => setRole(e.target.value)}>
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
+                <option value="contractor">Contractor (ITF Time Card only)</option>
               </select>
             </div>
-            {role !== 'admin' && (
+            {role === 'contractor' && (
+              <div className="field">
+                <label htmlFor="urate">Hourly rate (optional)</label>
+                <input id="urate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={newRate} onChange={(e) => setNewRate(e.target.value)} />
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Used for estimated pay on approved timesheets. Contractors only see ITF Time Card.</p>
+              </div>
+            )}
+            {role === 'user' && (
               <div className="field">
                 <label>Access</label>
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14 }}>
@@ -302,9 +313,14 @@ function ManageUsersTab({ currentUser }) {
                     <select value={u.role === 'agent' ? 'admin' : u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}>
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
+                      <option value="contractor">Contractor</option>
                     </select>
                   </td>
-                  {['accessAssets', 'accessStorage'].map((field) => {
+                  {u.role === 'contractor' ? (
+                    <td colSpan={2} style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
+                      ITF Time Card only{u.hourlyRate ? ` · $${Number(u.hourlyRate).toFixed(2)}/hr` : ''}
+                    </td>
+                  ) : ['accessAssets', 'accessStorage'].map((field) => {
                     const admin = u.role === 'admin' || u.role === 'agent';
                     return (
                       <td key={field} style={{ textAlign: 'center' }}>
@@ -343,7 +359,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <ShieldCheck size={13} /> Admins can manage users and roles here, and always have access to everything. Tick or untick ITF Asset Tracker / ITF Storage Centre to choose which of those sections each User can open — the change applies straight away.
+        <ShieldCheck size={13} /> Admins can manage users and roles here, and always have access to everything. Tick or untick ITF Asset Tracker / ITF Storage Centre to choose which of those sections each User can open — the change applies straight away. Contractors only see ITF Time Card, where they log their hours for an admin to approve.
       </p>
 
       {editTarget && (
@@ -373,8 +389,15 @@ function ManageUsersTab({ currentUser }) {
                 <select id="edit-role" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
+                  <option value="contractor">Contractor (ITF Time Card only)</option>
                 </select>
               </div>
+              {editRole === 'contractor' && (
+                <div className="field">
+                  <label htmlFor="edit-rate">Hourly rate (optional)</label>
+                  <input id="edit-rate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
+                </div>
+              )}
               <button className="btn btn-accent" type="submit" disabled={editSaving} style={{ width: '100%', justifyContent: 'center' }}>
                 {editSaving ? 'Saving…' : 'Save changes'}
               </button>
