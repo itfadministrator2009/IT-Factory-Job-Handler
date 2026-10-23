@@ -33,6 +33,8 @@ import StoragePalletLabels from './pages/StoragePalletLabels';
 import StorageRestore from './pages/StorageRestore';
 import RecordRestore from './pages/RecordRestore';
 import AssetBatches from './pages/AssetBatches';
+import TimeCard from './pages/TimeCard';
+import TimeCardAdmin from './pages/TimeCardAdmin';
 import PortalLogin from './pages/PortalLogin';
 import Portal from './pages/Portal';
 import { hasPortalSession } from './portal/portalApi';
@@ -43,7 +45,20 @@ function RequireAuth({ children }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  // Contractors only use ITF Time Card.
+  if (user.role === 'contractor') return <Navigate to="/timecard" replace />;
   return children;
+}
+
+// ITF Time Card: contractors get their timesheet; admins get approvals.
+function RequireTimecard({ adminView, children }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  const isAdmin = user.role === 'admin' || user.role === 'agent';
+  if (user.role === 'contractor') return adminView ? <Navigate to="/timecard" replace /> : children;
+  if (!isAdmin) return <Navigate to="/jobs" replace />;
+  return adminView ? children : <Navigate to="/timecard/approvals" replace />;
 }
 
 // ITF Asset Tracker / ITF Storage Centre pages: only for users with access.
@@ -51,6 +66,7 @@ function RequireModule({ module, children }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  if (user.role === 'contractor') return <Navigate to="/timecard" replace />;
   if (!canUseModule(user, module)) return <Navigate to="/jobs" replace />;
   return children;
 }
@@ -59,7 +75,7 @@ function RequireAdmin({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   const isAdmin = user.role === 'admin' || user.role === 'agent';
-  if (!isAdmin) return <Navigate to="/jobs" replace />;
+  if (!isAdmin) return <Navigate to={user.role === 'contractor' ? '/timecard' : '/jobs'} replace />;
   return children;
 }
 
@@ -73,6 +89,7 @@ function HomeRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   const isAdmin = user.role === 'admin' || user.role === 'agent';
+  if (user.role === 'contractor') return <Navigate to="/timecard" replace />;
   return <Navigate to={isAdmin ? '/dashboard' : '/jobs'} replace />;
 }
 
@@ -120,6 +137,11 @@ function AppRoutes() {
       <Route path="/storage/labels" element={<RequireModule module="storage"><StoragePalletLabels /></RequireModule>} />
       <Route path="/storage/restore" element={<RequireAdmin><StorageRestore /></RequireAdmin>} />
       <Route path="/restore-records" element={<RequireAdmin><RecordRestore /></RequireAdmin>} />
+
+      <Route path="/timecard" element={<RequireTimecard><TimeCard /></RequireTimecard>} />
+      <Route path="/timecard/approvals" element={<RequireTimecard adminView><TimeCardAdmin view="approvals" /></RequireTimecard>} />
+      <Route path="/timecard/dashboard" element={<RequireTimecard adminView><TimeCardAdmin view="dashboard" /></RequireTimecard>} />
+      <Route path="/timecard/approved" element={<RequireTimecard adminView><TimeCardAdmin view="approved" /></RequireTimecard>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />

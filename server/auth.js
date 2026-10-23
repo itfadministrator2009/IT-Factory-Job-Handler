@@ -10,6 +10,9 @@ function signToken(user) {
   );
 }
 
+// What a contractor login can reach: their timesheets, their own account, and "online now".
+const CONTRACTOR_PATHS = /^\/api\/(timecard|auth|presence)(\/|\?|$)/;
+
 function authRequired(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
@@ -28,12 +31,17 @@ function authRequired(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
   // Logged out by an admin: a sign-in from before that no longer works.
+  let row = null;
   try {
-    const row = require('./db').db.prepare('SELECT session_version FROM users WHERE id = ?').get(payload.id);
+    row = require('./db').db.prepare('SELECT session_version, role FROM users WHERE id = ?').get(payload.id);
     if (row && (row.session_version || 0) !== (payload.sv || 0)) {
       return res.status(401).json({ error: 'You were logged out by an admin. Please log in again.', code: 'signed_out' });
     }
   } catch (err) { /* column not there yet: carry on */ }
+  // Contractors only use ITF Time Card — nothing else in Work Desk.
+  if (row && row.role === 'contractor' && !CONTRACTOR_PATHS.test(req.originalUrl || '')) {
+    return res.status(403).json({ error: 'Contractor accounts can only use ITF Time Card.', code: 'contractor_only' });
+  }
   req.user = payload;
   next();
 }

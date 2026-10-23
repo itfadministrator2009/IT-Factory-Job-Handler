@@ -492,6 +492,55 @@ addColumnIfMissing('jobs', 'data_destruction', 'TEXT');
 // Bumped when an admin logs someone out; sign-ins made before that stop working.
 addColumnIfMissing('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0');
 
+// ITF Time Card — contractors (role 'contractor') log weekly hours and expenses;
+// Work Desk admins approve or decline them. Same shape as the old Time Card
+// sheet's Weeks / Entries / Expenses tabs.
+addColumnIfMissing('users', 'hourly_rate', 'REAL');
+db.exec(`
+CREATE TABLE IF NOT EXISTS timecard_weeks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  full_name TEXT,
+  email TEXT,
+  week_ending TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Not sent',
+  submitted_date TEXT,
+  approved_by TEXT,
+  approval_date TEXT,
+  decline_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, week_ending)
+);
+CREATE INDEX IF NOT EXISTS idx_timecard_weeks_status ON timecard_weeks(status);
+CREATE TABLE IF NOT EXISTS timecard_entries (
+  id TEXT PRIMARY KEY,
+  week_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  day TEXT,
+  date TEXT,
+  client_project TEXT,
+  start_time TEXT,
+  finish_time TEXT,
+  break_mins INTEGER NOT NULL DEFAULT 0,
+  hours REAL NOT NULL DEFAULT 0,
+  task TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_timecard_entries_week ON timecard_entries(week_id);
+CREATE TABLE IF NOT EXISTS timecard_expenses (
+  id TEXT PRIMARY KEY,
+  week_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  date TEXT,
+  type TEXT,
+  description TEXT,
+  amount REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_timecard_expenses_week ON timecard_expenses(week_id);
+CREATE TABLE IF NOT EXISTS timecard_meta (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+`);
+
 function migrateUsersEmailUnique() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql;
   if (!tableSql || !/email TEXT UNIQUE/i.test(tableSql)) return;
