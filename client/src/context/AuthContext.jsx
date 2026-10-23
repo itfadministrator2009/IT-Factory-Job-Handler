@@ -59,6 +59,7 @@ export function AuthProvider({ children }) {
 export function canUseModule(user, module) {
   if (!user) return false;
   if (user.role === 'admin' || user.role === 'agent') return true;
+  if (user.role === 'contractor') return false;
   return (module === 'assets' ? user.accessAssets : user.accessStorage) !== false;
 }
 
