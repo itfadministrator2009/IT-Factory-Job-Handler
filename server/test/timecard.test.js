@@ -224,7 +224,12 @@ test('Friday reminder goes to contractors who have not sent this week', () => {
   const friday = new Date('2026-10-23T05:00:00Z'); // Fri 23 Oct, 4pm Sydney
   const ending = sundayOnOrAfter(todayYmd(friday));
   assert.equal(ending, '2026-10-25');
+  // Dan's only sent week was sent weeks ago.
+  db.prepare("UPDATE timecard_weeks SET submitted_date = '2026-09-28' WHERE user_id = ?").run(con2.id);
   db.prepare('DELETE FROM timecard_weeks WHERE user_id = ? AND week_ending = ? AND id != ?').run(con.id, ending, weekId);
   db.prepare('UPDATE timecard_weeks SET week_ending = ? WHERE id = ?').run(ending, weekId); // Cara: approved for this week
+  assert.deepEqual(contractorsToRemind(friday).map((u) => u.name), ['Dan Contractor']);
+  // A week dated by the day it was sent (as the old app did) also counts.
+  db.prepare("UPDATE timecard_weeks SET week_ending = '2026-10-23', submitted_date = '2026-10-23', status = 'Waiting on approval' WHERE id = ?").run(weekId);
   assert.deepEqual(contractorsToRemind(friday).map((u) => u.name), ['Dan Contractor']);
 });
