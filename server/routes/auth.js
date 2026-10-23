@@ -75,8 +75,18 @@ router.post('/login', loginLimiter, (req, res) => {
 
   // Email is no longer unique — multiple techs can share one inbox. Check every
   // account with this email and log in as whichever one's password actually matches.
-  const candidates = db.prepare('SELECT * FROM users WHERE email = ?').all(email);
-  const user = candidates.find((u) => bcrypt.compareSync(password, u.password_hash));
+  // Email matching ignores capitals and stray spaces.
+  const candidates = db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').all(String(email).trim());
+  let user = candidates.find((u) => bcrypt.compareSync(password, u.password_hash));
+  // Contractors brought across from the old Time Card app: their old password
+  // works once, then becomes their Work Desk password.
+  if (!user) {
+    user = candidates.find((u) => u.legacy_pw_hash && u.legacy_pw_salt
+      && crypto.createHash('sha256').update(u.legacy_pw_salt + password, 'utf8').digest('hex') === String(u.legacy_pw_hash).toLowerCase());
+    if (user) {
+      db.prepare('UPDATE users SET password_hash = ?, legacy_pw_hash = NULL, legacy_pw_salt = NULL WHERE id = ?').run(bcrypt.hashSync(password, 10), user.id);
+    }
+  }
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -95,7 +105,7 @@ router.post('/forgot-password', forgotPasswordLimiter, (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const user = db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(String(email).trim());
   if (user) {
     const token = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -120,7 +130,7 @@ router.post('/reset-password', resetPasswordLimiter, (req, res) => {
   }
 
   const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?').run(password_hash, user.id);
+  db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL, legacy_pw_hash = NULL, legacy_pw_salt = NULL WHERE id = ?').run(password_hash, user.id);
   res.json({ ok: true });
 });
 

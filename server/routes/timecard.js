@@ -143,4 +143,28 @@ router.post('/admin/reminders/send', adminOnly, handle(async (req, res) => {
   res.json(await sendReminders());
 }));
 
+// Bring across the old Time Card Google Sheet (downloaded as .xlsx). Preview first,
+// then import; running it again refreshes weeks still unchanged in Work Desk.
+const tcImport = require('../timecardImport');
+const fileFrom = (body) => {
+  const b64 = String(body?.fileBase64 || '').replace(/^data:[^,]*,/, '');
+  if (!b64) throw new tc.TimecardError('Choose the Time Card .xlsx file.');
+  return Buffer.from(b64, 'base64');
+};
+const importErr = (fn) => handle((req, res) => {
+  try { return fn(req, res); } catch (err) {
+    if (err instanceof tc.TimecardError) throw err;
+    if (/xlsx|Time Card sheet|Users and Weeks/i.test(err.message)) throw new tc.TimecardError(err.message);
+    throw err;
+  }
+});
+router.post('/admin/import/preview', adminOnly, importErr((req, res) => {
+  res.json(tcImport.preview(fileFrom(req.body)));
+}));
+router.post('/admin/import', adminOnly, importErr((req, res) => {
+  const out = tcImport.run(fileFrom(req.body));
+  console.log(`[timecard] ${req.admin.name} imported the old Time Card sheet:`, out.result);
+  res.json(out);
+}));
+
 module.exports = router;
