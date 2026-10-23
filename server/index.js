@@ -18,8 +18,10 @@ const storageRoutes = require('./routes/storage');
 const storagePortalRoutes = require('./routes/storagePortal');
 const presenceRoutes = require('./routes/presence');
 const recordRestoreRoutes = require('./routes/recordRestore');
+const timecardRoutes = require('./routes/timecard');
 const { startBackupScheduler } = require('./backup');
 const { startStorageWeeklyScheduler } = require('./storageWeekly');
+const { startTimecardReminderScheduler } = require('./timecardReminders');
 
 const app = express();
 // Render sits in front of the app as a reverse proxy, adding an X-Forwarded-For
@@ -54,6 +56,8 @@ app.use('/api/storage-portal', storagePortalRoutes);
 app.use('/api/presence', presenceRoutes);
 // Admin: restore single records (a job, an asset, a storage item…) from a backup.
 app.use('/api/record-restore', recordRestoreRoutes);
+// ITF Time Card — contractor timesheets, approved by Work Desk admins.
+app.use('/api/timecard', timecardRoutes);
 
 const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {
@@ -73,4 +77,5 @@ process.on('unhandledRejection', (err) => {
 try { require('./storageTools').cleanTrailingZeroIds(); } catch (err) { console.error('[storage] Could not tidy ".0" values:', err.message); }
 startBackupScheduler();
 startStorageWeeklyScheduler();
+startTimecardReminderScheduler();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));

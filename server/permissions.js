@@ -35,6 +35,7 @@ function hasModuleAccess(userId, module) {
   const row = db.prepare('SELECT role, access_assets, access_storage FROM users WHERE id = ?').get(userId);
   if (!row) return false;
   if (isAdminRole(row.role)) return true;
+  if (row.role === 'contractor') return false;
   return row[MODULE_COLUMNS[module]] !== 0;
 }
 function requireModule(module) {
@@ -47,10 +48,12 @@ function requireModule(module) {
 function publicUser(row) {
   if (!row) return null;
   const admin = isAdminRole(row.role);
+  // Contractors only ever see ITF Time Card.
+  const contractor = row.role === 'contractor';
   return {
     id: row.id, name: row.name, email: row.email, role: row.role,
-    accessAssets: admin || row.access_assets !== 0,
-    accessStorage: admin || row.access_storage !== 0,
+    accessAssets: !contractor && (admin || row.access_assets !== 0),
+    accessStorage: !contractor && (admin || row.access_storage !== 0),
   };
 }
 
