@@ -114,11 +114,12 @@ export default function Layout({ children }) {
           )}
 
           {isAdmin && (
-          <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard/approvals"
+          <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard/dashboard"
             open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
-            <NavLink to="/timecard/approvals" className={linkClass}><CheckSquare size={14} /> Approvals{tcPending > 0 && <span className="tc-navcount">{tcPending}</span>}</NavLink>
             <NavLink to="/timecard/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
+            <NavLink to="/timecard/approvals" className={linkClass}><CheckSquare size={14} /> Approvals{tcPending > 0 && <span className="tc-navcount">{tcPending}</span>}</NavLink>
             <NavLink to="/timecard/approved" className={linkClass}><FileCheck2 size={14} /> Approved</NavLink>
+            <NavLink to="/timecard/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>
           </Section>
           )}
           </>)}
