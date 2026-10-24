@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, ShieldCheck, KeyRound, X, DatabaseBackup, Pencil, Eye, EyeOff, RotateCcw, AlertTriangle, LogOut } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import DiskUsage from '../components/DiskUsage';
 import SearchField from '../components/SearchField';
+import ActivityLog from '../components/ActivityLog';
+import SecuritySettings from '../components/SecuritySettings';
 
 const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 export default function Settings() {
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'agent';
-  const [tab, setTab] = useState('users'); // 'users' | 'backup' | 'disk'
+  // The open tab is in the address (?tab=activity) so it can be linked to and survives a refresh.
+  const [params, setParams] = useSearchParams();
+  const TABS = [['users', 'Manage Users'], ['activity', 'Activity log'], ['security', 'Security & alerts'], ['backup', 'Backup'], ['disk', 'Disk usage']];
+  const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'users';
+  const setTab = (k) => setParams(k === 'users' ? {} : { tab: k }, { replace: true });
 
   if (!isAdmin) {
     return (
@@ -36,18 +42,18 @@ export default function Settings() {
       </div>
 
       <div className="settings-tabs" style={{ marginBottom: 20 }}>
-        <span className={'settings-tab' + (tab === 'users' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('users')}>
-          Manage Users
-        </span>
-        <span className={'settings-tab' + (tab === 'backup' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('backup')}>
-          Backup
-        </span>
-        <span className={'settings-tab' + (tab === 'disk' ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab('disk')}>
-          Disk usage
-        </span>
+        {TABS.map(([k, label]) => (
+          <span key={k} className={'settings-tab' + (tab === k ? ' active' : '')} style={{ cursor: 'pointer' }} onClick={() => setTab(k)}>
+            {label}
+          </span>
+        ))}
       </div>
 
-      {tab === 'users' ? <ManageUsersTab currentUser={currentUser} /> : tab === 'disk' ? <DiskUsage /> : <BackupTab />}
+      {tab === 'users' && <ManageUsersTab currentUser={currentUser} />}
+      {tab === 'activity' && <ActivityLog />}
+      {tab === 'security' && <SecuritySettings />}
+      {tab === 'backup' && <BackupTab />}
+      {tab === 'disk' && <DiskUsage />}
     </Layout>
   );
 }
