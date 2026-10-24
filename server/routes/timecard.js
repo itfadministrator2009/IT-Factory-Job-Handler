@@ -79,6 +79,7 @@ router.get('/admin', adminOnly, handle((req, res) => {
     hoursSummary: tc.hoursSummary(),
     projects: tc.approvedProjects(),
     projectBreakdown: tc.projectBreakdown(),
+    people: tc.peopleSummary(),
     today: tc.todayYmd(),
   });
 }));
