@@ -23,6 +23,10 @@ function adminRequired(req, res, next) {
   next();
 }
 
+// Only the Super Admin can remove an admin account, take admin access away from
+// someone, or change the Super Admin's own account.
+const isSuperAdmin = (userId) => db.prepare('SELECT super_admin FROM users WHERE id = ?').get(userId)?.super_admin === 1;
+
 function countAdmins() {
   return db.prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin','agent')").get().c;
 }
@@ -35,10 +39,10 @@ router.get('/', (req, res) => {
 });
 
 // Admin-only: full user management
-const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, hourly_rate';
+const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, hourly_rate, super_admin';
 const toAdminUser = (u) => u && ({
   ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0, accessTimecard: u.access_timecard === 1,
-  hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null,
+  hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null, superAdmin: u.super_admin === 1,
 });
 // 'admin', 'user' (staff) or 'contractor' (ITF Time Card only).
 const roleFrom = (role) => (role === 'admin' ? 'admin' : role === 'contractor' ? 'contractor' : 'user');
@@ -83,6 +87,13 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
 
   const { role, name, email, accessAssets, accessStorage, accessTimecard, hourlyRate } = req.body;
+
+  if (!isSuperAdmin(req.user.id)) {
+    if (target.super_admin === 1) return res.status(403).json({ error: "Only the Super Admin can change the Super Admin's account." });
+    if (role !== undefined && isAdminRole(target.role) && roleFrom(role) !== 'admin') {
+      return res.status(403).json({ error: 'Only the Super Admin can take admin access away from an admin.' });
+    }
+  }
 
   const rate = rateFrom(hourlyRate);
   if (Number.isNaN(rate)) return res.status(400).json({ error: 'Hourly rate must be a number' });
@@ -136,6 +147,9 @@ router.delete('/admin/:id', adminRequired, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
+  if (isAdminRole(target.role) && !isSuperAdmin(req.user.id)) {
+    return res.status(403).json({ error: 'Only the Super Admin can remove an admin account.' });
+  }
   if (isAdminRole(target.role) && countAdmins() <= 1) {
     return res.status(400).json({ error: 'Cannot delete the last admin' });
   }
@@ -149,8 +163,11 @@ router.delete('/admin/:id', adminRequired, (req, res) => {
 // Admin sets a new password for someone directly — for when they're locked out and
 // email isn't set up, or just faster than waiting on a reset email.
 router.post('/admin/:id/reset-password', adminRequired, (req, res) => {
-  const target = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.id);
+  const target = db.prepare('SELECT id, name, super_admin FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.super_admin === 1 && target.id !== req.user.id && !isSuperAdmin(req.user.id)) {
+    return res.status(403).json({ error: "Only the Super Admin can set the Super Admin's password." });
+  }
 
   const { password } = req.body;
   if (!password || password.length < 8) {

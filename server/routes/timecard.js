@@ -83,6 +83,7 @@ router.get('/admin', adminOnly, handle((req, res) => {
     projects: tc.approvedProjects(),
     projectBreakdown: tc.projectBreakdown(),
     people: tc.peopleSummary(),
+    pay: tc.paySummary(),
     today: tc.todayYmd(),
   });
 }));
@@ -96,6 +97,14 @@ router.get('/admin/range', adminOnly, handle((req, res) => {
   if (!tc.YMD.test(from || '') || !tc.YMD.test(to || '')) throw new tc.TimecardError('Pick a start and end date.');
   if (from > to) throw new tc.TimecardError('Start date must be before end date.');
   res.json({ from, to, totalHours: tc.approvedHoursInRange(from, to) });
+}));
+
+// Pay per person for a custom date range (by week-ending date).
+router.get('/admin/pay', adminOnly, handle((req, res) => {
+  const { from, to } = req.query;
+  if (!tc.YMD.test(from || '') || !tc.YMD.test(to || '')) throw new tc.TimecardError('Pick a start and end date.');
+  if (from > to) throw new tc.TimecardError('Start date must be before end date.');
+  res.json({ from, to, pay: tc.payInRange(from, to) });
 }));
 
 router.get('/admin/project-weekly', adminOnly, handle((req, res) => {
