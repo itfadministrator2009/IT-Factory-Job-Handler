@@ -6,6 +6,7 @@ const { authRequired } = require('../auth');
 const { isAdminRole } = require('../permissions');
 const { listBackups, downloadBackup } = require('../backup');
 const rr = require('../recordRestore');
+const { logActivity } = require('../activity');
 
 const router = express.Router();
 router.use(authRequired);
@@ -62,6 +63,7 @@ router.post('/restore', async (req, res) => {
   try {
     const src = await openSource(req.body);
     const result = rr.restore(src.db, src.name, req.body.type, req.body.ids, req.user.name);
+    logActivity('records.restored', { req, target: { type: req.body.type, name: `${result.restored} ${req.body.type} record${result.restored === 1 ? '' : 's'}` }, details: `From ${src.name}` });
     console.log(`[record-restore] ${req.user.name} restored ${result.restored} ${req.body.type} record(s) from ${src.name}`);
     res.json(result);
   } catch (err) { fail(res, err); }

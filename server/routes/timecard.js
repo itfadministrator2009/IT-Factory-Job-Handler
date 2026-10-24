@@ -6,6 +6,8 @@ const { isAdminRole, logsTime } = require('../permissions');
 const tc = require('../timecard');
 const mail = require('../timecardEmail');
 const { sendReminders, contractorsToRemind } = require('../timecardReminders');
+const projects = require('../timecardProjects');
+const { logActivity } = require('../activity');
 
 const router = express.Router();
 router.use(authRequired);
@@ -29,7 +31,7 @@ function adminOnly(req, res, next) {
 // Runs a handler, turning TimecardErrors into friendly 4xx replies.
 const handle = (fn) => async (req, res) => {
   try { await fn(req, res); } catch (err) {
-    if (err instanceof tc.TimecardError) return res.status(err.status).json({ error: err.message });
+    if (err instanceof tc.TimecardError || err.friendly) return res.status(err.status).json({ error: err.message });
     console.error('[timecard]', err);
     res.status(500).json({ error: 'Something went wrong — please try again.' });
   }
@@ -65,7 +67,9 @@ router.post('/my/weeks/:id/clear', ...contractorAction((req) => tc.clearWeek(req
 // moves on to their next week (a declined one first, else a fresh week).
 router.post('/my/weeks/:id/submit', contractorOnly, handle((req, res) => {
   const week = tc.submitWeek(req.contractor, req.params.id);
-  quietly(mail.notifySubmitted(tc.weekSummary(week)));
+  const sum = tc.weekSummary(week);
+  logActivity('timecard.submitted', { req, target: { type: 'timesheet', id: sum.id, name: `${sum.fullName} — week ending ${tc.dmy(sum.weekEnding)}` }, details: `${sum.total} hrs` });
+  quietly(mail.notifySubmitted(sum));
   res.json(tc.contractorState(req.contractor, tc.currentWeek(req.contractor)));
 }));
 
@@ -99,14 +103,21 @@ router.get('/admin/project-weekly', adminOnly, handle((req, res) => {
   res.json({ rows: tc.projectWeeklyHours(req.query.project) });
 }));
 
+const logWeek = (req, action, week, extra = '') => logActivity(action, {
+  req, target: { type: 'timesheet', id: week.id, name: `${week.fullName} — week ending ${tc.dmy(week.weekEnding)}` },
+  details: [`${week.total} hrs`, extra].filter(Boolean).join('. '),
+});
+
 router.post('/admin/weeks/:id/approve', adminOnly, handle((req, res) => {
   const week = tc.approveWeek(req.admin, req.params.id);
+  logWeek(req, 'timecard.approved', week);
   quietly(mail.notifyApproved(week));
   res.json({ week });
 }));
 
 router.post('/admin/weeks/:id/decline', adminOnly, handle((req, res) => {
   const week = tc.declineWeek(req.admin, req.params.id, req.body?.reason);
+  logWeek(req, 'timecard.declined', week, week.declineReason ? `Reason: ${week.declineReason}` : '');
   quietly(mail.notifyDeclined(week));
   res.json({ week });
 }));
@@ -118,6 +129,7 @@ router.post('/admin/approve-bulk', adminOnly, handle((req, res) => {
   ids.forEach((id) => {
     try {
       const week = tc.approveWeek(req.admin, id);
+      logWeek(req, 'timecard.approved', week);
       quietly(mail.notifyApproved(week));
       approved.push(id);
     } catch (err) { failures.push({ weekId: id, message: err.message }); }
@@ -143,6 +155,38 @@ router.get('/admin/reminders', adminOnly, handle((req, res) => {
 }));
 router.post('/admin/reminders/send', adminOnly, handle(async (req, res) => {
   res.json(await sendReminders());
+}));
+
+// Clients / projects list (ITF Time Card → Projects).
+router.get('/admin/projects', adminOnly, handle((req, res) => {
+  res.json({ projects: projects.listProjects() });
+}));
+router.post('/admin/projects', adminOnly, handle((req, res) => {
+  const p = projects.addProject(req.body?.name, req.admin);
+  logActivity('timecard.project_added', { req, target: { type: 'project', id: p.id, name: p.name } });
+  res.status(201).json({ project: p, projects: projects.listProjects() });
+}));
+router.patch('/admin/projects/:id', adminOnly, handle((req, res) => {
+  const { name, active } = req.body || {};
+  const changes = [];
+  let label = '';
+  if (name !== undefined) {
+    const r = projects.renameProject(req.params.id, name);
+    label = r.to;
+    if (r.from !== r.to) changes.push(`Renamed "${r.from}" → "${r.to}" (${r.entries} entr${r.entries === 1 ? 'y' : 'ies'} updated)`);
+  }
+  if (active !== undefined) {
+    const r = projects.setActive(req.params.id, !!active);
+    label = r.name;
+    changes.push(r.active ? 'Shown in the list' : 'Hidden from the list');
+  }
+  if (changes.length) logActivity('timecard.project_changed', { req, target: { type: 'project', id: req.params.id, name: label }, details: changes.join('; ') });
+  res.json({ projects: projects.listProjects() });
+}));
+router.post('/admin/projects/merge', adminOnly, handle((req, res) => {
+  const r = projects.mergeProjects(req.body?.fromIds, req.body?.intoId);
+  logActivity('timecard.project_merged', { req, target: { type: 'project', id: req.body.intoId, name: r.into }, details: `Merged ${r.merged.map((n) => `"${n}"`).join(', ')} into "${r.into}" (${r.entries} entr${r.entries === 1 ? 'y' : 'ies'} moved)` });
+  res.json({ result: r, projects: projects.listProjects() });
 }));
 
 module.exports = router;

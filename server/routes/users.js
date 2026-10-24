@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuid } = require('uuid');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
+const { logActivity } = require('../activity');
 
 const router = express.Router();
 router.use(authRequired);
@@ -73,6 +74,7 @@ router.post('/admin', adminRequired, (req, res) => {
     .run(id, name, email, password_hash, finalRole, accessAssets === false ? 0 : 1, accessStorage === false ? 0 : 1, accessTimecard ? 1 : 0, rate ?? null);
 
   const user = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id));
+  logActivity('user.created', { req, target: { type: 'user', id, name }, details: `Role: ${finalRole}` });
   res.status(201).json({ user });
 });
 
@@ -111,6 +113,18 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
     db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim(), req.params.id);
   }
 
+  const after = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const changes = [];
+  const yn = (v) => (v ? 'on' : 'off');
+  if (after.role !== target.role) changes.push(`Role: ${target.role} → ${after.role}`);
+  if (after.name !== target.name) changes.push(`Name: ${target.name} → ${after.name}`);
+  if (after.email !== target.email) changes.push(`Email: ${target.email} → ${after.email}`);
+  if (!!after.access_assets !== !!target.access_assets) changes.push(`Asset Manager: ${yn(after.access_assets)}`);
+  if (!!after.access_storage !== !!target.access_storage) changes.push(`Storage Centre: ${yn(after.access_storage)}`);
+  if (!!after.access_timecard !== !!target.access_timecard) changes.push(`Time Card: ${yn(after.access_timecard)}`);
+  if ((after.hourly_rate ?? null) !== (target.hourly_rate ?? null)) changes.push(`Hourly rate: ${target.hourly_rate ?? '—'} → ${after.hourly_rate ?? '—'}`);
+  if (changes.length) logActivity('user.updated', { req, target: { type: 'user', id: after.id, name: after.name }, details: changes.join('; ') });
+
   const updated = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(req.params.id));
   res.json({ user: updated });
 });
@@ -127,13 +141,15 @@ router.delete('/admin/:id', adminRequired, (req, res) => {
   }
 
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM trusted_devices WHERE user_id = ?').run(req.params.id);
+  logActivity('user.deleted', { req, target: { type: 'user', id: target.id, name: target.name }, details: target.email });
   res.json({ ok: true });
 });
 
 // Admin sets a new password for someone directly — for when they're locked out and
 // email isn't set up, or just faster than waiting on a reset email.
 router.post('/admin/:id/reset-password', adminRequired, (req, res) => {
-  const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  const target = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
   const { password } = req.body;
@@ -144,6 +160,8 @@ router.post('/admin/:id/reset-password', adminRequired, (req, res) => {
   const password_hash = bcrypt.hashSync(password, 10);
   db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL, legacy_pw_hash = NULL, legacy_pw_salt = NULL WHERE id = ?')
     .run(password_hash, req.params.id);
+  require('../twoStep').forgetDevices(req.params.id);
+  logActivity('user.password_set', { req, target: { type: 'user', id: target.id, name: target.name } });
 
   res.json({ ok: true });
 });

@@ -4,6 +4,7 @@ const path = require('path');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { runBackup, backupStatus, listBackups, downloadBackup, DB_PATH } = require('../backup');
+const { logActivity } = require('../activity');
 
 const router = express.Router();
 router.use(authRequired);
@@ -26,6 +27,7 @@ const BACKUP_MESSAGES = {
 router.post('/now', adminRequired, (req, res) => {
   const before = backupStatus();
   const job = runBackup();
+  if (!before.running) logActivity('backup.started', { req });
   job.catch((err) => console.error('[backup] Failed:', err.message));
   res.status(202).json({ started: true, alreadyRunning: before.running });
 });
@@ -107,7 +109,12 @@ router.post('/restore', adminRequired, async (req, res) => {
   if (!backupId) return res.status(400).json({ error: 'backupId is required' });
 
   try {
+    // The activity log lives in the database being replaced, so the entry is written
+    // to a note beside it and added to the restored database when the app restarts.
+    const who = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.user.id);
+    const note = { who, ip: req.ip, backupId, backupName: String(req.body.backupName || '').slice(0, 200) || null };
     const result = await performRestore(backupId);
+    try { fs.writeFileSync(`${DB_PATH}.restored.json`, JSON.stringify({ ...note, safety: result.safetyBackupName, at: new Date().toISOString() })); } catch (e) { /* log only */ }
     res.json({ ok: true, safetyBackupName: result.safetyBackupName, message: 'Restored. The app will restart in a few seconds.' });
     // Give the response time to actually reach the browser before the process exits.
     // Render (or any process manager) restarts the service automatically, which is
