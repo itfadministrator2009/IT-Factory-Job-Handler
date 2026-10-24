@@ -174,10 +174,32 @@ const PEOPLE_COLS = [
   ['name', 'Name'], ['thisMonth', 'This month'], ['lastMonth', 'Last month'], ['thisFy', 'This financial year'],
   ['allTime', 'All time'], ['waiting', 'Waiting'], ['estPayThisMonth', 'Est. pay this month'], ['lastSent', 'Last sent'],
 ];
-function PeopleHours({ people }) {
+function PeopleHours({ people: allPeople }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState({ key: 'thisMonth', dir: -1 });
+  // Custom dates: approved hours per person between two week-ending dates.
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [custom, setCustom] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  async function runCustom(e) {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try {
+      const r = await api.get(`/timecard/admin/pay?from=${from}&to=${to}`);
+      setCustom(r.data);
+      setSort({ key: 'custom', dir: -1 });
+    } catch (x) { setErr(errText(x)); setCustom(null); } finally { setBusy(false); }
+  }
+  function clearCustom() {
+    setCustom(null); setFrom(''); setTo('');
+    setSort((s) => (s.key === 'custom' ? { key: 'thisMonth', dir: -1 } : s));
+  }
+  const people = allPeople.map((p) => ({ ...p, custom: custom ? (custom.pay[p.id]?.hours || 0) : 0 }));
+  const cols = custom
+    ? [...PEOPLE_COLS.slice(0, 4), ['custom', `${dmy(custom.from)} – ${dmy(custom.to)}`], ...PEOPLE_COLS.slice(4)]
+    : PEOPLE_COLS;
   const q = query.trim().toLowerCase();
   const rows = people
     .filter((p) => !q || `${p.name} ${p.email}`.toLowerCase().includes(q))
@@ -188,8 +210,8 @@ function PeopleHours({ people }) {
     });
   const totals = rows.reduce((t, p) => ({
     thisMonth: t.thisMonth + p.thisMonth, lastMonth: t.lastMonth + p.lastMonth, thisFy: t.thisFy + p.thisFy,
-    allTime: t.allTime + p.allTime, waiting: t.waiting + p.waiting, pay: t.pay + (p.estPayThisMonth || 0),
-  }), { thisMonth: 0, lastMonth: 0, thisFy: 0, allTime: 0, waiting: 0, pay: 0 });
+    allTime: t.allTime + p.allTime, waiting: t.waiting + p.waiting, pay: t.pay + (p.estPayThisMonth || 0), custom: t.custom + p.custom,
+  }), { thisMonth: 0, lastMonth: 0, thisFy: 0, allTime: 0, waiting: 0, pay: 0, custom: 0 });
   const by = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : (key === 'name' || key === 'lastSent' ? 1 : -1) }));
   return (
     <div className="panel tc-panel">
@@ -200,12 +222,20 @@ function PeopleHours({ people }) {
         </div>
         <SearchField value={query} onChange={setQuery} placeholder="Search by name or email" label="Search people" style={{ maxWidth: 300, flex: '1 1 220px' }} />
       </div>
+      <form className="tc-pay-custom" onSubmit={runCustom}>
+        <span className="tc-label">Custom dates</span>
+        <div className="field"><label htmlFor="hrs-from">From</label><input id="hrs-from" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} required /></div>
+        <div className="field"><label htmlFor="hrs-to">To</label><input id="hrs-to" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} required /></div>
+        <button className="btn btn-ghost btn-sm" type="submit" disabled={busy}>{busy ? 'Working…' : 'Show'}</button>
+        {custom && <button className="btn btn-ghost btn-sm" type="button" onClick={clearCustom}>Clear</button>}
+        {err && <span className="tc-err">{err}</span>}
+      </form>
       <div className="tc-table-wrap">
         <table className="tc-table tc-people">
           <thead>
             <tr>
-              {PEOPLE_COLS.map(([key, label]) => (
-                <th key={key} className={key === 'name' || key === 'lastSent' ? '' : 'num'} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
+              {cols.map(([key, label]) => (
+                <th key={key} className={`${key === 'name' || key === 'lastSent' ? '' : 'num'}${key === 'custom' ? ' tc-pay-customcol' : ''}`} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" className="tc-sort" onClick={() => by(key)}>
                     {label}{sort.key === key && (sort.dir > 0 ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
                   </button>
@@ -223,20 +253,23 @@ function PeopleHours({ people }) {
                 <td className="num strong">{hrs(p.thisMonth)}</td>
                 <td className="num">{hrs(p.lastMonth)}</td>
                 <td className="num">{hrs(p.thisFy)}</td>
+                {custom && <td className="num strong tc-pay-customcol">{p.custom ? hrs(p.custom) : <span className="tc-muted">—</span>}</td>}
                 <td className="num">{hrs(p.allTime)}</td>
                 <td className="num">{p.waiting ? <span className="tc-waiting">{hrs(p.waiting)}</span> : <span className="tc-muted">—</span>}</td>
                 <td className="num">{p.estPayThisMonth != null ? money(p.estPayThisMonth) : <span className="tc-muted">—</span>}</td>
                 <td className="nowrap">{p.lastSent ? dmy(p.lastSent) : <span className="tc-muted">Never</span>}</td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={8} className="tc-muted" style={{ textAlign: 'center', padding: 22 }}>{q ? `No one matches “${query}”.` : 'No one logs time yet.'}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={cols.length} className="tc-muted" style={{ textAlign: 'center', padding: 22 }}>{q ? `No one matches “${query}”.` : 'No one logs time yet.'}</td></tr>}
           </tbody>
           {rows.length > 1 && (
             <tfoot>
               <tr>
                 <td className="strong">Total ({rows.length} {rows.length === 1 ? 'person' : 'people'})</td>
                 <td className="num strong">{hrs(totals.thisMonth)}</td><td className="num strong">{hrs(totals.lastMonth)}</td>
-                <td className="num strong">{hrs(totals.thisFy)}</td><td className="num strong">{hrs(totals.allTime)}</td>
+                <td className="num strong">{hrs(totals.thisFy)}</td>
+                {custom && <td className="num strong tc-pay-customcol">{hrs(totals.custom)}</td>}
+                <td className="num strong">{hrs(totals.allTime)}</td>
                 <td className="num strong">{hrs(totals.waiting)}</td><td className="num strong">{totals.pay ? money(totals.pay) : '—'}</td><td />
               </tr>
             </tfoot>
