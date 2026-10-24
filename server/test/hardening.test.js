@@ -1,12 +1,10 @@
-// Time Card client/project list, the activity log, error alerts and two-step
-// login for admins.
+// The activity log, error alerts and two-step login for admins.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { v4: uuid } = require('uuid');
 const { freshDb, startTestServer, registerUser } = require('./helpers');
 
-let client, server, db, admin, staff, con, sent;
+let client, server, db, admin, staff, sent;
 
 async function login(email, extra = {}) {
   return client.post('/api/auth/login', { body: { email, password: 'password123', ...extra } });
@@ -23,7 +21,6 @@ before(async () => {
   app.use('/api/auth', require('../routes/auth'));
   app.use('/api/users', require('../routes/users'));
   app.use('/api/presence', require('../routes/presence'));
-  app.use('/api/timecard', require('../routes/timecard'));
   app.use('/api/admin', require('../routes/admin'));
   app.get('/api/boom', () => { throw new Error('kaboom'); });
   app.use(errorHandler);
@@ -31,69 +28,9 @@ before(async () => {
   server = client.server;
   admin = await registerUser(client, { name: 'Ana Admin', email: 'ana@itf.test' });
   staff = await registerUser(client, { name: 'Sam Staff', email: 'sam@itf.test' });
-  const r = await client.post('/api/users/admin', { token: admin.token, body: { name: 'Cara Contractor', email: 'cara@contractor.test', password: 'password123', role: 'contractor' } });
-  con = { id: r.data.user.id, token: (await login('cara@contractor.test')).data.token };
 });
 
 after(() => server.close());
-
-test('client / project names: duplicates merged, list managed by admins', async () => {
-  // Entries from before the list existed, with the same client spelled three ways.
-  const weekId = uuid();
-  db.prepare("INSERT INTO timecard_weeks (id, user_id, full_name, email, week_ending, status) VALUES (?, ?, 'Cara Contractor', 'cara@contractor.test', '2026-10-11', 'Approved')").run(weekId, con.id);
-  const add = (p, hrs) => db.prepare('INSERT INTO timecard_entries (id, week_id, user_id, day, date, client_project, hours) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(uuid(), weekId, con.id, 'Monday', '2026-10-06', p, hrs);
-  add('Westmead Hospital', 2); add('Westmead Hospital', 3); add('Westmead hospital', 1); add(' westmead  hospital ', 1); add('Acme', 4);
-
-  // The contractor's list is built from them: one Westmead Hospital, most-used spelling.
-  let s = await client.get('/api/timecard/my', { token: con.token });
-  assert.deepEqual(s.data.projects, ['Acme', 'Westmead Hospital']);
-  assert.equal(db.prepare("SELECT COUNT(DISTINCT client_project) AS c FROM timecard_entries WHERE client_project LIKE '%westmead%'").get().c, 1);
-
-  // Typing a known name in any capitals uses the list's spelling; a new name joins the list.
-  const week = s.data.week.id;
-  let r = await client.post(`/api/timecard/my/weeks/${week}/entries`, { token: con.token, body: { date: '2026-10-19', start: '08:00', finish: '10:00', clientProject: '  WESTMEAD   hospital' } });
-  assert.equal(r.status, 200);
-  assert.equal(r.data.week.entries[0].clientProject, 'Westmead Hospital');
-  r = await client.post(`/api/timecard/my/weeks/${week}/entries`, { token: con.token, body: { date: '2026-10-20', start: '08:00', finish: '10:00', clientProject: 'Westmead Hosp' } });
-  assert.deepEqual(r.data.projects, ['Acme', 'Westmead Hosp', 'Westmead Hospital']);
-  assert.equal(r.data.recentProjects[0], 'Westmead Hosp');
-
-  // Contractors can't manage the list.
-  assert.equal((await client.get('/api/timecard/admin/projects', { token: con.token })).status, 403);
-
-  let list = (await client.get('/api/timecard/admin/projects', { token: admin.token })).data.projects;
-  const id = (n) => list.find((p) => p.name === n).id;
-  assert.equal(list.find((p) => p.name === 'Westmead Hospital').entries, 5);
-
-  // Merge the typo into the real one.
-  r = await client.post('/api/timecard/admin/projects/merge', { token: admin.token, body: { fromIds: [id('Westmead Hosp')], intoId: id('Westmead Hospital') } });
-  assert.equal(r.status, 200);
-  assert.equal(r.data.result.entries, 1);
-  list = r.data.projects;
-  assert.deepEqual(list.map((p) => p.name), ['Acme', 'Westmead Hospital']);
-  assert.equal(list[1].entries, 6);
-
-  // Rename follows through to entries; renaming onto another name is refused.
-  r = await client.patch(`/api/timecard/admin/projects/${id('Acme')}`, { token: admin.token, body: { name: 'Acme Pty Ltd' } });
-  assert.equal(r.status, 200);
-  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM timecard_entries WHERE client_project = 'Acme Pty Ltd'").get().c, 1);
-  list = r.data.projects;
-  r = await client.patch(`/api/timecard/admin/projects/${list[0].id}`, { token: admin.token, body: { name: 'westmead hospital' } });
-  assert.equal(r.status, 409);
-  assert.match(r.data.error, /Merge/);
-
-  // Add (duplicates refused), hide (gone from the contractor's list).
-  assert.equal((await client.post('/api/timecard/admin/projects', { token: admin.token, body: { name: 'Westmead HOSPITAL' } })).status, 409);
-  r = await client.post('/api/timecard/admin/projects', { token: admin.token, body: { name: 'Blacktown Council' } });
-  assert.equal(r.status, 201);
-  await client.patch(`/api/timecard/admin/projects/${list[0].id}`, { token: admin.token, body: { active: false } });
-  s = await client.get('/api/timecard/my', { token: con.token });
-  assert.deepEqual(s.data.projects, ['Blacktown Council', 'Westmead Hospital']);
-
-  const acts = (await client.get('/api/admin/activity?category=timecard', { token: admin.token })).data.entries.map((e) => e.action);
-  ['timecard.project_added', 'timecard.project_changed', 'timecard.project_merged'].forEach((a) => assert.ok(acts.includes(a), a));
-});
 
 test('activity log records logins, user changes and log-outs; admins only', async () => {
   assert.equal((await client.post('/api/auth/login', { body: { email: 'sam@itf.test', password: 'nope-nope' } })).status, 401);

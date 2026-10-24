@@ -154,8 +154,8 @@ export default function TimeCard() {
                 <div className="field"><label htmlFor="tc-break">Break (minutes)</label>
                   <input id="tc-break" type="number" min="0" step="5" inputMode="numeric" value={entry.breakMins} onChange={(e) => setEntry({ ...entry, breakMins: e.target.value })} /></div>
                 <div className="field tc-span2"><label htmlFor="tc-project">Client / project</label>
-                  <ProjectPicker id="tc-project" value={entry.clientProject} projects={state.projects || []} recent={state.recentProjects || []}
-                    onChange={(v) => setEntry((e) => ({ ...e, clientProject: v }))} /></div>
+                  <input id="tc-project" list="tc-projects" placeholder="e.g. Harvey Norman — Printer rollout" value={entry.clientProject} onChange={(e) => setEntry({ ...entry, clientProject: e.target.value })} />
+                  <datalist id="tc-projects">{(state.projects || []).map((p) => <option key={p} value={p} />)}</datalist></div>
                 <div className="field tc-span2"><label htmlFor="tc-task">Task / description</label>
                   <input id="tc-task" placeholder="What you worked on" value={entry.task} onChange={(e) => setEntry({ ...entry, task: e.target.value })} /></div>
               </div>
@@ -220,52 +220,5 @@ export default function TimeCard() {
         </>
       )}
     </Layout>
-  );
-}
-
-// Client / project: chosen from the list admins keep tidy (most recent first),
-// or typed in if it's genuinely new. Typing shows close matches already on the
-// list, so the same client isn't added under a second spelling.
-const OTHER = '__other__';
-const norm = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
-function ProjectPicker({ id, value, projects, recent, onChange }) {
-  const inList = (v) => projects.some((p) => norm(p) === norm(v));
-  const [typing, setTyping] = useState(() => !!value && !inList(value));
-  useEffect(() => { if (value && !inList(value)) setTyping(true); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
-  const exact = typing && value ? projects.find((p) => norm(p) === norm(value)) : null;
-  const words = norm(value).split(' ').filter((w) => w.length >= 3);
-  const close = typing && value && !exact && words.length
-    ? projects.filter((p) => words.some((w) => norm(p).includes(w))).slice(0, 4) : [];
-  const recentShown = recent.filter((r) => projects.includes(r));
-
-  return (
-    <div className="tc-proj">
-      <select id={id} value={typing ? OTHER : (projects.find((p) => norm(p) === norm(value)) || '')}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === OTHER) { setTyping(true); onChange(''); } else { setTyping(false); onChange(v); }
-        }}>
-        <option value="">Choose a client / project…</option>
-        {recentShown.length > 0 && (
-          <optgroup label="Your recent">{recentShown.map((p) => <option key={`r-${p}`} value={p}>{p}</option>)}</optgroup>
-        )}
-        <optgroup label={recentShown.length ? 'All clients / projects' : 'Clients / projects'}>
-          {projects.map((p) => <option key={p} value={p}>{p}</option>)}
-        </optgroup>
-        <option value={OTHER}>Not in the list — type a new one…</option>
-      </select>
-      {typing && (
-        <>
-          <input aria-label="New client / project" placeholder="e.g. Harvey Norman — Printer rollout" value={value}
-            onChange={(e) => onChange(e.target.value)} autoFocus={!value} maxLength={200} />
-          {exact ? <p className="tc-proj-hint">Already in the list as <b>{exact}</b> — it’ll be saved under that name.</p>
-            : close.length > 0 ? (
-              <p className="tc-proj-hint">Is it one of these? {close.map((p) => (
-                <button key={p} type="button" className="tc-proj-pick" onClick={() => { setTyping(false); onChange(p); }}>{p}</button>
-              ))}</p>
-            ) : value.trim() ? <p className="tc-proj-hint">New — it’ll be added to the list for everyone.</p> : null}
-        </>
-      )}
-    </div>
   );
 }

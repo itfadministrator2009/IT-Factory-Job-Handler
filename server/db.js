@@ -639,16 +639,6 @@ function nextStorageOrderNumber() {
   }
 }
 
-// ITF Time Card: the list of clients / projects contractors choose from, so the
-// same client isn't logged under several spellings.
-db.exec(`CREATE TABLE IF NOT EXISTS timecard_projects (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-  active INTEGER NOT NULL DEFAULT 1,
-  created_by TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-)`);
-
 // Activity log: who did what (logins, user changes, approvals, restores…).
 db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
