@@ -278,3 +278,35 @@ test('staff (role User) with ITF Time Card ticked log their own hours; others ca
   db.prepare('UPDATE users SET access_timecard = 1 WHERE id = ?').run(admin2.id);
   assert.equal((await client.get('/api/timecard/my', { token: admin2.token })).status, 403);
 });
+
+test('dashboard hours by person', () => {
+  const { peopleSummary } = require('../timecard');
+  const ins = db.prepare("INSERT INTO timecard_weeks (id, user_id, week_ending, status, submitted_date) VALUES (?, ?, ?, ?, ?)");
+  const ent = db.prepare('INSERT INTO timecard_entries (id, week_id, user_id, hours) VALUES (?, ?, ?, ?)');
+  db.prepare("INSERT INTO users (id, name, email, password_hash, role, hourly_rate) VALUES ('pz', 'Pat Zed', 'pat@contractor.test', 'x', 'contractor', 50)").run();
+  [['pz1', '2027-03-07', 'Approved', 6], ['pz2', '2027-02-14', 'Approved', 4], ['pz3', '2026-05-03', 'Approved', 10], ['pz4', '2027-03-14', 'Waiting on approval', 3]]
+    .forEach(([id, we, st, h]) => { ins.run(id, 'pz', we, st, we); ent.run(`${id}e`, id, 'pz', h); });
+  const pat = peopleSummary('2027-03-20').find((p) => p.id === 'pz');
+  assert.deepEqual(
+    { thisMonth: pat.thisMonth, lastMonth: pat.lastMonth, thisFy: pat.thisFy, allTime: pat.allTime, waiting: pat.waiting, lastSent: pat.lastSent, est: pat.estPayThisMonth },
+    { thisMonth: 6, lastMonth: 4, thisFy: 10, allTime: 20, waiting: 3, lastSent: '2027-03-14', est: 300 },
+  );
+  // Everyone who logs time is listed, even with no hours.
+  const all = peopleSummary('2027-03-20');
+  assert.ok(all.every((p) => typeof p.allTime === 'number'));
+  assert.ok(all.some((p) => p.name === 'Cara Contractor'));
+});
+
+test('backups include an ITF Time Card export (no passwords)', async () => {
+  const { buildTimecardZip } = require('../timecardExport');
+  const { readZip, parseCsv } = require('../zipRead');
+  const { buffer, counts } = await buildTimecardZip();
+  const files = readZip(buffer);
+  assert.deepEqual(Object.keys(files).sort(), ['README.txt', 'entries.csv', 'expenses.csv', 'people.csv', 'timesheets.csv']);
+  assert.ok(counts['timesheets.csv'] > 0 && counts['entries.csv'] > 0);
+  const people = files['people.csv'].toString('utf8');
+  assert.match(people, /Cara Contractor/);
+  assert.doesNotMatch(people, /password|legacy_pw|\$2[aby]\$/i);
+  const sheets = parseCsv(files['timesheets.csv'].toString('utf8'));
+  assert.deepEqual(Object.keys(sheets[0]).slice(0, 5), ['id', 'person', 'email', 'week_ending', 'status']);
+});
