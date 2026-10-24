@@ -95,3 +95,24 @@ test('pay per person for last week / month / quarter / year / financial year and
   const dash = await client.get('/api/timecard/admin', { token: ana2.token });
   assert.equal(dash.data.pay.periods.length, 5);
 });
+
+test('activity log, security & alerts and backups are for the Super Admin only', async () => {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/admin', require('../routes/admin'));
+  app.use('/api/backup', require('../routes/backup'));
+  const c2 = await startTestServer(app);
+  try {
+    const zed = db.prepare("SELECT id FROM users WHERE email = 'zed@itf.test'").get();
+    const zedToken = (await client.post('/api/auth/login', { body: { email: 'zed@itf.test', password: 'password123' } })).data.token;
+    assert.ok(zed && zedToken);
+    for (const path of ['/api/admin/activity', '/api/admin/security', '/api/backup/status', '/api/backup/list']) {
+      assert.equal((await c2.get(path, { token: zedToken })).status, 403, `admin blocked from ${path}`);
+    }
+    assert.equal((await c2.post('/api/backup/now', { token: zedToken })).status, 403);
+    // Disk usage stays open to admins.
+    assert.notEqual((await c2.get('/api/backup/disk-usage', { token: zedToken })).status, 403);
+    assert.equal((await c2.get('/api/admin/activity', { token: robert.token })).status, 200);
+    assert.equal((await c2.get('/api/admin/security', { token: robert.token })).status, 200);
+  } finally { c2.server.close(); }
+});
