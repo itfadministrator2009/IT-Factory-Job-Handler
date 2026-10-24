@@ -218,6 +218,7 @@ function ManageUsersTab({ currentUser }) {
   }
 
   const isAdminRole = (r) => r === 'admin' || r === 'agent';
+  const iAmSuper = !!(users.find((x) => x.id === currentUser.id)?.superAdmin ?? currentUser.superAdmin);
   const roleKey = (u) => (isAdminRole(u.role) ? 'admin' : u.role === 'contractor' ? 'contractor' : 'user');
   const counts = users.reduce((c, u) => ({ ...c, [roleKey(u)]: (c[roleKey(u)] || 0) + 1 }), {});
   const q = query.trim().toLowerCase();
@@ -298,19 +299,23 @@ function ManageUsersTab({ currentUser }) {
               {shown.map((u) => {
                 const me = u.id === currentUser.id;
                 const rk = roleKey(u);
+                // Only the Super Admin can remove admins, take admin access away, or change the Super Admin's account.
+                const lockedAdmin = !iAmSuper && rk === 'admin';
+                const lockedSuper = !iAmSuper && u.superAdmin && !me;
                 return (
                   <tr key={u.id}>
                     <td>
                       <div className="mu-person">
                         <span className={`mu-avatar ${rk}`} aria-hidden="true">{initials(u.name)}</span>
                         <div style={{ minWidth: 0 }}>
-                          <div className="mu-name">{u.name}{me && <span className="mu-you">You</span>}</div>
+                          <div className="mu-name">{u.name}{u.superAdmin && <span className="mu-super" title="Super Admin: the only account that can remove admins">Super Admin</span>}{me && <span className="mu-you">You</span>}</div>
                           <div className="mu-email">{u.email}{u.hourlyRate && (rk === 'contractor' || u.accessTimecard) ? <span className="mu-rate"> · ${Number(u.hourlyRate).toFixed(2)}/hr</span> : null}</div>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <select className={`mu-role ${rk}`} value={rk} onChange={(e) => handleRoleChange(u.id, e.target.value)} aria-label={`Role for ${u.name}`}>
+                      <select className={`mu-role ${rk}`} value={rk} onChange={(e) => handleRoleChange(u.id, e.target.value)} aria-label={`Role for ${u.name}`}
+                        disabled={lockedAdmin} title={lockedAdmin ? 'Only the Super Admin can change an admin’s role' : undefined}>
                         <option value="admin">Admin</option>
                         <option value="user">User</option>
                         <option value="contractor">Contractor</option>
@@ -321,12 +326,12 @@ function ManageUsersTab({ currentUser }) {
                     <td className="c">{accessCell(u, 'accessTimecard', 'ITF Time Card')}</td>
                     <td className="r">
                       <div className="mu-actions">
-                        <button type="button" className="mu-act" onClick={() => openEdit(u)} title="Edit details" aria-label={`Edit ${u.name}`}><Pencil size={15} /></button>
-                        <button type="button" className="mu-act" onClick={() => openReset(u)} title="Reset password" aria-label={`Reset password for ${u.name}`}><KeyRound size={15} /></button>
+                        <button type="button" className="mu-act" onClick={() => openEdit(u)} disabled={lockedSuper} title={lockedSuper ? 'Only the Super Admin can change this account' : 'Edit details'} aria-label={`Edit ${u.name}`}><Pencil size={15} /></button>
+                        <button type="button" className="mu-act" onClick={() => openReset(u)} disabled={lockedSuper} title={lockedSuper ? 'Only the Super Admin can change this account' : 'Reset password'} aria-label={`Reset password for ${u.name}`}><KeyRound size={15} /></button>
                         <button type="button" className="mu-act" onClick={() => handleLogOut(u)} disabled={me}
                           title={me ? 'Use Log out to sign yourself out' : 'Log out of Work Desk'} aria-label={`Log ${u.name} out`}><LogOut size={15} /></button>
-                        <button type="button" className="mu-act danger" onClick={() => handleDelete(u)} disabled={me}
-                          title={me ? "You can't remove your own account" : 'Remove user'} aria-label={`Remove ${u.name}`}><Trash2 size={15} /></button>
+                        <button type="button" className="mu-act danger" onClick={() => handleDelete(u)} disabled={me || lockedAdmin}
+                          title={me ? "You can't remove your own account" : lockedAdmin ? 'Only the Super Admin can remove an admin' : 'Remove user'} aria-label={`Remove ${u.name}`}><Trash2 size={15} /></button>
                       </div>
                     </td>
                   </tr>
@@ -341,7 +346,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p className="mu-foot">
-        <ShieldCheck size={13} /> <span><strong>Admins</strong> have full access and approve timesheets. <strong>Users</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>Contractors</strong> only see ITF Time Card.</span>
+        <ShieldCheck size={13} /> <span><strong>Admins</strong> have full access and approve timesheets. <strong>Users</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>Contractors</strong> only see ITF Time Card. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
       </p>
 
       {showForm && (
