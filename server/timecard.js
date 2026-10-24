@@ -286,6 +286,54 @@ function peopleSummary(today = todayYmd()) {
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// ---- Paid to each person ---------------------------------------------------
+// The finished periods the dashboard shows pay for, worked out from today:
+// last week (Monday–Sunday; weeks end on Sunday), last calendar month, last
+// quarter, last calendar year and last financial year (1 July – 30 June).
+function payPeriods(today = todayYmd()) {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7)) - 1;
+  const thisWeekEnd = sundayOnOrAfter(today);
+  const lastWeekEnd = addDays(thisWeekEnd, -7);
+  const q = Math.floor(m / 3);
+  let lqm = (q - 1) * 3; let lqy = y;
+  if (lqm < 0) { lqm += 12; lqy -= 1; }
+  const fyStart = m >= 6 ? y : y - 1;
+  return [
+    { key: 'lastWeek', label: 'Last week', from: addDays(lastWeekEnd, -6), to: lastWeekEnd },
+    { key: 'lastMonth', label: 'Last month', from: ymdOf(y, m - 1, 1), to: ymdOf(y, m, 0) },
+    { key: 'lastQuarter', label: 'Last quarter', from: ymdOf(lqy, lqm, 1), to: ymdOf(lqy, lqm + 3, 0) },
+    { key: 'lastYear', label: 'Last year', from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
+    { key: 'lastFy', label: 'Last financial year', from: `${fyStart - 1}-07-01`, to: `${fyStart}-06-30` },
+  ];
+}
+
+// What each person was paid for approved timesheets whose week ends between
+// from and to: hours × their hourly rate, plus approved expenses.
+function payInRange(from, to) {
+  const rows = db.prepare(`SELECT w.user_id AS id,
+      COALESCE((SELECT SUM(e.hours) FROM timecard_entries e WHERE e.week_id IN (
+        SELECT id FROM timecard_weeks WHERE user_id = w.user_id AND status = 'Approved' AND week_ending BETWEEN ? AND ?)), 0) AS hours,
+      COALESCE((SELECT SUM(x.amount) FROM timecard_expenses x WHERE x.week_id IN (
+        SELECT id FROM timecard_weeks WHERE user_id = w.user_id AND status = 'Approved' AND week_ending BETWEEN ? AND ?)), 0) AS expenses
+    FROM timecard_weeks w WHERE w.status = 'Approved' AND w.week_ending BETWEEN ? AND ? GROUP BY w.user_id`)
+    .all(from, to, from, to, from, to);
+  const out = {};
+  rows.forEach((r) => {
+    const rate = db.prepare('SELECT hourly_rate FROM users WHERE id = ?').get(r.id)?.hourly_rate;
+    const wages = rate > 0 ? round2(rate * r.hours) : null;
+    out[r.id] = { hours: round2(r.hours), wages, expenses: round2(r.expenses), total: round2((wages || 0) + r.expenses), noRate: !(rate > 0) && r.hours > 0 };
+  });
+  return out;
+}
+
+// Pay for every period at once, keyed by person, for the dashboard table.
+function paySummary(today = todayYmd()) {
+  const periods = payPeriods(today);
+  const byPeriod = Object.fromEntries(periods.map((p) => [p.key, payInRange(p.from, p.to)]));
+  return { periods, byPeriod };
+}
+
 // Approved hours per client / project, all time — the dashboard's pie chart.
 function projectBreakdown() {
   return db.prepare(`SELECT COALESCE(NULLIF(e.client_project, ''), '(No project)') AS clientProject, SUM(e.hours) AS totalHours
@@ -371,5 +419,5 @@ module.exports = {
   TimecardError, EXPENSE_TYPES, DAYS, todayYmd, addDays, sundayOnOrAfter, computeHours, weekSummary, getWeek,
   findOrCreateWeek, currentWeek, contractorState, addEntry, deleteEntry, addExpense, deleteExpense, clearWeek, submitWeek,
   pendingWeeks, recentDecisions, contractors, approvedHoursInRange, hoursSummary, projectBreakdown, projectWeeklyHours,
-  approvedProjects, peopleSummary, approveWeek, declineWeek, approvedWeeksDetailed, approvedCsv, dmy, YMD,
+  approvedProjects, peopleSummary, payPeriods, payInRange, paySummary, approveWeek, declineWeek, approvedWeeksDetailed, approvedCsv, dmy, YMD,
 };

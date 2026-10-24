@@ -247,6 +247,87 @@ function PeopleHours({ people }) {
   );
 }
 
+// Paid to each person: approved hours × hourly rate, plus approved expenses, for
+// finished periods and a custom date range (by week-ending date).
+function PayCell({ v }) {
+  if (!v || (!v.hours && !v.expenses)) return <span className="tc-muted">—</span>;
+  return (
+    <>
+      <div className={v.noRate ? 'tc-muted' : 'strong'}>{v.noRate && !v.expenses ? 'No rate set' : money(v.total)}</div>
+      <div className="tc-pay-sub">{hrs(v.hours)} hrs{v.expenses ? ` · ${money(v.expenses)} exp.` : ''}{v.noRate && v.expenses ? ' · no rate' : ''}</div>
+    </>
+  );
+}
+function PayByPerson({ people, pay }) {
+  const [query, setQuery] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [custom, setCustom] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  async function run(e) {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try { const r = await api.get(`/timecard/admin/pay?from=${from}&to=${to}`); setCustom(r.data); } catch (x) { setErr(errText(x)); setCustom(null); } finally { setBusy(false); }
+  }
+  const cols = [...pay.periods.map((p) => ({ key: p.key, label: p.label, sub: `${dmy(p.from)} – ${dmy(p.to)}`, data: pay.byPeriod[p.key] }))];
+  if (custom) cols.push({ key: 'custom', label: 'Custom', sub: `${dmy(custom.from)} – ${dmy(custom.to)}`, data: custom.pay });
+  const q = query.trim().toLowerCase();
+  const rows = people.filter((p) => !q || `${p.name} ${p.email}`.toLowerCase().includes(q))
+    .filter((p) => p.active || cols.some((c) => c.data[p.id]));
+  const total = (c) => rows.reduce((t, p) => t + (c.data[p.id]?.total || 0), 0);
+  const noRate = rows.some((p) => cols.some((c) => c.data[p.id]?.noRate));
+  return (
+    <div className="panel tc-panel">
+      <div className="tc-people-head">
+        <div>
+          <h2 className="tc-h2" style={{ marginBottom: 2 }}>Paid to each person</h2>
+          <p className="tc-muted">Approved timesheets only: hours × hourly rate, plus approved expenses. Counted by week-ending date.</p>
+        </div>
+        <SearchField value={query} onChange={setQuery} placeholder="Search by name or email" label="Search pay" style={{ maxWidth: 300, flex: '1 1 220px' }} />
+      </div>
+      <form className="tc-pay-custom" onSubmit={run}>
+        <span className="tc-label">Custom dates</span>
+        <div className="field"><label htmlFor="pay-from">From</label><input id="pay-from" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} required /></div>
+        <div className="field"><label htmlFor="pay-to">To</label><input id="pay-to" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} required /></div>
+        <button className="btn btn-ghost btn-sm" type="submit" disabled={busy}>{busy ? 'Working…' : 'Show'}</button>
+        {custom && <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setCustom(null); setFrom(''); setTo(''); }}>Clear</button>}
+        {err && <span className="tc-err">{err}</span>}
+      </form>
+      <div className="tc-table-wrap">
+        <table className="tc-table tc-people tc-pay">
+          <thead>
+            <tr>
+              <th>Name</th>
+              {cols.map((c) => <th key={c.key} className={`num${c.key === 'custom' ? ' tc-pay-customcol' : ''}`}>{c.label}<div className="tc-pay-range">{c.sub}</div></th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id}>
+                <td>
+                  <div className="strong">{p.name}</div>
+                  <div className="tc-muted">{p.hourlyRate ? `${money(p.hourlyRate)}/hr` : 'No hourly rate'}</div>
+                </td>
+                {cols.map((c) => <td key={c.key} className={`num${c.key === 'custom' ? ' tc-pay-customcol' : ''}`}><PayCell v={c.data[p.id]} /></td>)}
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={cols.length + 1} className="tc-muted" style={{ textAlign: 'center', padding: 22 }}>{q ? `No one matches “${query}”.` : 'No one logs time yet.'}</td></tr>}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot>
+              <tr>
+                <td className="strong">Total</td>
+                {cols.map((c) => <td key={c.key} className={`num strong${c.key === 'custom' ? ' tc-pay-customcol' : ''}`}>{money(total(c))}</td>)}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+      {noRate && <p className="tc-muted" style={{ marginTop: 8 }}>“No rate set”: add an hourly rate in Settings → Manage Users to include their wages. Pay uses each person's current rate.</p>}
+    </div>
+  );
+}
+
 function Dashboard({ state }) {
   const s = state.hoursSummary;
   const [from, setFrom] = useState('');
@@ -289,6 +370,7 @@ function Dashboard({ state }) {
       <p className="tc-muted" style={{ margin: '-6px 0 16px' }}>Approved hours are counted by each timesheet's week-ending date. The financial year runs 1 July – 30 June.</p>
 
       <PeopleHours people={state.people || []} />
+      {state.pay && <PayByPerson people={state.people || []} pay={state.pay} />}
 
       <form className="panel tc-panel tc-range" onSubmit={calc}>
         <h2 className="tc-h2" style={{ width: '100%' }}>Approved hours for a date range</h2>
