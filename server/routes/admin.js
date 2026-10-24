@@ -2,7 +2,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole } = require('../permissions');
+const { superAdminRequired } = require('../permissions');
 const { listActivity, logActivity, ACTIONS } = require('../activity');
 const { getSetting, setSetting } = require('../appSettings');
 const { sendAlert, alertRecipients } = require('../alerts');
@@ -10,11 +10,8 @@ const twoStep = require('../twoStep');
 
 const router = express.Router();
 router.use(authRequired);
-router.use((req, res, next) => {
-  const row = db.prepare('SELECT role FROM users WHERE id = ?').get(req.user.id);
-  if (!row || !isAdminRole(row.role)) return res.status(403).json({ error: 'Admin access required' });
-  next();
-});
+// Activity log and Security & alerts: the Super Admin only.
+router.use(superAdminRequired);
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
