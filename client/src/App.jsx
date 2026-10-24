@@ -62,7 +62,7 @@ function RequireTimecard({ adminView, children }) {
     if (!user.accessTimecard) return <Navigate to="/jobs" replace />;
     return adminView ? <Navigate to="/timecard" replace /> : children;
   }
-  return adminView ? children : <Navigate to="/timecard/approvals" replace />;
+  return adminView ? children : <Navigate to="/timecard/dashboard" replace />;
 }
 
 // ITF Asset Tracker / ITF Storage Centre pages: only for users with access.
@@ -146,6 +146,7 @@ function AppRoutes() {
       <Route path="/timecard/approvals" element={<RequireTimecard adminView><TimeCardAdmin view="approvals" /></RequireTimecard>} />
       <Route path="/timecard/dashboard" element={<RequireTimecard adminView><TimeCardAdmin view="dashboard" /></RequireTimecard>} />
       <Route path="/timecard/approved" element={<RequireTimecard adminView><TimeCardAdmin view="approved" /></RequireTimecard>} />
+      <Route path="/timecard/reports" element={<RequireTimecard adminView><TimeCardAdmin view="reports" /></RequireTimecard>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
