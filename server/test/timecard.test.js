@@ -245,3 +245,36 @@ test('contractors brought across from the old app can log in once with their old
   assert.equal(db.prepare('SELECT legacy_pw_hash FROM users WHERE id = ?').get(con2.id).legacy_pw_hash, null);
   assert.equal((await client.post('/api/auth/login', { body: { email: 'dan@contractor.test', password: 'oldtimecard1' } })).status, 200);
 });
+
+test('staff (role User) with ITF Time Card ticked log their own hours; others cannot', async () => {
+  // Off by default.
+  assert.equal((await client.get('/api/timecard/my', { token: staff.token })).status, 403);
+  const me0 = await client.get('/api/auth/me', { token: staff.token });
+  assert.equal(me0.data.user.accessTimecard, false);
+  // An admin ticks ITF Time Card for them.
+  const p = await client.patch(`/api/users/admin/${staff.id}`, { token: admin.token, body: { accessTimecard: true, hourlyRate: 50 } });
+  assert.equal(p.status, 200);
+  assert.equal(p.data.user.accessTimecard, true);
+  const me1 = await client.get('/api/auth/me', { token: staff.token });
+  assert.equal(me1.data.user.accessTimecard, true);
+  // They keep their other access (unlike contractors)…
+  assert.equal(me1.data.user.accessAssets, true);
+  // …and get a timesheet like a contractor.
+  const s = await client.get('/api/timecard/my', { token: staff.token });
+  assert.equal(s.status, 200);
+  const r = await client.post(`/api/timecard/my/weeks/${s.data.week.id}/entries`, { token: staff.token, body: { start: '09:00', finish: '13:00' } });
+  assert.equal(r.data.week.total, 4);
+  // They show up for admins (filters, counts, reminders).
+  const st = await client.get('/api/timecard/admin', { token: admin.token });
+  assert.ok(st.data.contractors.some((c) => c.id === staff.id && c.hourlyRate === 50));
+  const { contractorsToRemind } = require('../timecardReminders');
+  assert.ok(contractorsToRemind().some((u) => u.id === staff.id));
+  // But they still can't approve.
+  assert.equal((await client.get('/api/timecard/admin', { token: staff.token })).status, 403);
+  // Untick: no timesheet any more.
+  await client.patch(`/api/users/admin/${staff.id}`, { token: admin.token, body: { accessTimecard: false } });
+  assert.equal((await client.get('/api/timecard/my', { token: staff.token })).status, 403);
+  // Admins don't keep timesheets even if the flag is set.
+  db.prepare('UPDATE users SET access_timecard = 1 WHERE id = ?').run(admin2.id);
+  assert.equal((await client.get('/api/timecard/my', { token: admin2.token })).status, 403);
+});
