@@ -5,7 +5,7 @@ export const EXPENSE_TYPES = ['Fuel', 'Parking', 'Tolls', 'Travel', 'Materials',
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export const hrs = (n) => (Number(n) || 0).toFixed(2);
-export const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+export const money = (n) => `$${(Number(n) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const dmy = (s) => formatDMY(s) || '—';
 
 // Same maths as the server (and the old app): past-midnight shifts wrap round.

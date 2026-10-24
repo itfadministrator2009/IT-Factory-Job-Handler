@@ -244,6 +244,48 @@ function hoursSummary(today = todayYmd()) {
   };
 }
 
+// Hours per person for the dashboard: approved hours this month, last month, this
+// financial year and all time, plus hours waiting on approval. Everyone who logs time
+// is listed (even with no hours yet), along with anyone who has timesheets but no
+// longer logs time (e.g. a removed contractor).
+function peopleSummary(today = todayYmd()) {
+  const { TIMESHEET_USERS_SQL } = require('./permissions');
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7)) - 1;
+  const fyStart = m >= 6 ? y : y - 1;
+  const ranges = {
+    thisMonth: [`${y}-${pad2(m + 1)}-01`, ymdOf(y, m + 1, 0)],
+    lastMonth: [ymdOf(y, m - 1, 1), ymdOf(y, m, 0)],
+    thisFy: [`${fyStart}-07-01`, `${fyStart + 1}-06-30`],
+  };
+  const sum = (k) => `SUM(CASE WHEN w.status = 'Approved' AND w.week_ending BETWEEN '${ranges[k][0]}' AND '${ranges[k][1]}' THEN COALESCE(e.hours, 0) ELSE 0 END) AS ${k}`;
+  const hours = db.prepare(`SELECT w.user_id AS id, MAX(w.full_name) AS fullName, MAX(w.email) AS email,
+      ${sum('thisMonth')}, ${sum('lastMonth')}, ${sum('thisFy')},
+      SUM(CASE WHEN w.status = 'Approved' THEN COALESCE(e.hours, 0) ELSE 0 END) AS allTime,
+      SUM(CASE WHEN w.status = 'Waiting on approval' THEN COALESCE(e.hours, 0) ELSE 0 END) AS waiting
+    FROM timecard_weeks w LEFT JOIN timecard_entries e ON e.week_id = w.id GROUP BY w.user_id`).all();
+  const weeks = db.prepare(`SELECT user_id AS id, MAX(submitted_date) AS lastSent,
+      SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) AS approvedWeeks,
+      SUM(CASE WHEN status = 'Declined' THEN 1 ELSE 0 END) AS declinedWeeks
+    FROM timecard_weeks GROUP BY user_id`).all();
+  const byId = new Map();
+  db.prepare(`SELECT id, name, email, role, hourly_rate FROM users WHERE ${TIMESHEET_USERS_SQL}`).all().forEach((u) => {
+    byId.set(u.id, { id: u.id, name: u.name, email: u.email, role: u.role, hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null, active: true });
+  });
+  hours.forEach((h) => {
+    if (!byId.has(h.id)) {
+      const u = db.prepare('SELECT name, email, role, hourly_rate FROM users WHERE id = ?').get(h.id);
+      byId.set(h.id, { id: h.id, name: u?.name || h.fullName || 'Unknown', email: u?.email || h.email || '', role: u?.role || null, hourlyRate: u?.hourly_rate > 0 ? u.hourly_rate : null, active: false });
+    }
+    Object.assign(byId.get(h.id), { thisMonth: round2(h.thisMonth), lastMonth: round2(h.lastMonth), thisFy: round2(h.thisFy), allTime: round2(h.allTime), waiting: round2(h.waiting) });
+  });
+  weeks.forEach((w) => { const p = byId.get(w.id); if (p) Object.assign(p, { lastSent: w.lastSent || '', approvedWeeks: w.approvedWeeks, declinedWeeks: w.declinedWeeks }); });
+  return [...byId.values()].map((p) => ({
+    thisMonth: 0, lastMonth: 0, thisFy: 0, allTime: 0, waiting: 0, lastSent: '', approvedWeeks: 0, declinedWeeks: 0, ...p,
+    estPayThisMonth: p.hourlyRate ? round2(p.hourlyRate * (p.thisMonth || 0)) : null,
+  })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // Approved hours per client / project, all time — the dashboard's pie chart.
 function projectBreakdown() {
   return db.prepare(`SELECT COALESCE(NULLIF(e.client_project, ''), '(No project)') AS clientProject, SUM(e.hours) AS totalHours
@@ -329,5 +371,5 @@ module.exports = {
   TimecardError, EXPENSE_TYPES, DAYS, todayYmd, addDays, sundayOnOrAfter, computeHours, weekSummary, getWeek,
   findOrCreateWeek, currentWeek, contractorState, addEntry, deleteEntry, addExpense, deleteExpense, clearWeek, submitWeek,
   pendingWeeks, recentDecisions, contractors, approvedHoursInRange, hoursSummary, projectBreakdown, projectWeeklyHours,
-  approvedProjects, approveWeek, declineWeek, approvedWeeksDetailed, approvedCsv, dmy, YMD,
+  approvedProjects, peopleSummary, approveWeek, declineWeek, approvedWeeksDetailed, approvedCsv, dmy, YMD,
 };

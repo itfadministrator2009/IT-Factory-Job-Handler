@@ -5,6 +5,9 @@ import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import DiskUsage from '../components/DiskUsage';
+import SearchField from '../components/SearchField';
+
+const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 export default function Settings() {
   const { user: currentUser } = useAuth();
@@ -55,6 +58,8 @@ function ManageUsersTab({ currentUser }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -100,6 +105,7 @@ function ManageUsersTab({ currentUser }) {
       await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, accessTimecard: role === 'user' && newAccessTimecard, hourlyRate: logsTime ? newRate : undefined });
       setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewAccessTimecard(false); setNewRate('');
       setShowForm(false);
+      setNotice(`${name} has been added.`);
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not add user');
@@ -205,16 +211,45 @@ function ManageUsersTab({ currentUser }) {
     }
   }
 
+  const isAdminRole = (r) => r === 'admin' || r === 'agent';
+  const roleKey = (u) => (isAdminRole(u.role) ? 'admin' : u.role === 'contractor' ? 'contractor' : 'user');
+  const counts = users.reduce((c, u) => ({ ...c, [roleKey(u)]: (c[roleKey(u)] || 0) + 1 }), {});
+  const q = query.trim().toLowerCase();
+  const shown = users
+    .filter((u) => roleFilter === 'all' || roleKey(u) === roleFilter)
+    .filter((u) => !q || `${u.name} ${u.email} ${roleKey(u)}`.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const FILTERS = [['all', 'All', users.length], ['admin', 'Admins', counts.admin || 0], ['user', 'Users', counts.user || 0], ['contractor', 'Contractors', counts.contractor || 0]];
+
+  // One access cell: a switch for Users, a fixed state for admins and contractors.
+  function accessCell(u, field, label) {
+    const admin = isAdminRole(u.role);
+    const contractor = u.role === 'contractor';
+    if (field === 'accessTimecard') {
+      if (admin) return <span className="mu-fixed" title="Admins approve timesheets">Approves</span>;
+      if (contractor) return <span className="mu-fixed on" title="Contractors always log their hours">Always</span>;
+    } else {
+      if (admin) return <span className="mu-fixed on" title="Admins always have access">Full</span>;
+      if (contractor) return <span className="mu-fixed" title="Contractors only see ITF Time Card">—</span>;
+    }
+    const on = field === 'accessTimecard' ? !!u.accessTimecard : u[field] !== false;
+    return (
+      <button type="button" role="switch" aria-checked={on} className={'mu-switch' + (on ? ' on' : '')}
+        aria-label={`${label} access for ${u.name}`} title={on ? `Turn off ${label}` : `Turn on ${label}`}
+        onClick={() => handleAccessChange(u, field, !on)}>
+        <span className="mu-knob" />
+      </button>
+    );
+  }
+
   return (
-    <div>
-      <div className="page-header" style={{ marginTop: 0 }}>
+    <div className="mu">
+      <div className="mu-head">
         <div>
-          <h3 style={{ fontSize: 16 }}>Team members</h3>
-          <div className="subtitle">Add people, choose who is an admin, and which sections each person can use.</div>
+          <h3>Team members</h3>
+          <p>Add people, set their role, and choose which sections each person can use. Changes apply straight away.</p>
         </div>
-        <button className="btn btn-accent" onClick={() => setShowForm((s) => !s)}>
-          <Plus size={16} /> {showForm ? 'Cancel' : 'Add user'}
-        </button>
+        <button className="btn btn-accent" onClick={() => setShowForm(true)}><Plus size={16} /> Add user</button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -226,8 +261,90 @@ function ManageUsersTab({ currentUser }) {
         </div>
       )}
 
+      <div className="mu-toolbar">
+        <div className="mu-filters" role="tablist" aria-label="Filter by role">
+          {FILTERS.map(([key, label, n]) => (
+            <button key={key} type="button" role="tab" aria-selected={roleFilter === key}
+              className={'mu-filter' + (roleFilter === key ? ' active' : '')} onClick={() => setRoleFilter(key)}>
+              {label}<span className="mu-count">{n}</span>
+            </button>
+          ))}
+        </div>
+        <SearchField value={query} onChange={setQuery} placeholder="Search by name or email" label="Search users" style={{ maxWidth: 320, flex: '1 1 240px' }} />
+      </div>
+
+      <div className="panel mu-panel">
+        {loading ? (
+          <div className="empty-state">Loading…</div>
+        ) : (
+          <table className="mu-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th className="c">Asset Tracker</th>
+                <th className="c">Storage Centre</th>
+                <th className="c">Time Card</th>
+                <th className="r"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((u) => {
+                const me = u.id === currentUser.id;
+                const rk = roleKey(u);
+                return (
+                  <tr key={u.id}>
+                    <td>
+                      <div className="mu-person">
+                        <span className={`mu-avatar ${rk}`} aria-hidden="true">{initials(u.name)}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="mu-name">{u.name}{me && <span className="mu-you">You</span>}</div>
+                          <div className="mu-email">{u.email}{u.hourlyRate && (rk === 'contractor' || u.accessTimecard) ? <span className="mu-rate"> · ${Number(u.hourlyRate).toFixed(2)}/hr</span> : null}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <select className={`mu-role ${rk}`} value={rk} onChange={(e) => handleRoleChange(u.id, e.target.value)} aria-label={`Role for ${u.name}`}>
+                        <option value="admin">Admin</option>
+                        <option value="user">User</option>
+                        <option value="contractor">Contractor</option>
+                      </select>
+                    </td>
+                    <td className="c">{accessCell(u, 'accessAssets', 'ITF Asset Tracker')}</td>
+                    <td className="c">{accessCell(u, 'accessStorage', 'ITF Storage Centre')}</td>
+                    <td className="c">{accessCell(u, 'accessTimecard', 'ITF Time Card')}</td>
+                    <td className="r">
+                      <div className="mu-actions">
+                        <button type="button" className="mu-act" onClick={() => openEdit(u)} title="Edit details" aria-label={`Edit ${u.name}`}><Pencil size={15} /></button>
+                        <button type="button" className="mu-act" onClick={() => openReset(u)} title="Reset password" aria-label={`Reset password for ${u.name}`}><KeyRound size={15} /></button>
+                        <button type="button" className="mu-act" onClick={() => handleLogOut(u)} disabled={me}
+                          title={me ? 'Use Log out to sign yourself out' : 'Log out of Work Desk'} aria-label={`Log ${u.name} out`}><LogOut size={15} /></button>
+                        <button type="button" className="mu-act danger" onClick={() => handleDelete(u)} disabled={me}
+                          title={me ? "You can't remove your own account" : 'Remove user'} aria-label={`Remove ${u.name}`}><Trash2 size={15} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {shown.length === 0 && (
+                <tr><td colSpan={6} className="mu-empty">No one matches{query ? ` “${query}”` : ''}{roleFilter !== 'all' ? ` in ${FILTERS.find((f) => f[0] === roleFilter)[1]}` : ''}.</td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <p className="mu-foot">
+        <ShieldCheck size={13} /> <span><strong>Admins</strong> have full access and approve timesheets. <strong>Users</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>Contractors</strong> only see ITF Time Card.</span>
+      </p>
+
       {showForm && (
-        <div className="panel" style={{ padding: 24, marginBottom: 20, maxWidth: 480 }}>
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Add user</h3>
+              <button type="button" onClick={() => setShowForm(false)}><X size={18} /></button>
+            </div>
           <form onSubmit={handleAddUser}>
             <div className="field">
               <label htmlFor="uname">Full name</label>
@@ -276,112 +393,24 @@ function ManageUsersTab({ currentUser }) {
             {role === 'user' && (
               <div className="field">
                 <label>Access</label>
-                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14 }}>
+                <label className="mu-check">
                   <input type="checkbox" checked={newAccessAssets} onChange={(e) => setNewAccessAssets(e.target.checked)} /> ITF Asset Tracker
                 </label>
-                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14, marginTop: 6 }}>
+                <label className="mu-check">
                   <input type="checkbox" checked={newAccessStorage} onChange={(e) => setNewAccessStorage(e.target.checked)} /> ITF Storage Centre
                 </label>
-                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14, marginTop: 6 }}>
+                <label className="mu-check">
                   <input type="checkbox" checked={newAccessTimecard} onChange={(e) => setNewAccessTimecard(e.target.checked)} /> ITF Time Card <span style={{ color: 'var(--muted)' }}>(logs their own hours)</span>
                 </label>
               </div>
             )}
-            <button className="btn btn-accent" type="submit" disabled={saving}>
+            <button className="btn btn-accent" type="submit" disabled={saving} style={{ width: '100%', justifyContent: 'center' }}>
               {saving ? 'Adding…' : 'Add user'}
             </button>
           </form>
+          </div>
         </div>
       )}
-
-      <div className="panel" style={{ padding: users.length ? 0 : 20 }}>
-        {loading ? (
-          <div className="empty-state">Loading…</div>
-        ) : (
-          <table className="ticket-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th style={{ textAlign: 'center' }}>ITF Asset Tracker</th>
-                <th style={{ textAlign: 'center' }}>ITF Storage Centre</th>
-                <th style={{ textAlign: 'center' }}>ITF Time Card</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.name}{u.id === currentUser.id && <span style={{ color: 'var(--muted)' }}> (you)</span>}</td>
-                  <td>{u.email}</td>
-                  <td>
-                    <select value={u.role === 'agent' ? 'admin' : u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}>
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                      <option value="contractor">Contractor</option>
-                    </select>
-                  </td>
-                  {u.role === 'contractor' ? (
-                    <td colSpan={2} style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
-                      ITF Time Card only
-                    </td>
-                  ) : ['accessAssets', 'accessStorage'].map((field) => {
-                    const admin = u.role === 'admin' || u.role === 'agent';
-                    return (
-                      <td key={field} style={{ textAlign: 'center' }}>
-                        <input type="checkbox" checked={admin || u[field] !== false} disabled={admin}
-                          title={admin ? 'Admins always have access' : (u[field] !== false ? 'Click to remove access' : 'Click to give access')}
-                          aria-label={`${field === 'accessAssets' ? 'ITF Asset Tracker' : 'ITF Storage Centre'} access for ${u.name}`}
-                          onChange={(e) => handleAccessChange(u, field, e.target.checked)} />
-                      </td>
-                    );
-                  })}
-                  {(() => {
-                    // ITF Time Card: Users tick to log their own hours; contractors always do; admins approve.
-                    const admin = u.role === 'admin' || u.role === 'agent';
-                    const contractor = u.role === 'contractor';
-                    const on = contractor || (!admin && u.accessTimecard);
-                    return (
-                      <td style={{ textAlign: 'center' }}>
-                        <input type="checkbox" checked={admin || on} disabled={admin || contractor}
-                          title={admin ? 'Admins approve timesheets' : contractor ? 'Contractors always log their hours' : (on ? 'Click to stop them logging hours' : 'Click to let them log their own hours')}
-                          aria-label={`ITF Time Card access for ${u.name}`}
-                          onChange={(e) => handleAccessChange(u, 'accessTimecard', e.target.checked)} />
-                        {on && u.hourlyRate ? <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>${Number(u.hourlyRate).toFixed(2)}/hr</div> : null}
-                      </td>
-                    );
-                  })()}
-                  <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
-                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openReset(u)} title="Reset password"><KeyRound size={13} /></button>
-                      <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => handleLogOut(u)}
-                        disabled={u.id === currentUser.id} title={u.id === currentUser.id ? 'Use Log out to sign yourself out' : 'Log out of Work Desk'}>
-                        <LogOut size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm icon-btn"
-                        style={{ color: 'var(--danger)' }}
-                        onClick={() => handleDelete(u)}
-                        disabled={u.id === currentUser.id}
-                        title={u.id === currentUser.id ? "You can't remove your own account" : 'Remove user'}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <ShieldCheck size={13} /> Admins can manage users and roles here, and always have access to everything. Tick or untick ITF Asset Tracker / ITF Storage Centre to choose which of those sections each User can open — the change applies straight away. Tick ITF Time Card to let a User log their own hours there too. Contractors only see ITF Time Card. Admins approve timesheets.
-      </p>
 
       {editTarget && (
         <div className="modal-overlay" onClick={() => setEditTarget(null)}>
@@ -491,7 +520,7 @@ function BackupTab() {
 
   // "Back up now" starts the backup on the server and then checks on it every few
   // seconds, so a long backup (lots of photos) doesn't get cut off mid-request.
-  const STEP_LABEL = { database: 'database', photos: 'photos and attachments', 'storage centre': 'Storage Centre data' };
+  const STEP_LABEL = { database: 'database', photos: 'photos and attachments', 'storage centre': 'Storage Centre data', 'time card': 'ITF Time Card data' };
   function describe(status) {
     const last = status.last;
     if (!last) return 'The backup did not report back. Try again, and if it keeps happening check the Render logs for lines starting with [backup].';
@@ -500,7 +529,7 @@ function BackupTab() {
     }
     if (last.state === 'failed') return status.message || 'Backup failed';
     const r = last.result || {};
-    const parts = [r.filename, r.uploadsFilename, r.storageFilename].filter(Boolean).join(' + ');
+    const parts = [r.filename, r.uploadsFilename, r.storageFilename, r.timecardFilename].filter(Boolean).join(' + ');
     const warn = r.warnings?.length ? ` Note: ${r.warnings.join(' ')}` : '';
     return `Backup uploaded to OneDrive (${r.folder}: ${parts}).${warn}`;
   }
@@ -584,7 +613,7 @@ function BackupTab() {
           <DatabaseBackup size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Back up now
         </h3>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
-          A backup of the database uploads to OneDrive automatically every night at 2am (Sydney time). You can also trigger one right now.
+          Everything in Work Desk — jobs, projects, ITF Asset Tracker, ITF Storage Centre and ITF Time Card — is backed up to OneDrive automatically every night at 2am (Sydney time), along with photos and attachments. Storage Centre and Time Card are also saved as spreadsheets (CSV files) you can open in Excel. You can also trigger a backup right now.
         </p>
         {backupMsg && (
           <div className={backupMsg.startsWith('Backup uploaded') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 12 }}>
