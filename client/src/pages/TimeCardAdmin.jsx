@@ -1,10 +1,11 @@
 // ITF Time Card — admin pages: Dashboard (hours summaries and project reports),
 // Approvals (approve / decline sent timesheets) and Approved (print and CSV).
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { Check, X, Download, Printer, ChevronDown, BellRing, UserPlus } from 'lucide-react';
+import { NavLink, useNavigate, useSearchParams } from 'react-router-dom';
+import { Check, X, Download, Printer, ChevronDown, ChevronUp, BellRing, UserPlus } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
+import SearchField from '../components/SearchField';
 import { Donut, StatTile, SERIES, CHART_COLORS } from '../components/Charts';
 import { hrs, money, dmy, StatusPill, WeekDetail, printApprovedWeeks } from '../components/TimeCardShared';
 
@@ -168,6 +169,84 @@ function Approvals({ state, reload }) {
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
+// Hours per person: searchable, sortable; click someone to see their approved weeks.
+const PEOPLE_COLS = [
+  ['name', 'Name'], ['thisMonth', 'This month'], ['lastMonth', 'Last month'], ['thisFy', 'This financial year'],
+  ['allTime', 'All time'], ['waiting', 'Waiting'], ['estPayThisMonth', 'Est. pay this month'], ['lastSent', 'Last sent'],
+];
+function PeopleHours({ people }) {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState({ key: 'thisMonth', dir: -1 });
+  const q = query.trim().toLowerCase();
+  const rows = people
+    .filter((p) => !q || `${p.name} ${p.email}`.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const av = a[sort.key] ?? ''; const bv = b[sort.key] ?? '';
+      const c = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+      return (c || a.name.localeCompare(b.name)) * (c ? sort.dir : 1);
+    });
+  const totals = rows.reduce((t, p) => ({
+    thisMonth: t.thisMonth + p.thisMonth, lastMonth: t.lastMonth + p.lastMonth, thisFy: t.thisFy + p.thisFy,
+    allTime: t.allTime + p.allTime, waiting: t.waiting + p.waiting, pay: t.pay + (p.estPayThisMonth || 0),
+  }), { thisMonth: 0, lastMonth: 0, thisFy: 0, allTime: 0, waiting: 0, pay: 0 });
+  const by = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : (key === 'name' || key === 'lastSent' ? 1 : -1) }));
+  return (
+    <div className="panel tc-panel">
+      <div className="tc-people-head">
+        <div>
+          <h2 className="tc-h2" style={{ marginBottom: 2 }}>Hours by person</h2>
+          <p className="tc-muted">Approved hours, by each timesheet's week-ending date. Click someone to see their approved weeks.</p>
+        </div>
+        <SearchField value={query} onChange={setQuery} placeholder="Search by name or email" label="Search people" style={{ maxWidth: 300, flex: '1 1 220px' }} />
+      </div>
+      <div className="tc-table-wrap">
+        <table className="tc-table tc-people">
+          <thead>
+            <tr>
+              {PEOPLE_COLS.map(([key, label]) => (
+                <th key={key} className={key === 'name' || key === 'lastSent' ? '' : 'num'} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
+                  <button type="button" className="tc-sort" onClick={() => by(key)}>
+                    {label}{sort.key === key && (sort.dir > 0 ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id} className="tc-click" onClick={() => navigate(`/timecard/approved?userId=${encodeURIComponent(p.id)}`)} title={`See ${p.name}'s approved weeks`}>
+                <td>
+                  <div className="strong">{p.name}{!p.active && <span className="tc-status tc-status-draft" style={{ marginLeft: 8 }}>No longer logs time</span>}</div>
+                  <div className="tc-muted">{p.email}{p.hourlyRate ? ` · ${money(p.hourlyRate)}/hr` : ''}</div>
+                </td>
+                <td className="num strong">{hrs(p.thisMonth)}</td>
+                <td className="num">{hrs(p.lastMonth)}</td>
+                <td className="num">{hrs(p.thisFy)}</td>
+                <td className="num">{hrs(p.allTime)}</td>
+                <td className="num">{p.waiting ? <span className="tc-waiting">{hrs(p.waiting)}</span> : <span className="tc-muted">—</span>}</td>
+                <td className="num">{p.estPayThisMonth != null ? money(p.estPayThisMonth) : <span className="tc-muted">—</span>}</td>
+                <td className="nowrap">{p.lastSent ? dmy(p.lastSent) : <span className="tc-muted">Never</span>}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={8} className="tc-muted" style={{ textAlign: 'center', padding: 22 }}>{q ? `No one matches “${query}”.` : 'No one logs time yet.'}</td></tr>}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot>
+              <tr>
+                <td className="strong">Total ({rows.length} {rows.length === 1 ? 'person' : 'people'})</td>
+                <td className="num strong">{hrs(totals.thisMonth)}</td><td className="num strong">{hrs(totals.lastMonth)}</td>
+                <td className="num strong">{hrs(totals.thisFy)}</td><td className="num strong">{hrs(totals.allTime)}</td>
+                <td className="num strong">{hrs(totals.waiting)}</td><td className="num strong">{totals.pay ? money(totals.pay) : '—'}</td><td />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ state }) {
   const s = state.hoursSummary;
   const [from, setFrom] = useState('');
@@ -208,6 +287,8 @@ function Dashboard({ state }) {
         <StatTile label="Contractors" value={state.contractors.length} sub="with a login" accent={CHART_COLORS.aqua} />
       </div>
       <p className="tc-muted" style={{ margin: '-6px 0 16px' }}>Approved hours are counted by each timesheet's week-ending date. The financial year runs 1 July – 30 June.</p>
+
+      <PeopleHours people={state.people || []} />
 
       <form className="panel tc-panel tc-range" onSubmit={calc}>
         <h2 className="tc-h2" style={{ width: '100%' }}>Approved hours for a date range</h2>
@@ -251,7 +332,8 @@ function Dashboard({ state }) {
 // Approved
 // ---------------------------------------------------------------------------
 function Approved({ state }) {
-  const [userId, setUserId] = useState('');
+  const [params] = useSearchParams();
+  const [userId, setUserId] = useState(() => params.get('userId') || '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [weeks, setWeeks] = useState(null);
