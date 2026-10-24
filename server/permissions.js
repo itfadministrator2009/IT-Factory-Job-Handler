@@ -65,6 +65,7 @@ function publicUser(row) {
     accessAssets: !contractor && (admin || row.access_assets !== 0),
     accessStorage: !contractor && (admin || row.access_storage !== 0),
     accessTimecard: logsTime(row),
+    superAdmin: row.super_admin === 1,
   };
 }
 

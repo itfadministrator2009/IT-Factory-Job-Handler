@@ -572,6 +572,17 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_timecard_weeks_legacy ON timecard
 // Work Desk login, when it's swapped for a normal Work Desk password.
 addColumnIfMissing('users', 'legacy_pw_hash', 'TEXT');
 addColumnIfMissing('users', 'legacy_pw_salt', 'TEXT');
+// Super Admin: the only account that can remove admins (or take admin access away).
+// Robert Nahas is the Super Admin; set on start-up if no one has it yet.
+addColumnIfMissing('users', 'super_admin', 'INTEGER NOT NULL DEFAULT 0');
+function ensureSuperAdmin() {
+  if (db.prepare('SELECT 1 FROM users WHERE super_admin = 1').get()) return 0;
+  const n = db.prepare(`UPDATE users SET super_admin = 1, role = 'admin'
+    WHERE lower(trim(email)) = 'rnahas@itfactory.com.au' OR lower(trim(name)) = 'robert nahas'`).run().changes;
+  if (n) console.log(`[db] Made Robert Nahas the Super Admin (${n} account${n === 1 ? '' : 's'}).`);
+  return n;
+}
+ensureSuperAdmin();
 
 function migrateUsersEmailUnique() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql;
@@ -678,4 +689,4 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
 );
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);`);
 
-module.exports = { db, nextJobNumber, peekNextJobNumber, nextStorageOrderNumber };
+module.exports = { db, nextJobNumber, peekNextJobNumber, nextStorageOrderNumber, ensureSuperAdmin };
