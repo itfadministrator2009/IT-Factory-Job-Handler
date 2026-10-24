@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const { db, nextStorageOrderNumber } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole, requireModule } = require('../permissions');
+const { isAdminRole, requireModule, isSuperAdmin } = require('../permissions');
 const { notifyStorageOrderTracking, notifyStorageOrderSubmitted, notifyStorageStockReceived } = require('../email');
 const { orderNotifyList } = require('../storageNotify');
 const { normCurrency, DEFAULT_CURRENCY, currencyMap, currencyFor, totalsByCurrency } = require('../storageCurrency');
@@ -981,7 +981,7 @@ router.get('/dashboard', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Restore Storage Centre data from a backup (admin). Only the Storage Centre
+// Restore Storage Centre data from a backup (Super Admin only). Only the Storage Centre
 // tables are replaced; see storageRestore.js.
 // ---------------------------------------------------------------------------
 async function restoreSourceBuffer(body) {
@@ -1003,7 +1003,7 @@ async function restoreSourceBuffer(body) {
 }
 
 router.get('/restore/sources', async (req, res) => {
-  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can restore Storage Centre data' });
+  if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can restore Storage Centre data.' });
   let oneDrive = []; let oneDriveError = null;
   try {
     const r = await listBackups();
@@ -1014,13 +1014,13 @@ router.get('/restore/sources', async (req, res) => {
 });
 
 router.post('/restore/points', async (req, res) => {
-  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can do this' });
+  if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can restore Storage Centre data.' });
   const id = await storageRestore.saveRestorePoint(String(req.body?.reason || 'Saved by hand').slice(0, 200), req.user.name);
   res.status(201).json({ id, restorePoints: storageRestore.listRestorePoints() });
 });
 
 router.get('/restore/points/:id/download', (req, res) => {
-  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can do this' });
+  if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can restore Storage Centre data.' });
   const zip = storageRestore.restorePointZip(req.params.id);
   if (!zip) return res.status(404).json({ error: 'Restore point not found' });
   res.setHeader('Content-Type', 'application/zip');
@@ -1029,7 +1029,7 @@ router.get('/restore/points/:id/download', (req, res) => {
 });
 
 router.post('/restore/preview', async (req, res) => {
-  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can restore Storage Centre data' });
+  if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can restore Storage Centre data.' });
   try {
     res.json(storageRestore.inspect(await restoreSourceBuffer(req.body)));
   } catch (err) {
@@ -1038,7 +1038,7 @@ router.post('/restore/preview', async (req, res) => {
 });
 
 router.post('/restore', async (req, res) => {
-  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can restore Storage Centre data' });
+  if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can restore Storage Centre data.' });
   if (req.body?.confirm !== 'RESTORE') return res.status(400).json({ error: 'Type RESTORE to confirm' });
   try {
     const buffer = await restoreSourceBuffer(req.body);
