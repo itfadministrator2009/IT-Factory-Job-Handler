@@ -639,4 +639,53 @@ function nextStorageOrderNumber() {
   }
 }
 
+// ITF Time Card: the list of clients / projects contractors choose from, so the
+// same client isn't logged under several spellings.
+db.exec(`CREATE TABLE IF NOT EXISTS timecard_projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+
+// Activity log: who did what (logins, user changes, approvals, restores…).
+db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  user_id TEXT,
+  user_name TEXT,
+  ip TEXT,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  target_name TEXT,
+  details TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_activity_at ON activity_log(at);
+CREATE INDEX IF NOT EXISTS idx_activity_action ON activity_log(action);`);
+
+// App-wide settings an admin can change (alert recipients, two-step login…).
+db.exec(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+
+// Two-step login for admins: emailed codes, and devices they chose to trust.
+db.exec(`CREATE TABLE IF NOT EXISTS login_challenges (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  label TEXT,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);`);
+
 module.exports = { db, nextJobNumber, peekNextJobNumber, nextStorageOrderNumber };

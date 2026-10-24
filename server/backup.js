@@ -208,11 +208,18 @@ async function doBackup(filenameOverride) {
     console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename, timecardFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
     const result = { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename, timecardFilename, warnings };
     saveStatus({ ...status, state: 'done', finishedAt: new Date().toISOString(), result });
+    if (warnings.length) {
+      require('./alerts').sendAlert('backup-partial', 'Backup finished with problems',
+        `The database was backed up to OneDrive, but:\n- ${warnings.join('\n- ')}`).catch(() => {});
+    }
     return result;
   } catch (err) {
     console.error('[backup] Failed:', err.message);
     const result = { ok: false, reason: 'upload_failed', error: err.message };
     saveStatus({ ...status, state: 'failed', finishedAt: new Date().toISOString(), result });
+    try { require('./activity').logActivity('backup.failed', { details: `Stopped at: ${status.step}. ${err.message}` }); } catch (e) { /* log only */ }
+    require('./alerts').sendAlert('backup-failed', 'Backup failed',
+      `The backup stopped at the "${status.step}" step and was NOT saved to OneDrive.\n\nError: ${err.message}\n\nTry Settings → Backups → Back up now. If it fails again, check the Microsoft 365 connection.`).catch(() => {});
     return result;
   }
 }
