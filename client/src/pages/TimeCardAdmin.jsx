@@ -1,11 +1,13 @@
 // ITF Time Card — admin pages: Dashboard (hours summaries and project reports),
-// Approvals (approve / decline sent timesheets) and Approved (print and CSV).
+// Approvals (approve / decline sent timesheets), Approved (print and CSV) and
+// Projects (the client / project list).
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Check, X, Download, Printer, ChevronDown, ChevronUp, BellRing, UserPlus } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import SearchField from '../components/SearchField';
+import TimeCardProjects from '../components/TimeCardProjects';
 import { Donut, StatTile, SERIES, CHART_COLORS } from '../components/Charts';
 import { hrs, money, dmy, StatusPill, WeekDetail, printApprovedWeeks } from '../components/TimeCardShared';
 
@@ -18,6 +20,7 @@ function Tabs({ pending }) {
       <NavLink to="/timecard/approvals" className={cls}>Approvals{pending ? ` (${pending})` : ''}</NavLink>
       <NavLink to="/timecard/dashboard" className={cls}>Dashboard</NavLink>
       <NavLink to="/timecard/approved" className={cls}>Approved</NavLink>
+      <NavLink to="/timecard/projects" className={cls}>Clients &amp; projects</NavLink>
     </div>
   );
 }
@@ -402,6 +405,7 @@ const SUBTITLES = {
   approvals: 'Approve or decline the timesheets contractors have sent.',
   dashboard: 'Approved hours at a glance, by period and by client / project.',
   approved: 'Every approved timesheet — print it or download a CSV for payroll.',
+  projects: 'The clients and projects contractors log their hours against.',
 };
 
 export default function TimeCardAdmin({ view = 'approvals' }) {
@@ -415,7 +419,8 @@ export default function TimeCardAdmin({ view = 'approvals' }) {
       <Tabs pending={state?.pending.length} />
       {error && <div className="error-banner">{error}</div>}
       {!state ? <div className="empty-state">{error ? '' : 'Loading…'}</div> : (
-        view === 'dashboard' ? <Dashboard state={state} />
+        view === 'projects' ? <TimeCardProjects />
+          : view === 'dashboard' ? <Dashboard state={state} />
           : view === 'approved' ? <Approved state={state} />
             : <Approvals state={state} reload={load} />
       )}

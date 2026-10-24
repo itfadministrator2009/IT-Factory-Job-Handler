@@ -81,6 +81,7 @@ async function tick(date = new Date()) {
     // Release the claim so the next hourly check retries.
     db.prepare("UPDATE storage_meta SET value = ? WHERE key = 'weekly_invoicing_last_from'").run(last || null);
     console.error('[storage] Weekly invoicing reminder failed:', err.message);
+    require('./alerts').sendAlert('storage-weekly', 'Storage Centre weekly invoicing reminder failed', err.stack || err.message).catch(() => {});
     return { ok: false, reason: 'send_failed', error: err.message };
   }
 }

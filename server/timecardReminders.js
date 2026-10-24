@@ -41,7 +41,10 @@ function contractorsToRemind(date = new Date()) {
 async function sendReminders(date = new Date()) {
   const list = contractorsToRemind(date);
   for (const u of list) {
-    try { await sendReminder(u); } catch (err) { console.error(`[timecard] Reminder to ${u.email} failed:`, err.message); }
+    try { await sendReminder(u); } catch (err) {
+      console.error(`[timecard] Reminder to ${u.email} failed:`, err.message);
+      require('./alerts').sendAlert('timecard-reminder-email', 'An ITF Time Card reminder email could not be sent', `To: ${u.name} <${u.email}>\n\n${err.message}`).catch(() => {});
+    }
   }
   return { sent: list.length, to: list.map((u) => u.name) };
 }
@@ -65,7 +68,10 @@ function startTimecardReminderScheduler() {
     console.log('[timecard] Friday reminders are off (set TIMECARD_REMINDERS=on to send them from Work Desk).');
     return;
   }
-  const run = () => tick().catch((err) => console.error('[timecard] Reminder tick failed:', err.message));
+  const run = () => tick().catch((err) => {
+    console.error('[timecard] Reminder tick failed:', err.message);
+    require('./alerts').sendAlert('timecard-reminders', 'ITF Time Card Friday reminders failed', err.stack || err.message).catch(() => {});
+  });
   setTimeout(run, 30 * 1000);
   setInterval(run, 10 * 60 * 1000).unref?.();
 }

@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const { db } = require('./db');
 const cors = require('cors');
 
 const authRoutes = require('./routes/auth');
@@ -19,6 +20,9 @@ const storagePortalRoutes = require('./routes/storagePortal');
 const presenceRoutes = require('./routes/presence');
 const recordRestoreRoutes = require('./routes/recordRestore');
 const timecardRoutes = require('./routes/timecard');
+const adminRoutes = require('./routes/admin');
+const { alertOnServerErrors, errorHandler, sendAlert } = require('./alerts');
+const { pruneActivity, logActivity } = require('./activity');
 const { startBackupScheduler } = require('./backup');
 const { startStorageWeeklyScheduler } = require('./storageWeekly');
 const { startTimecardReminderScheduler } = require('./timecardReminders');
@@ -37,7 +41,20 @@ app.use(cors(allowedOrigin ? { origin: allowedOrigin } : {}));
 // PATCH, which a couple of signatures alone can push past the default limit.
 app.use(express.json({ limit: '15mb' }));
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// Alert admins by email when any request fails with a server error.
+app.use(alertOnServerErrors);
+
+// Uptime checks (e.g. UptimeRobot) call this. It also proves the database answers,
+// so a broken database shows as "down", not just a stopped server.
+app.get('/api/health', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.json({ ok: true });
+  } catch (err) {
+    res.locals.alertError = err;
+    res.status(503).json({ ok: false, error: 'Database not responding' });
+  }
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/users', userRoutes);
@@ -58,6 +75,9 @@ app.use('/api/presence', presenceRoutes);
 app.use('/api/record-restore', recordRestoreRoutes);
 // ITF Time Card — contractor timesheets, approved by Work Desk admins.
 app.use('/api/timecard', timecardRoutes);
+// Admin: activity log, security & alert settings.
+app.use('/api/admin', adminRoutes);
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 4000;
 if (!process.env.JWT_SECRET) {
@@ -71,7 +91,23 @@ if (!process.env.JWT_SECRET) {
 // down every in-flight request.
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled promise rejection (server continues running):', err);
+  sendAlert(`rejection ${String(err?.message || err).slice(0, 80)}`, 'A background task failed', String(err?.stack || err)).catch(() => {});
 });
+
+// A full backup restore replaces the database (and its activity log), so the
+// restore is noted in a file and written into the restored log on the next start.
+try {
+  const fs = require('fs');
+  const { DB_PATH } = require('./backup');
+  const notePath = `${DB_PATH}.restored.json`;
+  if (fs.existsSync(notePath)) {
+    const n = JSON.parse(fs.readFileSync(notePath, 'utf8'));
+    logActivity('backup.restored', { who: n.who, req: { ip: n.ip }, target: { type: 'backup', id: n.backupId, name: n.backupName || n.backupId }, details: `Restored ${n.at}. Safety copy of the database before the restore: ${n.safety}` });
+    fs.unlinkSync(notePath);
+  }
+} catch (err) { console.error('[activity] Could not record the restore:', err.message); }
+pruneActivity();
+setInterval(pruneActivity, 24 * 60 * 60 * 1000).unref();
 
 // One-off tidy of values like "64984.0" brought across from the old Google Sheet.
 try { require('./storageTools').cleanTrailingZeroIds(); } catch (err) { console.error('[storage] Could not tidy ".0" values:', err.message); }

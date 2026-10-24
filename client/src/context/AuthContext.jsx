@@ -4,6 +4,23 @@ import { resetPresence } from '../components/WhoIsOnline';
 
 const AuthContext = createContext(null);
 
+// "Remember this device" for two-step login. Kept when logging out, so the next
+// login on this browser doesn't ask for a code (for 30 days).
+const DEVICE_KEY = 'helpdesk_device_token';
+function getDeviceToken() {
+  try { return localStorage.getItem(DEVICE_KEY); } catch (e) { return null; }
+}
+export function forgetThisDevice() {
+  try { localStorage.removeItem(DEVICE_KEY); } catch (e) { /* nothing saved */ }
+}
+// A readable name for the trusted-devices list, e.g. "Chrome on Windows".
+function deviceLabel() {
+  const ua = navigator.userAgent || '';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const os = /iPhone|iPad/.test(ua) ? 'iPhone / iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'device';
+  return `${browser} on ${os}`;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('helpdesk_user');
@@ -20,13 +37,26 @@ export function AuthProvider({ children }) {
     }).catch(() => {});
   }, []);
 
-  const login = useCallback(async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password });
+  const finishLogin = useCallback((data) => {
     localStorage.setItem('helpdesk_token', data.token);
     localStorage.setItem('helpdesk_user', JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
   }, []);
+
+  // Admins may be asked for an emailed code first: then this returns
+  // { twoStep: true, challengeId, sentTo } and the page calls verifyCode.
+  const login = useCallback(async (email, password) => {
+    const { data } = await api.post('/auth/login', { email, password, deviceToken: getDeviceToken() || undefined });
+    if (data.twoStep) return data;
+    return finishLogin(data);
+  }, [finishLogin]);
+
+  const verifyCode = useCallback(async (challengeId, code, remember) => {
+    const { data } = await api.post('/auth/login/verify', { challengeId, code, remember, deviceLabel: deviceLabel() });
+    if (data.deviceToken) { try { localStorage.setItem(DEVICE_KEY, data.deviceToken); } catch (e) { /* not remembered */ } }
+    return finishLogin(data);
+  }, [finishLogin]);
 
   const register = useCallback(async (name, email, password) => {
     const { data } = await api.post('/auth/register', { name, email, password });
@@ -48,7 +78,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, login, verifyCode, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

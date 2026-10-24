@@ -4,6 +4,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
+const { logActivity } = require('../activity');
 
 const ACTIVE_WINDOW_MS = 150 * 1000;
 
@@ -43,6 +44,8 @@ function isAdmin(userId) {
 function logOut(userId) {
   db.prepare('UPDATE users SET session_version = COALESCE(session_version, 0) + 1 WHERE id = ?').run(userId);
   db.prepare('DELETE FROM user_presence WHERE user_id = ?').run(String(userId));
+  // Logging someone out everywhere also means their next admin login asks for a code again.
+  db.prepare('DELETE FROM trusted_devices WHERE user_id = ?').run(String(userId));
 }
 
 router.post('/:userId/logout', (req, res) => {
@@ -51,6 +54,7 @@ router.post('/:userId/logout', (req, res) => {
   const target = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
   logOut(target.id);
+  logActivity('user.logged_out', { req, target: { type: 'user', id: target.id, name: target.name } });
   console.log(`[presence] ${req.user.name || req.user.id} logged out ${target.name}`);
   res.json({ ok: true, name: target.name, users: activeUsers() });
 });
@@ -60,6 +64,7 @@ router.post('/logout-all', (req, res) => {
   if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can log people out' });
   const others = db.prepare('SELECT id FROM users WHERE id != ?').all(req.user.id);
   db.transaction(() => others.forEach((u) => logOut(u.id)))();
+  logActivity('user.logged_out_all', { req, details: `${others.length} user${others.length === 1 ? '' : 's'}` });
   console.log(`[presence] ${req.user.name || req.user.id} logged out everyone else (${others.length})`);
   res.json({ ok: true, count: others.length, users: activeUsers() });
 });

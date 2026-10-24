@@ -105,14 +105,9 @@ function historyLists(userId) {
 }
 
 // Every client / project name this contractor has used — for the entry form's suggestions.
-function myProjects(userId) {
-  return db.prepare(`SELECT DISTINCT client_project FROM timecard_entries
-    WHERE user_id = ? AND client_project IS NOT NULL AND client_project != '' ORDER BY client_project`)
-    .all(userId).map((r) => r.client_project);
-}
 
 function contractorState(user, week) {
-  return { week: weekSummary(week), ...historyLists(user.id), projects: myProjects(user.id), today: todayYmd() };
+  return { week: weekSummary(week), ...historyLists(user.id), ...require('./timecardProjects').choicesFor(user.id), today: todayYmd() };
 }
 
 // The week a contractor lands on: a declined week to fix first, then their latest
@@ -147,7 +142,7 @@ function addEntry(user, weekId, body = {}) {
   if (!DAYS.includes(day)) day = date ? DAYS[(weekdayOf(date) + 6) % 7] : 'Monday';
   db.prepare(`INSERT INTO timecard_entries (id, week_id, user_id, day, date, client_project, start_time, finish_time, break_mins, hours, task)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    uuid(), week.id, user.id, day, date || null, String(body.clientProject || '').trim().slice(0, 200),
+    uuid(), week.id, user.id, day, date || null, require('./timecardProjects').canonicalName(body.clientProject, user),
     start, finish, breakMins, computeHours(start, finish, breakMins), String(body.task || '').trim().slice(0, 500),
   );
   return week;

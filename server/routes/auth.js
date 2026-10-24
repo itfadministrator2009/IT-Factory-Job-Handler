@@ -7,6 +7,8 @@ const { db } = require('../db');
 const { publicUser } = require('../permissions');
 const { signToken, authRequired } = require('../auth');
 const { sendPasswordReset } = require('../email');
+const { logActivity } = require('../activity');
+const twoStep = require('../twoStep');
 
 const router = express.Router();
 
@@ -69,8 +71,17 @@ router.post('/register', registerLimiter, (req, res) => {
   res.status(201).json({ token: signToken(user), user: publicUser({ ...user, access_assets: 1, access_storage: 1 }) });
 });
 
-router.post('/login', loginLimiter, (req, res) => {
-  const { email, password } = req.body;
+// Two-step login codes: stricter limit, as each wrong guess counts.
+const codeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in a few minutes.' },
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
+  const { email, password, deviceToken } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
 
   // Email is no longer unique — multiple techs can share one inbox. Check every
@@ -88,9 +99,43 @@ router.post('/login', loginLimiter, (req, res) => {
     }
   }
   if (!user) {
+    logActivity('auth.login_failed', { req, details: `Email: ${String(email).trim().slice(0, 120)}` });
     return res.status(401).json({ error: 'Invalid email or password' });
   }
+  // Admins: emailed code first, unless this device is remembered.
+  if (twoStep.needsTwoStep(user, deviceToken)) {
+    try {
+      const challenge = await twoStep.startChallenge(user);
+      logActivity('auth.code_sent', { req, who: user });
+      return res.json({ twoStep: true, ...challenge });
+    } catch (err) {
+      console.error('[2fa] Could not send code:', err.message);
+      return res.status(502).json({ error: 'Could not email your login code. Try again in a minute.' });
+    }
+  }
+  logActivity('auth.login', { req, who: user });
   res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+// Second step: the emailed code. "remember" trusts this browser for 30 days.
+router.post('/login/verify', codeLimiter, (req, res) => {
+  const { challengeId, code, remember, deviceLabel } = req.body || {};
+  const out = twoStep.verifyChallenge(challengeId, code);
+  if (!out.ok) {
+    if (out.userId) logActivity('auth.code_failed', { req, who: db.prepare('SELECT id, name FROM users WHERE id = ?').get(out.userId), details: out.error });
+    return res.status(out.status).json({ error: out.error, expired: !!out.expired });
+  }
+  const deviceToken = remember ? twoStep.rememberDevice(out.user.id, deviceLabel || req.headers['user-agent']) : undefined;
+  logActivity('auth.login', { req, who: out.user, details: remember ? 'With login code (remembered this device for 30 days)' : 'With login code' });
+  res.json({ token: signToken(out.user), user: publicUser(out.user), deviceToken });
+});
+
+// The signed-in admin's remembered devices (Settings → Security & alerts).
+router.get('/devices', authRequired, (req, res) => {
+  res.json({ devices: twoStep.listDevices(req.user.id), twoStepOn: twoStep.twoStepEnabled() });
+});
+router.delete('/devices', authRequired, (req, res) => {
+  res.json({ forgotten: twoStep.forgetDevices(req.user.id) });
 });
 
 // The current user fresh from the database, so role or access changes made in
@@ -113,6 +158,7 @@ router.post('/forgot-password', forgotPasswordLimiter, (req, res) => {
 
     const base = process.env.FRONTEND_URL || 'http://localhost:5173';
     sendPasswordReset({ toEmail: user.email, resetUrl: `${base}/reset-password?token=${token}` });
+    logActivity('auth.password_reset_requested', { req, who: user });
   }
   res.json({ ok: true });
 });
@@ -131,6 +177,9 @@ router.post('/reset-password', resetPasswordLimiter, (req, res) => {
 
   const password_hash = bcrypt.hashSync(password, 10);
   db.prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL, legacy_pw_hash = NULL, legacy_pw_salt = NULL WHERE id = ?').run(password_hash, user.id);
+  // A new password means remembered devices need the code again.
+  twoStep.forgetDevices(user.id);
+  logActivity('auth.password_reset', { req, who: user });
   res.json({ ok: true });
 });
 
