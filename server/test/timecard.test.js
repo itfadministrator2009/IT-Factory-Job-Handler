@@ -233,3 +233,15 @@ test('Friday reminder goes to contractors who have not sent this week', () => {
   db.prepare("UPDATE timecard_weeks SET week_ending = '2026-10-23', submitted_date = '2026-10-23', status = 'Waiting on approval' WHERE id = ?").run(weekId);
   assert.deepEqual(contractorsToRemind(friday).map((u) => u.name), ['Dan Contractor']);
 });
+
+test('contractors brought across from the old app can log in once with their old password', async () => {
+  const crypto = require('crypto');
+  const salt = 'old-salt';
+  db.prepare('UPDATE users SET legacy_pw_hash = ?, legacy_pw_salt = ? WHERE id = ?')
+    .run(crypto.createHash('sha256').update(salt + 'oldtimecard1', 'utf8').digest('hex'), salt, con2.id);
+  assert.equal((await client.post('/api/auth/login', { body: { email: 'dan@contractor.test', password: 'wrong-one' } })).status, 401);
+  const ok = await client.post('/api/auth/login', { body: { email: ' DAN@contractor.test ', password: 'oldtimecard1' } });
+  assert.equal(ok.status, 200);
+  assert.equal(db.prepare('SELECT legacy_pw_hash FROM users WHERE id = ?').get(con2.id).legacy_pw_hash, null);
+  assert.equal((await client.post('/api/auth/login', { body: { email: 'dan@contractor.test', password: 'oldtimecard1' } })).status, 200);
+});
