@@ -1,5 +1,6 @@
 // ITF Time Card — admin pages: Dashboard (hours summaries and project reports),
-// Approvals (approve / decline sent timesheets) and Approved (print and CSV).
+// Approvals (approve / decline sent timesheets), Approved (print and CSV) and
+// Reports (hours and pay for each person).
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Check, X, Download, Printer, ChevronDown, ChevronUp, BellRing, UserPlus } from 'lucide-react';
@@ -15,9 +16,10 @@ function Tabs({ pending }) {
   const cls = ({ isActive }) => `settings-tab${isActive ? ' active' : ''}`;
   return (
     <div className="settings-tabs" style={{ marginBottom: 18 }}>
-      <NavLink to="/timecard/approvals" className={cls}>Approvals{pending ? ` (${pending})` : ''}</NavLink>
       <NavLink to="/timecard/dashboard" className={cls}>Dashboard</NavLink>
+      <NavLink to="/timecard/approvals" className={cls}>Approvals{pending ? ` (${pending})` : ''}</NavLink>
       <NavLink to="/timecard/approved" className={cls}>Approved</NavLink>
+      <NavLink to="/timecard/reports" className={cls}>Reports</NavLink>
     </div>
   );
 }
@@ -402,8 +404,6 @@ function Dashboard({ state }) {
       </div>
       <p className="tc-muted" style={{ margin: '-6px 0 16px' }}>Approved hours are counted by each timesheet's week-ending date. The financial year runs 1 July – 30 June.</p>
 
-      <PeopleHours people={state.people || []} />
-      {state.pay && <PayByPerson people={state.people || []} pay={state.pay} />}
 
       <form className="panel tc-panel tc-range" onSubmit={calc}>
         <h2 className="tc-h2" style={{ width: '100%' }}>Approved hours for a date range</h2>
@@ -517,7 +517,18 @@ const SUBTITLES = {
   approvals: 'Approve or decline the timesheets contractors have sent.',
   dashboard: 'Approved hours at a glance, by period and by client / project.',
   approved: 'Every approved timesheet — print it or download a CSV for payroll.',
+  reports: 'Hours and pay for each person, by period or for your own dates.',
 };
+
+// Reports: hours by person and what each person was paid.
+function Reports({ state }) {
+  return (
+    <>
+      <PeopleHours people={state.people || []} />
+      {state.pay && <PayByPerson people={state.people || []} pay={state.pay} />}
+    </>
+  );
+}
 
 export default function TimeCardAdmin({ view = 'approvals' }) {
   const [state, setState] = useState(null);
@@ -531,6 +542,7 @@ export default function TimeCardAdmin({ view = 'approvals' }) {
       {error && <div className="error-banner">{error}</div>}
       {!state ? <div className="empty-state">{error ? '' : 'Loading…'}</div> : (
         view === 'dashboard' ? <Dashboard state={state} />
+          : view === 'reports' ? <Reports state={state} />
           : view === 'approved' ? <Approved state={state} />
             : <Approvals state={state} reload={load} />
       )}
