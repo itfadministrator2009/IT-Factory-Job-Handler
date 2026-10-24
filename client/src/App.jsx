@@ -50,14 +50,18 @@ function RequireAuth({ children }) {
   return children;
 }
 
-// ITF Time Card: contractors get their timesheet; admins get approvals.
+// ITF Time Card: contractors (and Users with Time Card ticked) get their timesheet;
+// admins get approvals.
 function RequireTimecard({ adminView, children }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   const isAdmin = user.role === 'admin' || user.role === 'agent';
   if (user.role === 'contractor') return adminView ? <Navigate to="/timecard" replace /> : children;
-  if (!isAdmin) return <Navigate to="/jobs" replace />;
+  if (!isAdmin) {
+    if (!user.accessTimecard) return <Navigate to="/jobs" replace />;
+    return adminView ? <Navigate to="/timecard" replace /> : children;
+  }
   return adminView ? children : <Navigate to="/timecard/approvals" replace />;
 }
 
