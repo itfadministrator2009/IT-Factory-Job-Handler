@@ -16,7 +16,9 @@ export default function Settings() {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'agent';
   // The open tab is in the address (?tab=activity) so it can be linked to and survives a refresh.
   const [params, setParams] = useSearchParams();
-  const TABS = [['users', 'Manage Users'], ['activity', 'Activity log'], ['security', 'Security & alerts'], ['backup', 'Backup'], ['disk', 'Disk usage']];
+  // Activity log, Security & alerts and Backup are for the Super Admin only.
+  const isSuper = currentUser?.superAdmin === true;
+  const TABS = [['users', 'Manage Users'], ...(isSuper ? [['activity', 'Activity log'], ['security', 'Security & alerts'], ['backup', 'Backup']] : []), ['disk', 'Disk usage']];
   const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'users';
   const setTab = (k) => setParams(k === 'users' ? {} : { tab: k }, { replace: true });
 
