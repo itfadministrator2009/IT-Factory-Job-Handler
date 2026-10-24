@@ -17,7 +17,7 @@ before(async () => {
   client = await startTestServer(app);
   server = client.server;
   admin = await registerUser(client, { name: 'Admin Person', email: 'admin@example.com' });
-  db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(admin.id);
+  db.prepare("UPDATE users SET role = 'admin', super_admin = 1 WHERE id = ?").run(admin.id); // restores are Super Admin only
   staff = await registerUser(client, { name: 'Staff Person', email: 'staff@example.com' });
   db.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(staff.id);
 });
@@ -79,6 +79,11 @@ test('restore: preview, admin only, typed confirmation, restore point, logins ke
   db.prepare("INSERT INTO storage_items (id, client, serial) VALUES ('r2', 'Kilo', 'K-2')").run();
 
   assert.equal((await client.post('/api/storage/restore/preview', { token: staff.token, body: { source: 'upload', zipBase64 } })).status, 403);
+  // An admin who isn't the Super Admin can't restore either.
+  const other = await registerUser(client, { name: 'Other Admin', email: 'other@example.com' });
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(other.id);
+  assert.equal((await client.post('/api/storage/restore/preview', { token: other.token, body: { source: 'upload', zipBase64 } })).status, 403);
+  assert.equal((await client.get('/api/storage/restore/sources', { token: other.token })).status, 403);
   const preview = (await client.post('/api/storage/restore/preview', { token: admin.token, body: { source: 'upload', zipBase64 } })).data;
   const itemsRow = preview.tables.find((t) => t.file === 'items.csv');
   assert.equal(itemsRow.backupRows, itemsAtBackup);
