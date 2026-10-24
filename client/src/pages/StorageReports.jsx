@@ -4,6 +4,7 @@ import { FileText, Download, Mail, Printer, RotateCcw } from 'lucide-react';
 import api from '../api';
 import { openPdf, downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
+import { useAuth } from '../context/AuthContext';
 import RangePicker from '../storage/RangePicker';
 import { presetRange, downloadCsv, dmy, money, sameText } from '../storage/common';
 
@@ -195,6 +196,7 @@ function RdInvoicing({ clients }) {
 }
 
 export default function StorageReports() {
+  const { user } = useAuth();
   const [clients, setClients] = useState([]);
   useEffect(() => { api.get('/storage/lists').then((r) => setClients(r.data.clients)).catch(() => {}); }, []);
 
@@ -210,7 +212,7 @@ export default function StorageReports() {
             onClick={() => downloadFile(api, '/storage/export.zip', 'storage-centre.zip').catch(() => alert('Could not download the export'))}>
             <Download size={14} /> Download backup
           </button>
-          <Link to="/storage/restore" className="btn btn-ghost btn-sm" title="Put the Storage Centre data back from a backup"><RotateCcw size={14} /> Restore</Link>
+          {user?.superAdmin && <Link to="/storage/restore" className="btn btn-ghost btn-sm" title="Put the Storage Centre data back from a backup"><RotateCcw size={14} /> Restore</Link>}
           <button type="button" className="btn btn-ghost btn-sm" title="Email last week's invoicing summary now (the Monday email)"
             onClick={async () => {
               if (!confirm("Email last week's invoicing summary now?")) return;

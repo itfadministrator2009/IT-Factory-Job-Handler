@@ -5,6 +5,7 @@ import api from '../api';
 import { downloadFile } from '../utils/pdf';
 import Layout from '../components/Layout';
 import { noteTime } from '../storage/common';
+import { useAuth } from '../context/AuthContext';
 
 // Restore Storage Centre data only (the old app's "Restore Backup"). Jobs,
 // projects, users and the rest of Work Desk are not touched — for a full
@@ -17,7 +18,21 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
 });
 const kb = (n) => `${Math.max(1, Math.round((n || 0) / 1024))} KB`;
 
+// Restoring from backups is for the Super Admin only.
 export default function StorageRestore() {
+  const { user } = useAuth();
+  if (!user?.superAdmin) {
+    return (
+      <Layout>
+        <div className="page-header"><div><h1>Restore Storage Centre</h1></div></div>
+        <div className="empty-state"><h3>Super Admin only</h3><p>Only the Super Admin can restore Storage Centre data from a backup.</p></div>
+      </Layout>
+    );
+  }
+  return <StorageRestorePage />;
+}
+
+function StorageRestorePage() {
   const [sources, setSources] = useState(null);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(null); // { label, body, preview }
