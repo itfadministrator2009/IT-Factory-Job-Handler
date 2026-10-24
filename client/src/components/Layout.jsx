@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban,
   Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
-  ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2, Building2,
+  ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2,
 } from 'lucide-react';
 import api from '../api';
 import { useAuth, canUseModule } from '../context/AuthContext';
@@ -119,7 +119,6 @@ export default function Layout({ children }) {
             <NavLink to="/timecard/approvals" className={linkClass}><CheckSquare size={14} /> Approvals{tcPending > 0 && <span className="tc-navcount">{tcPending}</span>}</NavLink>
             <NavLink to="/timecard/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
             <NavLink to="/timecard/approved" className={linkClass}><FileCheck2 size={14} /> Approved</NavLink>
-            <NavLink to="/timecard/projects" className={linkClass}><Building2 size={14} /> Clients &amp; projects</NavLink>
           </Section>
           )}
           </>)}
