@@ -5,6 +5,7 @@ const archiver = require('archiver');
 const { getAccessToken, configured: graphConfigured } = require('./calendar');
 const { db } = require('./db');
 const { buildStorageCentreZip } = require('./storageExport');
+const { buildTimecardZip } = require('./timecardExport');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
 // Same folder every uploaded photo (job attachments and project entry photos alike)
@@ -124,7 +125,8 @@ function backupStatus() {
 }
 
 // Used by both the nightly scheduler and the admin "Back up now" button. Backs up
-// the database, every uploaded photo/attachment, and the Storage Centre tables.
+// the database, every uploaded photo/attachment, and the Storage Centre and ITF Time
+// Card tables as CSVs.
 // Only one backup runs at a time; a second call while one is running shares it.
 function runBackup(filenameOverride) {
   if (running) return running;
@@ -188,8 +190,23 @@ async function doBackup(filenameOverride) {
       storageFilename = null;
     }
 
-    console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
-    const result = { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename, warnings };
+    // ITF Time Card as CSVs too (timesheets, entries, expenses, people). Same rule.
+    step('time card');
+    let timecardFilename = null;
+    try {
+      const { buffer: tcBuffer } = await buildTimecardZip();
+      timecardFilename = filenameOverride
+        ? filenameOverride.replace(/\.db$/, '-time-card.zip')
+        : `time-card-${dateStr}.zip`;
+      await uploadBackupToOneDrive(tcBuffer, timecardFilename);
+    } catch (err) {
+      console.error('[backup] Database backed up, but the Time Card export failed:', err.message);
+      warnings.push(`Time Card export was not backed up: ${err.message}`);
+      timecardFilename = null;
+    }
+
+    console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename, timecardFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
+    const result = { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename, timecardFilename, warnings };
     saveStatus({ ...status, state: 'done', finishedAt: new Date().toISOString(), result });
     return result;
   } catch (err) {
