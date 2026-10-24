@@ -146,6 +146,7 @@ function AppRoutes() {
       <Route path="/timecard/approvals" element={<RequireTimecard adminView><TimeCardAdmin view="approvals" /></RequireTimecard>} />
       <Route path="/timecard/dashboard" element={<RequireTimecard adminView><TimeCardAdmin view="dashboard" /></RequireTimecard>} />
       <Route path="/timecard/approved" element={<RequireTimecard adminView><TimeCardAdmin view="approved" /></RequireTimecard>} />
+      <Route path="/timecard/projects" element={<RequireTimecard adminView><TimeCardAdmin view="projects" /></RequireTimecard>} />
 
       <Route path="/kb" element={<RequireAuth><KnowledgeBase /></RequireAuth>} />
       <Route path="/kb/new" element={<RequireAuth><ArticleForm /></RequireAuth>} />
