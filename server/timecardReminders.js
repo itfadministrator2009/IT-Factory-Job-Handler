@@ -9,6 +9,7 @@
 const { db } = require('./db');
 const { todayYmd, sundayOnOrAfter, addDays } = require('./timecard');
 const { sendReminder } = require('./timecardEmail');
+const { TIMESHEET_USERS_SQL } = require('./permissions');
 
 const TZ = process.env.BACKUP_TIMEZONE || 'Australia/Sydney';
 const SEND_DAY = 5; // Friday
@@ -28,7 +29,7 @@ function nowParts(date = new Date()) {
 function contractorsToRemind(date = new Date()) {
   const ending = sundayOnOrAfter(todayYmd(date));
   const monday = addDays(ending, -6);
-  return db.prepare("SELECT id, name, email FROM users WHERE role = 'contractor' AND email IS NOT NULL AND email != '' ORDER BY name").all()
+  return db.prepare(`SELECT id, name, email FROM users WHERE ${TIMESHEET_USERS_SQL} AND email IS NOT NULL AND email != '' ORDER BY name`).all()
     .filter((u) => {
       const sent = db.prepare(`SELECT 1 FROM timecard_weeks WHERE user_id = ? AND status IN ('Waiting on approval','Approved')
         AND ((week_ending BETWEEN ? AND ?) OR (submitted_date BETWEEN ? AND ?))`).get(u.id, monday, ending, monday, ending);

@@ -496,6 +496,8 @@ addColumnIfMissing('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0');
 // Work Desk admins approve or decline them. Same shape as the old Time Card
 // sheet's Weeks / Entries / Expenses tabs.
 addColumnIfMissing('users', 'hourly_rate', 'REAL');
+// Staff (role User) who also log their own hours in ITF Time Card — ticked in Settings.
+addColumnIfMissing('users', 'access_timecard', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`
 CREATE TABLE IF NOT EXISTS timecard_weeks (
   id TEXT PRIMARY KEY,

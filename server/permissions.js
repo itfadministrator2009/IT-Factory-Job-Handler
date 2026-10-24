@@ -44,6 +44,16 @@ function requireModule(module) {
     res.status(403).json({ error: `You don't have access to ${MODULE_NAMES[module]}. Ask an admin to turn it on in Settings.`, code: 'no_module_access' });
   };
 }
+// Who keeps a timesheet in ITF Time Card: contractors always, and staff (role User)
+// with ITF Time Card ticked in Settings. Admins approve rather than log time.
+function logsTime(row) {
+  if (!row) return false;
+  if (row.role === 'contractor') return true;
+  return !isAdminRole(row.role) && row.access_timecard === 1;
+}
+// The same rule as SQL, for lists of people (reminders, report filters).
+const TIMESHEET_USERS_SQL = "(role = 'contractor' OR (role NOT IN ('admin','agent') AND access_timecard = 1))";
+
 // The signed-in user as the client sees it, including which sections they can use.
 function publicUser(row) {
   if (!row) return null;
@@ -54,7 +64,8 @@ function publicUser(row) {
     id: row.id, name: row.name, email: row.email, role: row.role,
     accessAssets: !contractor && (admin || row.access_assets !== 0),
     accessStorage: !contractor && (admin || row.access_storage !== 0),
+    accessTimecard: logsTime(row),
   };
 }
 
-module.exports = { isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser };
+module.exports = { isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser, logsTime, TIMESHEET_USERS_SQL };
