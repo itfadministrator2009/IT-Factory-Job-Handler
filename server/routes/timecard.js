@@ -2,7 +2,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole } = require('../permissions');
+const { isAdminRole, logsTime } = require('../permissions');
 const tc = require('../timecard');
 const mail = require('../timecardEmail');
 const { sendReminders, contractorsToRemind } = require('../timecardReminders');
@@ -10,11 +10,12 @@ const { sendReminders, contractorsToRemind } = require('../timecardReminders');
 const router = express.Router();
 router.use(authRequired);
 
-const me = (req) => db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(req.user.id);
+const me = (req) => db.prepare('SELECT id, name, email, role, access_timecard FROM users WHERE id = ?').get(req.user.id);
 
 function contractorOnly(req, res, next) {
   const u = me(req);
-  if (!u || u.role !== 'contractor') return res.status(403).json({ error: 'Only contractor accounts have timesheets.' });
+  // Contractors, and staff with ITF Time Card ticked in Settings.
+  if (!logsTime(u)) return res.status(403).json({ error: "You don't have a timesheet. Ask an admin to turn on ITF Time Card for you in Settings." });
   req.contractor = u;
   next();
 }

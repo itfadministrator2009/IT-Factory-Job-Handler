@@ -34,9 +34,9 @@ router.get('/', (req, res) => {
 });
 
 // Admin-only: full user management
-const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, hourly_rate';
+const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, hourly_rate';
 const toAdminUser = (u) => u && ({
-  ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0,
+  ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0, accessTimecard: u.access_timecard === 1,
   hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null,
 });
 // 'admin', 'user' (staff) or 'contractor' (ITF Time Card only).
@@ -56,7 +56,7 @@ router.get('/admin', adminRequired, (req, res) => {
 });
 
 router.post('/admin', adminRequired, (req, res) => {
-  const { name, email, password, role, accessAssets, accessStorage, hourlyRate } = req.body;
+  const { name, email, password, role, accessAssets, accessStorage, accessTimecard, hourlyRate } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'name, email, and password are required' });
   }
@@ -69,8 +69,8 @@ router.post('/admin', adminRequired, (req, res) => {
   const finalRole = roleFrom(role);
   const id = uuid();
   const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('INSERT INTO users (id, name, email, password_hash, role, access_assets, access_storage, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, email, password_hash, finalRole, accessAssets === false ? 0 : 1, accessStorage === false ? 0 : 1, rate ?? null);
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role, access_assets, access_storage, access_timecard, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, email, password_hash, finalRole, accessAssets === false ? 0 : 1, accessStorage === false ? 0 : 1, accessTimecard ? 1 : 0, rate ?? null);
 
   const user = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id));
   res.status(201).json({ user });
@@ -80,7 +80,7 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
-  const { role, name, email, accessAssets, accessStorage, hourlyRate } = req.body;
+  const { role, name, email, accessAssets, accessStorage, accessTimecard, hourlyRate } = req.body;
 
   const rate = rateFrom(hourlyRate);
   if (Number.isNaN(rate)) return res.status(400).json({ error: 'Hourly rate must be a number' });
@@ -89,6 +89,8 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   // Which sections a (non-admin) user can open. Admins always have both.
   if (accessAssets !== undefined) db.prepare('UPDATE users SET access_assets = ? WHERE id = ?').run(accessAssets ? 1 : 0, req.params.id);
   if (accessStorage !== undefined) db.prepare('UPDATE users SET access_storage = ? WHERE id = ?').run(accessStorage ? 1 : 0, req.params.id);
+  // ITF Time Card: a User also logs their own hours (contractors always do).
+  if (accessTimecard !== undefined) db.prepare('UPDATE users SET access_timecard = ? WHERE id = ?').run(accessTimecard ? 1 : 0, req.params.id);
 
   if (role !== undefined) {
     const finalRole = roleFrom(role);

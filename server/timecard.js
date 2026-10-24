@@ -212,7 +212,8 @@ function recentDecisions(limit = 15) {
 }
 
 function contractors() {
-  return db.prepare("SELECT id, name, email, hourly_rate FROM users WHERE role = 'contractor' ORDER BY name").all()
+  const { TIMESHEET_USERS_SQL } = require('./permissions');
+  return db.prepare(`SELECT id, name, email, hourly_rate FROM users WHERE ${TIMESHEET_USERS_SQL} ORDER BY name`).all()
     .map((u) => ({ id: u.id, name: u.name, email: u.email, hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null }));
 }
 

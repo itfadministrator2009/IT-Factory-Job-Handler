@@ -63,6 +63,7 @@ function ManageUsersTab({ currentUser }) {
   const [newAccessAssets, setNewAccessAssets] = useState(true);
   const [newAccessStorage, setNewAccessStorage] = useState(true);
   const [newRate, setNewRate] = useState('');
+  const [newAccessTimecard, setNewAccessTimecard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -95,8 +96,9 @@ function ManageUsersTab({ currentUser }) {
     setSaving(true);
     setError('');
     try {
-      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, hourlyRate: role === 'contractor' ? newRate : undefined });
-      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewRate('');
+      const logsTime = role === 'contractor' || (role === 'user' && newAccessTimecard);
+      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, accessTimecard: role === 'user' && newAccessTimecard, hourlyRate: logsTime ? newRate : undefined });
+      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewAccessTimecard(false); setNewRate('');
       setShowForm(false);
       load();
     } catch (err) {
@@ -172,7 +174,7 @@ function ManageUsersTab({ currentUser }) {
     setEditSaving(true);
     setEditError('');
     try {
-      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole, hourlyRate: editRole === 'contractor' ? editRate : undefined });
+      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole, hourlyRate: editRole === 'contractor' || (editRole === 'user' && editTarget.accessTimecard) ? editRate : undefined });
       setEditTarget(null);
       load();
     } catch (err) {
@@ -264,7 +266,7 @@ function ManageUsersTab({ currentUser }) {
                 <option value="contractor">Contractor (ITF Time Card only)</option>
               </select>
             </div>
-            {role === 'contractor' && (
+            {(role === 'contractor' || (role === 'user' && newAccessTimecard)) && (
               <div className="field">
                 <label htmlFor="urate">Hourly rate (optional)</label>
                 <input id="urate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={newRate} onChange={(e) => setNewRate(e.target.value)} />
@@ -279,6 +281,9 @@ function ManageUsersTab({ currentUser }) {
                 </label>
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14, marginTop: 6 }}>
                   <input type="checkbox" checked={newAccessStorage} onChange={(e) => setNewAccessStorage(e.target.checked)} /> ITF Storage Centre
+                </label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, fontSize: 14, marginTop: 6 }}>
+                  <input type="checkbox" checked={newAccessTimecard} onChange={(e) => setNewAccessTimecard(e.target.checked)} /> ITF Time Card <span style={{ color: 'var(--muted)' }}>(logs their own hours)</span>
                 </label>
               </div>
             )}
@@ -301,6 +306,7 @@ function ManageUsersTab({ currentUser }) {
                 <th>Role</th>
                 <th style={{ textAlign: 'center' }}>ITF Asset Tracker</th>
                 <th style={{ textAlign: 'center' }}>ITF Storage Centre</th>
+                <th style={{ textAlign: 'center' }}>ITF Time Card</th>
                 <th></th>
               </tr>
             </thead>
@@ -318,7 +324,7 @@ function ManageUsersTab({ currentUser }) {
                   </td>
                   {u.role === 'contractor' ? (
                     <td colSpan={2} style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
-                      ITF Time Card only{u.hourlyRate ? ` · $${Number(u.hourlyRate).toFixed(2)}/hr` : ''}
+                      ITF Time Card only
                     </td>
                   ) : ['accessAssets', 'accessStorage'].map((field) => {
                     const admin = u.role === 'admin' || u.role === 'agent';
@@ -331,6 +337,21 @@ function ManageUsersTab({ currentUser }) {
                       </td>
                     );
                   })}
+                  {(() => {
+                    // ITF Time Card: Users tick to log their own hours; contractors always do; admins approve.
+                    const admin = u.role === 'admin' || u.role === 'agent';
+                    const contractor = u.role === 'contractor';
+                    const on = contractor || (!admin && u.accessTimecard);
+                    return (
+                      <td style={{ textAlign: 'center' }}>
+                        <input type="checkbox" checked={admin || on} disabled={admin || contractor}
+                          title={admin ? 'Admins approve timesheets' : contractor ? 'Contractors always log their hours' : (on ? 'Click to stop them logging hours' : 'Click to let them log their own hours')}
+                          aria-label={`ITF Time Card access for ${u.name}`}
+                          onChange={(e) => handleAccessChange(u, 'accessTimecard', e.target.checked)} />
+                        {on && u.hourlyRate ? <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>${Number(u.hourlyRate).toFixed(2)}/hr</div> : null}
+                      </td>
+                    );
+                  })()}
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button type="button" className="btn btn-ghost btn-sm icon-btn" onClick={() => openEdit(u)} title="Edit user"><Pencil size={13} /></button>
@@ -359,7 +380,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <ShieldCheck size={13} /> Admins can manage users and roles here, and always have access to everything. Tick or untick ITF Asset Tracker / ITF Storage Centre to choose which of those sections each User can open — the change applies straight away. Contractors only see ITF Time Card, where they log their hours for an admin to approve.
+        <ShieldCheck size={13} /> Admins can manage users and roles here, and always have access to everything. Tick or untick ITF Asset Tracker / ITF Storage Centre to choose which of those sections each User can open — the change applies straight away. Tick ITF Time Card to let a User log their own hours there too. Contractors only see ITF Time Card. Admins approve timesheets.
       </p>
 
       {editTarget && (
@@ -392,7 +413,7 @@ function ManageUsersTab({ currentUser }) {
                   <option value="contractor">Contractor (ITF Time Card only)</option>
                 </select>
               </div>
-              {editRole === 'contractor' && (
+              {(editRole === 'contractor' || (editRole === 'user' && editTarget.accessTimecard)) && (
                 <div className="field">
                   <label htmlFor="edit-rate">Hourly rate (optional)</label>
                   <input id="edit-rate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={editRate} onChange={(e) => setEditRate(e.target.value)} />

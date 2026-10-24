@@ -105,6 +105,13 @@ export default function Layout({ children }) {
           </Section>
           )}
 
+          {!isAdmin && user?.accessTimecard && (
+          <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard"
+            open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
+            <NavLink to="/timecard" end className={linkClass}><Clock size={14} /> My Timesheet</NavLink>
+          </Section>
+          )}
+
           {isAdmin && (
           <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard/approvals"
             open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
