@@ -4,6 +4,7 @@ import { RotateCcw, Upload, Search, X, Undo2 } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { noteTime } from '../storage/common';
+import { useAuth } from '../context/AuthContext';
 
 // Restore individual records — one job, one asset, one Storage Centre item… —
 // from a backup, without rolling back anything else. Pick a backup, pick what
@@ -23,7 +24,21 @@ function Badge({ status }) {
   return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 12, fontWeight: 600, color: s.color, background: s.bg, whiteSpace: 'nowrap' }}>{s.text}</span>;
 }
 
+// Restoring from backups is for the Super Admin only.
 export default function RecordRestore() {
+  const { user } = useAuth();
+  if (!user?.superAdmin) {
+    return (
+      <Layout>
+        <div className="page-header"><div><h1>Restore records</h1></div></div>
+        <div className="empty-state"><h3>Super Admin only</h3><p>Only the Super Admin can restore records from a backup.</p></div>
+      </Layout>
+    );
+  }
+  return <RecordRestorePage />;
+}
+
+function RecordRestorePage() {
   const [params] = useSearchParams();
   const [sources, setSources] = useState(null);
   const [source, setSource] = useState(null); // { body, label }

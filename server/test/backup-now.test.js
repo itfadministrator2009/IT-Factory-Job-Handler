@@ -15,7 +15,7 @@ before(async () => {
   client = await startTestServer(app);
   server = client.server;
   admin = await registerUser(client, { name: 'Admin Person', email: 'admin@example.com' });
-  db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(admin.id);
+  db.prepare("UPDATE users SET role = 'admin', super_admin = 1 WHERE id = ?").run(admin.id);
   staff = await registerUser(client, { name: 'Staff Person', email: 'staff@example.com' });
   db.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(staff.id);
 });

@@ -69,4 +69,14 @@ function publicUser(row) {
   };
 }
 
-module.exports = { isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser, logsTime, TIMESHEET_USERS_SQL };
+// The Super Admin (Robert Nahas) — the only one who can open the activity log,
+// security & alert settings and backups, and remove admins.
+function isSuperAdmin(userId) {
+  return db.prepare('SELECT super_admin FROM users WHERE id = ?').get(userId)?.super_admin === 1;
+}
+function superAdminRequired(req, res, next) {
+  if (!req.user || !isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can open this.' });
+  next();
+}
+
+module.exports = { isSuperAdmin, superAdminRequired, isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser, logsTime, TIMESHEET_USERS_SQL };

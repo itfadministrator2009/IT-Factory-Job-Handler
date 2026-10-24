@@ -1,20 +1,16 @@
 // Admin: restore individual records (a job, an asset, a Storage Centre item…)
 // from a nightly backup without rolling back anything else. See recordRestore.js.
 const express = require('express');
-const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole } = require('../permissions');
+const { superAdminRequired } = require('../permissions');
 const { listBackups, downloadBackup } = require('../backup');
 const rr = require('../recordRestore');
 const { logActivity } = require('../activity');
 
 const router = express.Router();
 router.use(authRequired);
-router.use((req, res, next) => {
-  const row = db.prepare('SELECT role FROM users WHERE id = ?').get(req.user.id);
-  if (!row || !isAdminRole(row.role)) return res.status(403).json({ error: 'Only admins can restore records' });
-  next();
-});
+// Restoring from backups is for the Super Admin only.
+router.use(superAdminRequired);
 
 const fail = (res, err) => res.status(err.status || 400).json({ error: err.message });
 

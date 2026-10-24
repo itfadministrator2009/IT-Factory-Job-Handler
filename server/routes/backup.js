@@ -5,6 +5,7 @@ const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { runBackup, backupStatus, listBackups, downloadBackup, DB_PATH } = require('../backup');
 const { logActivity } = require('../activity');
+const { superAdminRequired } = require('../permissions');
 
 const router = express.Router();
 router.use(authRequired);
@@ -24,7 +25,7 @@ const BACKUP_MESSAGES = {
 // Starts a backup in the background and answers straight away — a full backup
 // (database, photos, Storage Centre) can take longer than a web request should
 // be held open. The page then checks /status until it finishes.
-router.post('/now', adminRequired, (req, res) => {
+router.post('/now', superAdminRequired, (req, res) => {
   const before = backupStatus();
   const job = runBackup();
   if (!before.running) logActivity('backup.started', { req });
@@ -32,7 +33,7 @@ router.post('/now', adminRequired, (req, res) => {
   res.status(202).json({ started: true, alreadyRunning: before.running });
 });
 
-router.get('/status', adminRequired, (req, res) => {
+router.get('/status', superAdminRequired, (req, res) => {
   const { running, last } = backupStatus();
   const out = { running, last };
   if (last?.result && !last.result.ok) {
@@ -63,7 +64,7 @@ router.get('/disk-usage', adminRequired, (req, res) => {
   }
 });
 
-router.get('/list', adminRequired, async (req, res) => {
+router.get('/list', superAdminRequired, async (req, res) => {
   const result = await listBackups();
   if (!result.ok) {
     const messages = {
@@ -104,7 +105,7 @@ async function performRestore(backupId) {
   return { safetyBackupName: safetyName };
 }
 
-router.post('/restore', adminRequired, async (req, res) => {
+router.post('/restore', superAdminRequired, async (req, res) => {
   const { backupId } = req.body;
   if (!backupId) return res.status(400).json({ error: 'backupId is required' });
 

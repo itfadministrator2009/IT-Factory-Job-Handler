@@ -32,6 +32,7 @@ before(async () => {
   server = client.server;
   base = `http://127.0.0.1:${server.address().port}`;
   admin = await registerUser(client, { name: 'Admin Person', email: 'admin@example.com' });
+  db.prepare('UPDATE users SET super_admin = 1 WHERE id = ?').run(admin.id); // backups are Super Admin only
   db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(admin.id);
   staff = await registerUser(client, { name: 'Staff Person', email: 'staff@example.com' });
   db.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(staff.id);
@@ -68,9 +69,13 @@ before(async () => {
 
 after(() => server.close());
 
-test('only admins can use it, and a non-database file is refused', async () => {
+test('only the Super Admin can use it, and a non-database file is refused', async () => {
   assert.equal((await client.get('/api/record-restore/sources', { token: staff.token })).status, 403);
   assert.equal((await uploadBackup(Buffer.from('hello'), staff.token)).status, 403);
+  // An admin who isn't the Super Admin can't either.
+  const other = await registerUser(client, { name: 'Other Admin', email: 'other@example.com' });
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(other.id);
+  assert.equal((await client.get('/api/record-restore/sources', { token: other.token })).status, 403);
   const bad = await uploadBackup(Buffer.from('x'.repeat(200)));
   assert.equal(bad.status, 400);
   const sources = await client.get('/api/record-restore/sources', { token: admin.token });
