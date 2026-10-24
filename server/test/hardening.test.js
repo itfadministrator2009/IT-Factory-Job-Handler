@@ -28,6 +28,8 @@ before(async () => {
   server = client.server;
   admin = await registerUser(client, { name: 'Ana Admin', email: 'ana@itf.test' });
   staff = await registerUser(client, { name: 'Sam Staff', email: 'sam@itf.test' });
+  // Ana is the Super Admin here, so she can remove admin accounts.
+  db.prepare('UPDATE users SET super_admin = 1 WHERE id = ?').run(admin.id);
 });
 
 after(() => server.close());
