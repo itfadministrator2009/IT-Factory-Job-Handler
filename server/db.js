@@ -669,6 +669,15 @@ CREATE INDEX IF NOT EXISTS idx_activity_action ON activity_log(action);`);
 // App-wide settings an admin can change (alert recipients, two-step login…).
 db.exec(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 
+// ITF Casuals can now be given the Asset Tracker / Storage Centre, off by default.
+// Casuals were Time Card only before, so (once) clear the old default-on flags.
+if (!db.prepare("SELECT 1 FROM app_settings WHERE key = 'casual_access_reset'").get()) {
+  db.transaction(() => {
+    db.prepare("UPDATE users SET access_assets = 0, access_storage = 0 WHERE role = 'contractor'").run();
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('casual_access_reset', '1')").run();
+  })();
+}
+
 // Two-step login for admins: emailed codes, and devices they chose to trust.
 db.exec(`CREATE TABLE IF NOT EXISTS login_challenges (
   id TEXT PRIMARY KEY,
