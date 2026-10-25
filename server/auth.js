@@ -10,8 +10,15 @@ function signToken(user) {
   );
 }
 
-// What a contractor login can reach: their timesheets, their own account, and "online now".
+// What an ITF Casual (role 'contractor') login can reach: their timesheets, their
+// own account and "online now" — plus the ITF Asset Tracker and/or ITF Storage
+// Centre when an admin has switched those on for them in Settings.
 const CONTRACTOR_PATHS = /^\/api\/(timecard|auth|presence)(\/|\?|$)/;
+const CASUAL_MODULE_PATHS = { access_assets: /^\/api\/assets(\/|\?|$)/, access_storage: /^\/api\/storage(\/|\?|$)/ };
+function casualMayOpen(row, url) {
+  if (CONTRACTOR_PATHS.test(url)) return true;
+  return Object.entries(CASUAL_MODULE_PATHS).some(([col, re]) => row[col] === 1 && re.test(url));
+}
 
 function authRequired(req, res, next) {
   const header = req.headers.authorization;
@@ -33,14 +40,14 @@ function authRequired(req, res, next) {
   // Logged out by an admin: a sign-in from before that no longer works.
   let row = null;
   try {
-    row = require('./db').db.prepare('SELECT session_version, role FROM users WHERE id = ?').get(payload.id);
+    row = require('./db').db.prepare('SELECT session_version, role, access_assets, access_storage FROM users WHERE id = ?').get(payload.id);
     if (row && (row.session_version || 0) !== (payload.sv || 0)) {
       return res.status(401).json({ error: 'You were logged out by an admin. Please log in again.', code: 'signed_out' });
     }
   } catch (err) { /* column not there yet: carry on */ }
-  // Contractors only use ITF Time Card — nothing else in Work Desk.
-  if (row && row.role === 'contractor' && !CONTRACTOR_PATHS.test(req.originalUrl || '')) {
-    return res.status(403).json({ error: 'Casual accounts can only use ITF Time Card.', code: 'contractor_only' });
+  // Casuals only use ITF Time Card, plus any sections switched on for them.
+  if (row && row.role === 'contractor' && !casualMayOpen(row, req.originalUrl || '')) {
+    return res.status(403).json({ error: 'Casual accounts can only use ITF Time Card and the sections an admin has turned on for them.', code: 'contractor_only' });
   }
   req.user = payload;
   next();

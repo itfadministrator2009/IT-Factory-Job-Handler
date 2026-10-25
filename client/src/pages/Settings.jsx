@@ -260,7 +260,7 @@ function ManageUsersTab({ currentUser }) {
     .sort((a, b) => a.name.localeCompare(b.name));
   const FILTERS = [['all', 'All', users.length], ['admin', 'ITF Admins', counts.admin || 0], ['staff', 'ITF Staff', counts.staff || 0], ['user', 'ITF Contractors', counts.user || 0], ['contractor', 'ITF Casuals', counts.contractor || 0]];
 
-  // One access cell: a switch for Users, a fixed state for admins and contractors.
+  // One access cell: a switch, or a fixed state for admins (and Casuals' Time Card).
   function accessCell(u, field, label) {
     const admin = isAdminRole(u.role);
     const contractor = u.role === 'contractor';
@@ -269,9 +269,9 @@ function ManageUsersTab({ currentUser }) {
       if (contractor) return <span className="mu-fixed on" title="Casuals always log their hours">Always</span>;
     } else {
       if (admin) return <span className="mu-fixed on" title="Admins always have access">Full</span>;
-      if (contractor) return <span className="mu-fixed" title="Casuals only see ITF Time Card">—</span>;
     }
-    const on = field === 'accessTimecard' ? !!u.accessTimecard : u[field] !== false;
+    // Casuals: off unless switched on here.
+    const on = field === 'accessTimecard' ? !!u.accessTimecard : contractor ? u[field] === true : u[field] !== false;
     return (
       <button type="button" role="switch" aria-checked={on} className={'mu-switch' + (on ? ' on' : '')}
         aria-label={`${label} access for ${u.name}`} title={on ? `Turn off ${label}` : `Turn on ${label}`}
@@ -393,7 +393,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p className="mu-foot">
-        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> only see ITF Time Card. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
+        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> always log hours in ITF Time Card, and can be given the Asset Tracker and Storage Centre too. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
       </p>
 
       {showForm && (
@@ -435,18 +435,23 @@ function ManageUsersTab({ currentUser }) {
             </div>
             <div className="field">
               <label htmlFor="urole">Group</label>
-              <select id="urole" value={role} onChange={(e) => setRole(e.target.value)}>
-                {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}{v === 'contractor' ? ' (ITF Time Card only)' : ''}</option>)}
+              <select id="urole" value={role} onChange={(e) => {
+                const next = e.target.value;
+                // Casuals start with only ITF Time Card; tick extra sections below.
+                if ((next === 'contractor') !== (role === 'contractor')) { setNewAccessAssets(next !== 'contractor'); setNewAccessStorage(next !== 'contractor'); }
+                setRole(next);
+              }}>
+                {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
             </div>
             {(role === 'contractor' || (staffLike(role) && newAccessTimecard)) && (
               <div className="field">
                 <label htmlFor="urate">Hourly rate (optional)</label>
                 <input id="urate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={newRate} onChange={(e) => setNewRate(e.target.value)} />
-                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Used for estimated pay on approved timesheets. Casuals only see ITF Time Card.</p>
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Used for estimated pay on approved timesheets.</p>
               </div>
             )}
-            {staffLike(role) && (
+            {(staffLike(role) || role === 'contractor') && (
               <div className="field">
                 <label>Access</label>
                 <label className="mu-check">
@@ -455,9 +460,13 @@ function ManageUsersTab({ currentUser }) {
                 <label className="mu-check">
                   <input type="checkbox" checked={newAccessStorage} onChange={(e) => setNewAccessStorage(e.target.checked)} /> ITF Storage Centre
                 </label>
+                {role === 'contractor' ? (
+                  <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Casuals always have ITF Time Card.</p>
+                ) : (
                 <label className="mu-check">
                   <input type="checkbox" checked={newAccessTimecard} onChange={(e) => setNewAccessTimecard(e.target.checked)} /> ITF Time Card <span style={{ color: 'var(--muted)' }}>(logs their own hours)</span>
                 </label>
+                )}
               </div>
             )}
             <button className="btn btn-accent" type="submit" disabled={saving} style={{ width: '100%', justifyContent: 'center' }}>
@@ -493,7 +502,7 @@ function ManageUsersTab({ currentUser }) {
               <div className="field">
                 <label htmlFor="edit-role">Group</label>
                 <select id="edit-role" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
-                  {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}{v === 'contractor' ? ' (ITF Time Card only)' : ''}</option>)}
+                  {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                 </select>
               </div>
               {(editRole === 'contractor' || (staffLike(editRole) && editTarget.accessTimecard)) && (

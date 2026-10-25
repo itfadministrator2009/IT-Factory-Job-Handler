@@ -35,7 +35,8 @@ function hasModuleAccess(userId, module) {
   const row = db.prepare('SELECT role, access_assets, access_storage FROM users WHERE id = ?').get(userId);
   if (!row) return false;
   if (isAdminRole(row.role)) return true;
-  if (row.role === 'contractor') return false;
+  // ITF Casuals: off unless an admin has switched it on for them.
+  if (row.role === 'contractor') return row[MODULE_COLUMNS[module]] === 1;
   return row[MODULE_COLUMNS[module]] !== 0;
 }
 function requireModule(module) {
@@ -58,12 +59,13 @@ const TIMESHEET_USERS_SQL = "(role = 'contractor' OR (role NOT IN ('admin','agen
 function publicUser(row) {
   if (!row) return null;
   const admin = isAdminRole(row.role);
-  // Contractors only ever see ITF Time Card.
+  // ITF Casuals see ITF Time Card, plus the sections switched on for them.
   const contractor = row.role === 'contractor';
+  const allowed = (v) => (contractor ? v === 1 : admin || v !== 0);
   return {
     id: row.id, name: row.name, email: row.email, role: row.role,
-    accessAssets: !contractor && (admin || row.access_assets !== 0),
-    accessStorage: !contractor && (admin || row.access_storage !== 0),
+    accessAssets: allowed(row.access_assets),
+    accessStorage: allowed(row.access_storage),
     accessTimecard: logsTime(row),
     superAdmin: row.super_admin === 1,
   };

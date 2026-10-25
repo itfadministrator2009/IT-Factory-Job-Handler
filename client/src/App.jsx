@@ -70,8 +70,7 @@ function RequireModule({ module, children }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
-  if (user.role === 'contractor') return <Navigate to="/timecard" replace />;
-  if (!canUseModule(user, module)) return <Navigate to="/jobs" replace />;
+  if (!canUseModule(user, module)) return <Navigate to={user.role === 'contractor' ? '/timecard' : '/jobs'} replace />;
   return children;
 }
 
