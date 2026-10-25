@@ -149,3 +149,26 @@ test('without R2 set up, files stay on the disk as before', async () => {
     assert.equal(await res.text(), 'plain');
   } finally { fileStore._setBackend(fake); }
 });
+
+test('R2_ACCOUNT_ID is accepted as the ID or the whole endpoint, and a wrong one is explained', async () => {
+  const id = '0123456789abcdef0123456789abcdef';
+  assert.equal(fileStore.accountId(id), id);
+  assert.equal(fileStore.accountId(` https://${id}.r2.cloudflarestorage.com/workdesk-files `), id);
+  assert.match(fileStore.hintFor('write EPROTO …ssl/tls alert handshake failure'), /R2_ACCOUNT_ID/);
+  assert.match(fileStore.hintFor('InvalidAccessKeyId'), /R2_ACCESS_KEY_ID/);
+
+  // A value that isn't an account ID: nothing is copied, files stay on the disk, the reason is clear.
+  fileStore._setBackend(null);
+  Object.assign(process.env, { R2_ACCOUNT_ID: 'my-account', R2_ACCESS_KEY_ID: 'k', R2_SECRET_ACCESS_KEY: 's', R2_BUCKET: 'workdesk-files' });
+  try {
+    fs.writeFileSync(path.join(dir(), 'keep.jpg'), Buffer.alloc(100, 2));
+    db.prepare("INSERT INTO attachments (id, job_id, stored_name, original_name, mime_type, size) VALUES ('k1', 'j1', 'keep.jpg', 'keep.jpg', 'image/jpeg', 100)").run();
+    const r = await fileStore.syncAll({ olderThanMs: 0 });
+    assert.ok(r.failed >= 1);
+    assert.ok(fs.existsSync(path.join(dir(), 'keep.jpg')));
+    assert.match(fileStore.status().lastError.message, /doesn't look like a Cloudflare Account ID/);
+  } finally {
+    ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'].forEach((k) => delete process.env[k]);
+    fileStore._setBackend(fake);
+  }
+});

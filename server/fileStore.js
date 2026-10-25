@@ -38,6 +38,29 @@ function enabled() {
   return !!(e.account && e.key && e.secret && e.bucket);
 }
 
+// R2_ACCOUNT_ID is the 32-character Account ID. Also accept it pasted as the
+// whole S3 endpoint ("https://<id>.r2.cloudflarestorage.com/…"), with spaces.
+function accountId(value) {
+  let v = String(value || '').trim().replace(/^https?:\/\//i, '');
+  v = v.split('/')[0].replace(/\.(eu\.|fedramp\.)?r2\.cloudflarestorage\.com$/i, '');
+  return v.trim();
+}
+const looksLikeAccountId = (v) => /^[0-9a-f]{32}$/i.test(v);
+
+// Plain-English pointers for the usual setup mistakes.
+function hintFor(message) {
+  const m = String(message || '');
+  if (/R2_ACCOUNT_ID/.test(m)) return '';
+  if (/handshake|EPROTO|ENOTFOUND|getaddrinfo|certificate|ECONNREFUSED/i.test(m)) {
+    return ' — this usually means R2_ACCOUNT_ID on Render is wrong. It must be the 32-character Account ID from Cloudflare (R2 Object Storage → Account Details), not the Access Key ID.';
+  }
+  if (/InvalidAccessKeyId|SignatureDoesNotMatch|Unauthorized|AccessDenied|403/i.test(m)) {
+    return ' — check R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY on Render, and that the API token can read and write this bucket.';
+  }
+  if (/NoSuchBucket/i.test(m)) return ' — check R2_BUCKET on Render matches the bucket name in Cloudflare exactly.';
+  return '';
+}
+
 // The R2 connection (Cloudflare R2 speaks the Amazon S3 language).
 let r2 = null;
 function backend() {
@@ -46,11 +69,15 @@ function backend() {
   const e = env();
   const sig = `${e.account}|${e.key}|${e.bucket}`;
   if (r2 && r2.sig === sig) return r2;
+  const acct = accountId(e.account);
+  if (!process.env.R2_ENDPOINT && !looksLikeAccountId(acct)) {
+    throw new Error('R2_ACCOUNT_ID on Render doesn\'t look like a Cloudflare Account ID. It should be 32 letters (a–f) and numbers, found in Cloudflare under R2 Object Storage → Account Details');
+  }
   const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
   const client = new S3Client({
     region: 'auto',
     // R2_ENDPOINT is only needed for an EU-jurisdiction bucket (…eu.r2.cloudflarestorage.com).
-    endpoint: process.env.R2_ENDPOINT || `https://${e.account.trim()}.r2.cloudflarestorage.com`,
+    endpoint: process.env.R2_ENDPOINT || `https://${acct}.r2.cloudflarestorage.com`,
     forcePathStyle: true,
     // The newer default checksums aren't fully supported by R2 (Cloudflare's advice).
     requestChecksumCalculation: 'WHEN_REQUIRED',
@@ -88,11 +115,11 @@ const remember = (name, size) => db.prepare(`INSERT INTO cloud_files (name, size
 
 const state = { lastSyncAt: null, lastError: null, moved: 0, syncing: false, removedLocal: 0 };
 function noteError(err, what) {
-  state.lastError = { at: new Date().toISOString(), message: `${what}: ${err.message || err}` };
+  state.lastError = { at: new Date().toISOString(), message: `${what}: ${err.message || err}${hintFor(err.message || err)}` };
   console.error(`[files] ${what}:`, err.message || err);
   try {
     require('./alerts').sendAlert('cloud-files', 'Could not reach Cloudflare R2',
-      `${what}: ${err.message || err}\n\nFiles are kept safely on the server disk until R2 works again. Check the R2_* settings on Render.`).catch(() => {});
+      `${what}: ${err.message || err}${hintFor(err.message || err)}\n\nFiles are kept safely on the server disk until R2 works again. Check the R2_* settings on Render.`).catch(() => {});
   } catch (e) { /* alert is optional */ }
 }
 
@@ -282,7 +309,7 @@ function startFileSync() {
 function _setBackend(b) { testBackend = b; r2 = null; }
 
 module.exports = {
-  UPLOAD_DIR, enabled, offload, offloadSoon, hasFile, readBuffer, fetchLocal, send, remove, changed,
+  UPLOAD_DIR, enabled, accountId, hintFor, offload, offloadSoon, hasFile, readBuffer, fetchLocal, send, remove, changed,
   syncAll, sweepLocal, status, startFileSync, _setBackend,
   cloudSize: (name) => (safe(name) ? cloudRow(name)?.size ?? null : null),
   cloudNames: () => db.prepare('SELECT name FROM cloud_files').all().map((r) => r.name),
