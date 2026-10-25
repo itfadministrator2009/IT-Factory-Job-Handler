@@ -40,7 +40,7 @@ function authRequired(req, res, next) {
   } catch (err) { /* column not there yet: carry on */ }
   // Contractors only use ITF Time Card — nothing else in Work Desk.
   if (row && row.role === 'contractor' && !CONTRACTOR_PATHS.test(req.originalUrl || '')) {
-    return res.status(403).json({ error: 'Contractor accounts can only use ITF Time Card.', code: 'contractor_only' });
+    return res.status(403).json({ error: 'Casual accounts can only use ITF Time Card.', code: 'contractor_only' });
   }
   req.user = payload;
   next();
