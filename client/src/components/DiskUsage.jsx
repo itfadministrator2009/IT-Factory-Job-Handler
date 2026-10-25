@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { HardDrive, RefreshCw, Minimize2, Cloud, Server } from 'lucide-react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
 // Settings → Disk usage: what is filling the server's disk. Read-only.
 export function formatBytes(n) {
@@ -39,6 +40,34 @@ function Bars({ rows, total, sub }) {
 const card = { padding: 20, marginBottom: 18 };
 
 // Shrinks the photos already on the server (new uploads are shrunk anyway).
+// Super Admin: remove files no job or project uses (on the disk and in R2).
+function CleanLeftovers({ leftovers, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  if (!leftovers?.files && !msg) return null;
+  async function clean() {
+    if (!window.confirm(`Remove ${leftovers.files} left-over file${leftovers.files === 1 ? '' : 's'} (${formatBytes(leftovers.bytes)})?\n\nNo job or project uses them. They stay in the nightly OneDrive backups, but a record restore won't bring them back once removed.`)) return;
+    setBusy(true); setMsg('');
+    try {
+      const { data } = await api.post('/backup/leftovers/clean');
+      setMsg(`Removed ${data.removed} file${data.removed === 1 ? '' : 's'} (${formatBytes(data.bytes)}).`);
+      onDone();
+    } catch (err) {
+      setMsg(err.response?.data?.error || 'Could not remove the left-over files');
+    } finally { setBusy(false); }
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+      {leftovers?.files > 0 && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={clean} disabled={busy}>
+          {busy ? 'Removing…' : `Remove ${leftovers.files} left-over file${leftovers.files === 1 ? '' : 's'} (${formatBytes(leftovers.bytes)})`}
+        </button>
+      )}
+      {msg && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{msg}</span>}
+    </div>
+  );
+}
+
 function ShrinkPhotos({ onDone }) {
   const [status, setStatus] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -170,7 +199,7 @@ function CloudFiles({ cloud }) {
   const when = cloud.lastSyncAt ? new Date(cloud.lastSyncAt).toLocaleString('en-AU') : null;
   return (
     <div className="panel" style={card}>
-      <h3 style={h3}><Cloud size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Cloudflare R2 <span style={{ fontSize: 12, fontWeight: 500, color: cloud.lastError ? 'var(--danger, #b42318)' : 'var(--success, #1f7a4d)', marginLeft: 6 }}>{cloud.lastError ? 'Problem' : 'Connected'}</span></h3>
+      <h3 style={h3}><Cloud size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Cloudflare R2 <span style={{ fontSize: 12, fontWeight: 500, color: cloud.lastError ? 'var(--danger, #b42318)' : cloud.lastSyncAt ? 'var(--success, #1f7a4d)' : 'var(--muted)', marginLeft: 6 }}>{cloud.lastError ? 'Problem' : cloud.lastSyncAt ? 'Connected' : 'Checking…'}</span></h3>
       <div style={{ fontSize: 22, fontWeight: 700 }}>{formatBytes(cloud.bytes || 0)} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--muted)' }}>in {cloud.files || 0} file{cloud.files === 1 ? '' : 's'} (bucket {cloud.bucket})</span></div>
       <p style={{ fontSize: 13, color: 'var(--muted)', margin: '8px 0 0' }}>
         {cloud.waiting ? `${cloud.waiting} file${cloud.waiting === 1 ? '' : 's'} still to copy across — this happens in the background every 10 minutes. ` : 'Every file is in R2. '}
@@ -187,6 +216,7 @@ export default function DiskUsage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('all');
+  const { user } = useAuth();
 
   function load() {
     setLoading(true); setError('');
@@ -265,6 +295,7 @@ export default function DiskUsage() {
         {leftover && leftover.bytes > 0 && (
           <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>"Not linked to anything" files are stored but no job or project uses them any more (for example left behind when something was deleted or restored).</p>
         )}
+        {user?.superAdmin && <CleanLeftovers leftovers={data.leftovers} onDone={load} />}
         {bd.byKind.length > 0 && (<>
           <h4 style={{ fontSize: 13, margin: '18px 0 10px' }}>By type</h4>
           <Bars rows={bd.byKind.map((k) => ({ label: k.name, bytes: k.bytes, files: k.files }))} total={bdTotal} sub={(r) => `${r.files} files`} />
