@@ -96,6 +96,17 @@ test('files already on the disk are copied across in the background', async () =
   assert.equal(usage.data.cloud.enabled, true);
   assert.ok(usage.data.cloud.files >= 2);
   assert.equal(usage.data.uploads.missingFiles, 0);
+  // The file breakdown covers R2 as well as the Render disk.
+  const { all, render, cloud } = usage.data.uploads.breakdowns;
+  const inCloud = cloud.largestFiles.find((f) => f.name === 'old.jpg');
+  assert.ok(inCloud, 'old.jpg listed under Cloudflare R2');
+  assert.equal(inCloud.bytes, 5000);
+  assert.equal(inCloud.where, 'Cloudflare R2');
+  assert.equal(cloud.byArea.find((a) => a.name === 'Job attachments').files >= 2, true);
+  assert.equal(render.largestFiles.some((f) => f.name === 'old.jpg'), false, 'not on the Render disk any more');
+  assert.ok(render.largestFiles.some((f) => f.name === 'stray.bin'));
+  assert.ok(all.files >= 3);
+  assert.equal(all.total, render.total + cloud.total - 0, 'nothing is in both places once tidied');
 });
 
 test('the disk copy is kept if R2 does not have the whole file, or R2 is down', async () => {
