@@ -70,7 +70,7 @@ export default function Register() {
               </button>
             </div>
           </div>
-          <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+          <button className="btn btn-accent" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
             {loading ? 'Creating account…' : 'Create account'}
           </button>
         </form>

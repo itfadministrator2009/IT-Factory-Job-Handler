@@ -77,7 +77,7 @@ function PendingCard({ week, selected, onSelect, onDone, busy, setBusy }) {
       ) : (
         <div className="tc-actions">
           <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setDeclining(true)}><X size={14} /> Decline</button>
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => act(() => api.post(`/timecard/admin/weeks/${week.id}/approve`))}><Check size={14} /> Approve</button>
+          <button type="button" className="btn btn-accent btn-sm" disabled={busy} onClick={() => act(() => api.post(`/timecard/admin/weeks/${week.id}/approve`))}><Check size={14} /> Approve</button>
         </div>
       )}
     </div>
@@ -138,7 +138,7 @@ function Approvals({ state, reload }) {
             <input type="checkbox" checked={selected.size === pending.length} onChange={(e) => setSelected(new Set(e.target.checked ? pending.map((w) => w.id) : []))} /> Select all
           </label>
         )}
-        {selected.size > 0 && <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={approveSelected}><Check size={14} /> Approve selected ({selected.size})</button>}
+        {selected.size > 0 && <button type="button" className="btn btn-accent btn-sm" disabled={busy} onClick={approveSelected}><Check size={14} /> Approve selected ({selected.size})</button>}
       </div>
       {msg && <div className="tc-info" style={{ marginBottom: 12 }}>{msg}</div>}
       {pending.length === 0 ? <div className="panel tc-panel"><p className="tc-empty">Nothing waiting on approval right now.</p></div>

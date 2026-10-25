@@ -40,7 +40,7 @@ export default function ForgotPassword() {
                 <label htmlFor="email">Email</label>
                 <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </div>
-              <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+              <button className="btn btn-accent" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
                 {loading ? 'Sending…' : 'Send reset link'}
               </button>
             </form>

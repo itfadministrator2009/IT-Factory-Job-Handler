@@ -220,7 +220,7 @@ export default function JobDetail() {
               />
               <div className="reply-actions">
                 <span />
-                <button className="btn btn-primary btn-sm" type="submit" disabled={sending || !noteBody.trim()}>
+                <button className="btn btn-accent btn-sm" type="submit" disabled={sending || !noteBody.trim()}>
                   {sending ? 'Saving…' : 'Add note'}
                 </button>
               </div>

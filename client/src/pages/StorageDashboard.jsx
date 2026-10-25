@@ -7,9 +7,47 @@ import { PRESET_LABELS, dmy, money, totalsByCurrency, moneyTotals } from '../sto
 
 const PERIODS = ['lastWeek', 'lastMonth', 'lastQuarter', 'lastYear', 'lastFY'];
 
+// Everything that needs a look, in one compact box (or one quiet line when all's well).
+function Attention({ data }) {
+  const backupLate = !data.lastBackupAt || hoursAgo(data.lastBackupAt) > 36;
+  const items = [];
+  if (data.unclassifiedLocations > 0) {
+    items.push({ icon: MapPin, text: <><strong>{data.unclassifiedLocations}</strong> location{data.unclassifiedLocations === 1 ? '' : 's'} in use not classified as pallet / not pallet</>, to: '/storage/locations', action: 'Classify' });
+  }
+  if (data.billingGaps > 0) {
+    items.push({ icon: AlertTriangle, text: <><strong>{data.billingGaps}</strong> item{data.billingGaps === 1 ? '' : 's'} costing $0/wk (no item or pallet rate)</>, to: '/storage?tool=gaps', action: 'Show items' });
+  }
+  if (backupLate) {
+    items.push({ icon: DatabaseBackup, text: data.lastBackupAt ? <>Last backup was <strong>{hoursAgo(data.lastBackupAt)} hours ago</strong> — overdue</> : <>No backup recorded yet</>, danger: true });
+  }
+  const backupLine = data.lastBackupAt && !backupLate
+    ? `Last backup ${new Date(data.lastBackupAt).toLocaleString('en-AU', { timeZone: 'Australia/Sydney', dateStyle: 'medium', timeStyle: 'short' })}`
+    : null;
+  if (!items.length) {
+    return <div style={{ fontSize: 13, color: 'var(--muted)', margin: '-6px 0 14px', display: 'flex', alignItems: 'center', gap: 6 }}><DatabaseBackup size={14} /> All good. {backupLine}.</div>;
+  }
+  return (
+    <div className="panel attention-box" style={{ marginBottom: 16 }}>
+      <div className="attention-head"><AlertTriangle size={15} /> {items.length} thing{items.length === 1 ? '' : 's'} need{items.length === 1 ? 's' : ''} attention</div>
+      <ul>
+        {items.map((it, i) => {
+          const Icon = it.icon;
+          return (
+            <li key={i} className={it.danger ? 'danger' : ''}>
+              <Icon size={14} /> <span style={{ flex: 1 }}>{it.text}</span>
+              {it.to && <Link to={it.to} className="btn btn-ghost btn-sm">{it.action}</Link>}
+            </li>
+          );
+        })}
+      </ul>
+      {backupLine && <div className="attention-foot">{backupLine}</div>}
+    </div>
+  );
+}
+
 // Horizontal bars, one series (one hue, no legend — the heading names it).
 // Values are labelled at the bar end; hovering shows the exact figure and share.
-function BarList({ rows, format, total, color = '#2a78d6' }) {
+function BarList({ rows, format, total, color = '#155e6b' }) { // brand teal
   const max = Math.max(...rows.map((r) => r.value), 0) || 1;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 220px) 1fr', gap: '6px 12px', alignItems: 'center' }}>
@@ -60,26 +98,7 @@ export default function StorageDashboard() {
       {error && <div className="error-banner">{error}</div>}
       {!data ? !error && <div className="empty-state">Loading…</div> : (
         <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-            {data.unclassifiedLocations > 0 && (
-              <div className="panel panel-pad" style={{ background: '#fbf1dc', display: 'flex', gap: 10, alignItems: 'center' }}>
-                <MapPin size={16} /> <span style={{ flex: 1 }}><strong>{data.unclassifiedLocations}</strong> location(s) in use aren't classified as pallet / not pallet yet.</span>
-                <Link to="/storage/locations" className="btn btn-ghost btn-sm">Classify</Link>
-              </div>
-            )}
-            {data.billingGaps > 0 && (
-              <div className="panel panel-pad" style={{ background: '#fbf1dc', display: 'flex', gap: 10, alignItems: 'center' }}>
-                <AlertTriangle size={16} /> <span style={{ flex: 1 }}><strong>{data.billingGaps}</strong> item(s) in storage are costing $0/wk (no item or pallet rate).</span>
-                <Link to="/storage?tool=gaps" className="btn btn-ghost btn-sm">Show these items</Link>
-              </div>
-            )}
-            <div className="panel panel-pad" style={{ display: 'flex', gap: 10, alignItems: 'center', ...(!data.lastBackupAt || hoursAgo(data.lastBackupAt) > 36 ? { background: '#fbe9e4', color: 'var(--danger)' } : {}) }}>
-              <DatabaseBackup size={16} />
-              {data.lastBackupAt
-                ? <span>Last backup: {new Date(data.lastBackupAt).toLocaleString('en-AU', { timeZone: 'Australia/Sydney', dateStyle: 'medium', timeStyle: 'short' })} ({hoursAgo(data.lastBackupAt)} hours ago){hoursAgo(data.lastBackupAt) > 36 ? ' — overdue' : ''}</span>
-                : <span>No backups recorded yet (the nightly OneDrive backup records itself here once it runs).</span>}
-            </div>
-          </div>
+          <Attention data={data} />
 
           <div className="stat-grid" style={{ marginBottom: 16 }}>
             <div className="stat-card accent-blue"><div className="num">{data.stats.inStorage}</div><div className="label">Items in storage</div></div>

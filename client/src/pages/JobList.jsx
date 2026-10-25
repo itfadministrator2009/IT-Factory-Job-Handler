@@ -17,7 +17,9 @@ export default function JobList() {
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState('');
+  // The dashboard tiles open this list already filtered (?status=Open, ?owner=unassigned).
+  const [status, setStatus] = useState(searchParams.get('status') || '');
+  const [unassignedOnly, setUnassignedOnly] = useState(searchParams.get('owner') === 'unassigned');
   const [priority, setPriority] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'mine'
@@ -38,6 +40,7 @@ export default function JobList() {
       if (q) params.q = q;
       if (overdueOnly) params.overdue = '1';
       if (viewMode === 'mine' && user) params.owner_id = user.id;
+      else if (unassignedOnly) params.owner_id = 'unassigned';
       await downloadJobsCsv(api, params);
     } finally {
       setExporting(false);
@@ -55,6 +58,7 @@ export default function JobList() {
     if (q) params.q = q;
     if (overdueOnly) params.overdue = '1';
     if (viewMode === 'mine' && user) params.owner_id = user.id;
+    else if (unassignedOnly) params.owner_id = 'unassigned';
     api.get('/jobs', { params }).then((res) => {
       setJobs(res.data.jobs);
       setLoading(false);
@@ -62,7 +66,7 @@ export default function JobList() {
       setError(err.response?.data?.error || 'Could not load jobs. Please try refreshing.');
       setLoading(false);
     });
-  }, [status, priority, q, overdueOnly, viewMode, user]);
+  }, [status, priority, q, overdueOnly, viewMode, user, unassignedOnly]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get('/users').then((res) => setUsers(res.data.users)); }, []);
@@ -169,6 +173,12 @@ export default function JobList() {
           <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
           Overdue only
         </label>
+        {isAdmin && (
+          <label className={`filter-toggle${unassignedOnly ? ' active' : ''}`}>
+            <input type="checkbox" checked={unassignedOnly} onChange={(e) => setUnassignedOnly(e.target.checked)} />
+            Unassigned only
+          </label>
+        )}
       </div>
 
       {selected.size > 0 && (
@@ -229,18 +239,18 @@ export default function JobList() {
                     <input type="checkbox" checked={selected.has(j.id)} onChange={() => toggleSelect(j.id)} />
                   </td>
                   <td className="ticket-num" onClick={() => navigate(`/jobs/${j.id}`)}>#{j.job_number}</td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)}>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ whiteSpace: 'nowrap' }}>
                     {j.overdue
                       ? <span className="overdue-badge"><AlertTriangle size={11} /> {formatDMYWithTime(j.due_date, j.scheduled_time)}</span>
                       : (j.due_date ? formatDMYWithTime(j.due_date, j.scheduled_time) : <span style={{ color: 'var(--muted)' }}>—</span>)}
                   </td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.subject}</td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.contact_name}</td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.account_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)}>{j.owner?.name || <span style={{ color: 'var(--muted)' }}>Unassigned</span>}</td>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ minWidth: 170 }}>{j.subject}</td>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)} className="cell-nowrap" title={j.contact_name}>{j.contact_name}</td>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)} className="cell-nowrap" title={j.account_name || ''}>{j.account_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)} className="cell-nowrap">{j.owner?.name || <span style={{ color: 'var(--muted)' }}>Unassigned</span>}</td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><StatusPill status={j.status} /></td>
                   <td onClick={() => navigate(`/jobs/${j.id}`)}><PriorityPill priority={j.priority} /></td>
-                  <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ color: 'var(--muted)' }}>{formatDate(j.updated_at)}</td>
+                  <td onClick={() => navigate(`/jobs/${j.id}`)} style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{formatDate(j.updated_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -251,7 +261,8 @@ export default function JobList() {
   );
 }
 
+// Same day/month/year style as the job dates.
 function formatDate(s) {
   const d = new Date(s.replace(' ', 'T') + 'Z');
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
