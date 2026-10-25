@@ -1575,3 +1575,14 @@ mark.search-hit { background: #fdf0c4; color: inherit; padding: 0 1px; border-ra
 .mu-super { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #7a4d00; background: #fdf1d6; border-radius: 999px; padding: 1px 7px; }
 .mu-role:disabled { cursor: not-allowed; opacity: 0.75; }
 .tc-pay th.num, .tc-pay td.num { padding-left: 18px; }
+
+/* Manage Users: ITF Staff group, tick-to-move */
+.mu-avatar.staff { background: #ece8f6; color: #5f449c; }
+.mu-role.staff { color: #5f449c; background-color: #f5f2fb; border-color: #ddd4ef; }
+.mu-table .mu-pick { width: 40px; padding-right: 0; }
+.mu-table .mu-pick input { width: 16px; height: 16px; accent-color: var(--teal); cursor: pointer; }
+.mu-table tbody tr.mu-picked td { background: #f0f6f5; }
+.mu-movebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #f0f6f5; border: 1px solid #cfe2df; border-radius: var(--radius); padding: 8px 12px; margin-bottom: 10px; font-size: 13.5px; color: var(--teal); }
+.mu-movebar strong { margin-right: auto; }
+.mu-movebar label { font-weight: 600; }
+.mu-movebar select { border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13.5px; padding: 5px 8px; background: #fff; }
