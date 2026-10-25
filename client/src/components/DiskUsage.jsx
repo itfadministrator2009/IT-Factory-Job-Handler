@@ -106,6 +106,36 @@ function ShrinkPhotos({ onDone }) {
 }
 const h3 = { fontSize: 15, marginBottom: 12 };
 
+// Cloudflare R2's free allowance and price above it (Standard storage, per month).
+const R2_FREE_BYTES = 10 * 1024 ** 3;
+const R2_USD_PER_GB = 0.015;
+
+// How much of the free 10 GB is used, and what it costs once over.
+function R2Allowance({ bytes }) {
+  const used = Number(bytes) || 0;
+  const pct = Math.min((used / R2_FREE_BYTES) * 100, 100);
+  const over = Math.max(used - R2_FREE_BYTES, 0);
+  const cost = (over / 1024 ** 3) * R2_USD_PER_GB;
+  const colour = pct >= 90 ? 'var(--danger, #b42318)' : pct >= 75 ? 'var(--warning, #b54708)' : BAR;
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, marginBottom: 6, flexWrap: 'wrap' }}>
+        <span><strong>{formatBytes(used)}</strong> of 10 GB free used</span>
+        <span style={{ color: over ? 'var(--danger, #b42318)' : 'var(--muted)' }}>{over ? `About US$${cost.toFixed(2)} a month` : `${Math.round(pct)}% · US$0.00 a month`}</span>
+      </div>
+      <div style={{ height: 10, background: 'var(--border, #e2e0d8)', borderRadius: 5, overflow: 'hidden' }} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Cloudflare R2 free allowance used">
+        <div style={{ height: '100%', width: `${Math.max(pct, used ? 0.5 : 0)}%`, background: colour }} />
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>
+        {over
+          ? `${formatBytes(over)} over the free 10 GB, charged at US$${R2_USD_PER_GB} per GB a month.`
+          : `Free up to 10 GB. Above that it's US$${R2_USD_PER_GB} per GB a month (for example, 20 GB would be about US$0.15).`}
+        {' '}Estimate from the files Work Desk keeps there; your Cloudflare dashboard shows the exact bill.
+      </p>
+    </div>
+  );
+}
+
 // Where uploaded files live: the server disk, or Cloudflare R2 once it's set up.
 function CloudFiles({ cloud }) {
   if (!cloud) return null;
@@ -126,6 +156,7 @@ function CloudFiles({ cloud }) {
         {cloud.waiting ? `${cloud.waiting} file${cloud.waiting === 1 ? '' : 's'} still to copy across — this happens in the background every 10 minutes. ` : 'Every file is in R2. '}
         New uploads go to R2 straight away; the copy on the server disk is removed an hour later.{when ? ` Last checked ${when}.` : ''}
       </p>
+      <R2Allowance bytes={cloud.bytes} />
       {cloud.lastError && <div className="error-banner" style={{ marginTop: 10 }}>{cloud.lastError.message}. Files stay safely on the server disk until this is fixed.</div>}
     </div>
   );
