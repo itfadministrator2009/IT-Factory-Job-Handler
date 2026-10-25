@@ -130,6 +130,8 @@ function buildJobQuery(query, requestingUser) {
   if (requestingUser && !isAdminRole(currentRole(requestingUser.id))) {
     sql += ' AND owner_id = ?';
     params.push(requestingUser.id);
+  } else if (owner_id === 'unassigned') {
+    sql += ' AND owner_id IS NULL';
   } else if (owner_id) {
     sql += ' AND owner_id = ?';
     params.push(owner_id);

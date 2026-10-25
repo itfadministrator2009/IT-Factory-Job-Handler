@@ -55,10 +55,14 @@ router.post('/register', registerLimiter, (req, res) => {
     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
 
-  // The very first person to register becomes Admin automatically — there needs to be
-  // at least one admin to manage everyone else. Everyone after that starts as a
-  // regular User; an admin can promote them later from Settings → Users.
+  // Sign-up is only for setting Work Desk up: the very first person becomes Admin.
+  // After that, admins add people in Settings → Manage Users — anyone finding the
+  // address must not be able to give themselves an account (ALLOW_PUBLIC_SIGNUP=true
+  // turns open sign-up back on).
   const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+  if (userCount > 0 && process.env.ALLOW_PUBLIC_SIGNUP !== 'true') {
+    return res.status(403).json({ error: 'New accounts are added by an admin in Settings → Manage Users. Please ask your admin.', code: 'signup_closed' });
+  }
   const role = userCount === 0 ? 'admin' : 'user';
 
   const id = uuid();
