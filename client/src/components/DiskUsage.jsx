@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HardDrive, RefreshCw, Minimize2, Cloud } from 'lucide-react';
+import { HardDrive, RefreshCw, Minimize2, Cloud, Server } from 'lucide-react';
 import api from '../api';
 
 // Settings → Disk usage: what is filling the server's disk. Read-only.
@@ -106,6 +106,26 @@ function ShrinkPhotos({ onDone }) {
 }
 const h3 = { fontSize: 15, marginBottom: 12 };
 
+// Render charges for the disk's full size every month, whether it's used or not.
+const RENDER_USD_PER_GB = 0.25;
+
+function RenderCost({ disk }) {
+  // The disk is bought in whole GB; the filesystem reports a little less than that.
+  const sizeGb = Math.max(1, Math.round(disk.total / 1024 ** 3));
+  const cost = sizeGb * RENDER_USD_PER_GB;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, flexWrap: 'wrap' }}>
+        <span><strong>{sizeGb} GB disk</strong> on Render</span>
+        <span>About <strong>US${cost.toFixed(2)} a month</strong></span>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 0' }}>
+        Render charges US${RENDER_USD_PER_GB.toFixed(2)} per GB a month for the full disk size, used or not. Not included: the Render server plan itself. Your Render billing page shows the exact bill.
+      </p>
+    </div>
+  );
+}
+
 // Cloudflare R2's free allowance and price above it (Standard storage, per month).
 const R2_FREE_BYTES = 10 * 1024 ** 3;
 const R2_USD_PER_GB = 0.015;
@@ -198,12 +218,14 @@ export default function DiskUsage() {
           <h3 style={{ fontSize: 16, margin: 0 }}><HardDrive size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Disk usage</h3>
           <button type="button" className="btn btn-ghost btn-sm" onClick={load} disabled={loading}><RefreshCw size={13} /> {loading ? 'Measuring…' : 'Measure again'}</button>
         </div>
+        <h4 style={{ fontSize: 15, margin: '0 0 8px' }}><Server size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Render <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· server disk</span></h4>
         {disk && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 28, fontWeight: 700 }}>{formatBytes(disk.used)} <span style={{ fontSize: 15, fontWeight: 400, color: 'var(--muted)' }}>used of {formatBytes(disk.total)} · {formatBytes(disk.free)} free</span></div>
             <div style={{ height: 10, background: 'var(--border, #e2e0d8)', borderRadius: 5, marginTop: 8, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.min((disk.used / disk.total) * 100, 100)}%`, background: disk.used / disk.total > 0.85 ? 'var(--danger, #b42318)' : BAR }} />
             </div>
+            <RenderCost disk={disk} />
           </div>
         )}
         <Bars rows={overview} total={counted} />
