@@ -64,6 +64,13 @@ router.get('/disk-usage', adminRequired, (req, res) => {
   }
 });
 
+// Settings → Disk usage: remove left-over files no job or project uses (Super Admin only).
+router.post('/leftovers/clean', superAdminRequired, (req, res) => {
+  const me = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.user.id);
+  const result = require('../leftovers').removeLeftovers({ dirs: require('../diskUsage').UPLOAD_DIRS }, me);
+  res.json(result);
+});
+
 router.get('/list', superAdminRequired, async (req, res) => {
   const result = await listBackups();
   if (!result.ok) {
