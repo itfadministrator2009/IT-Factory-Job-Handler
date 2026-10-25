@@ -31,6 +31,7 @@ const ACTIONS = {
   'settings.changed': 'Changed security settings',
   'settings.disk_alert': 'Disk space warning sent',
   'files.moved': 'Moved files to Cloudflare R2',
+  'files.leftovers_removed': 'Removed left-over files',
 };
 
 function clientIp(req) {
