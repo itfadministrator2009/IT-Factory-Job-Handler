@@ -151,7 +151,7 @@ export default function DiskUsage() {
           </div>
         )}
         <Bars rows={overview} total={counted} />
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>Measured {new Date(data.measuredAt).toLocaleString('en-AU')}.</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>Measured {new Date(data.measuredAt).toLocaleString('en-AU')}. The disk is checked every hour: at 90% full the Super Admin is emailed, with a reminder each day it stays that full.</div>
       </div>
 
       <ShrinkPhotos onDone={load} />

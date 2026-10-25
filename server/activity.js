@@ -28,6 +28,7 @@ const ACTIONS = {
   'backup.restored': 'Restored a full backup',
   'records.restored': 'Restored records',
   'settings.changed': 'Changed security settings',
+  'settings.disk_alert': 'Disk space warning sent',
 };
 
 function clientIp(req) {
