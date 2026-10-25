@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban,
   Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
-  ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2,
+  ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2, Menu, X,
 } from 'lucide-react';
 import api from '../api';
 import { useAuth, canUseModule } from '../context/AuthContext';
@@ -39,6 +39,8 @@ export default function Layout({ children }) {
   const isAdmin = user?.role === 'admin' || user?.role === 'agent';
   const isContractor = user?.role === 'contractor';
   const current = sectionOf(location.pathname);
+  // Phones: the menu folds away behind a Menu button so pages start at the top.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // The section you're in is always open; others open/close when clicked.
   const [open, setOpen] = useState(() => ({ desk: current === 'desk', assets: current === 'assets', storage: current === 'storage', timecard: current === 'timecard' }));
@@ -57,12 +59,18 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={'sidebar' + (menuOpen ? ' open' : '')}>
         <div className="sidebar-brand">
-          <img src="/logo-sidebar.png" alt="IT Factory" className="brand-logo" />
+          <img src="/logo-sidebar-light.png" alt="IT Factory" className="brand-logo" />
           <span>Work Desk</span>
+          <button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="main-menu"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'} onClick={() => setMenuOpen((o) => !o)}>
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            <span>{menuOpen ? 'Close' : 'Menu'}</span>
+          </button>
         </div>
-        <nav className="sidebar-nav">
+        {/* Picking a page closes the phone menu (section headings just open/close). */}
+        <nav className="sidebar-nav" id="main-menu" onClick={(e) => { if (e.target.closest('a')) setMenuOpen(false); }}>
           {/* ITF Casuals: their timesheet, plus any sections an admin switched on. */}
           {isContractor && (
           <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard"

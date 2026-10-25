@@ -124,7 +124,7 @@ export default function SecuritySettings() {
             <input id="alert-emails" value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="Leave blank to email every admin" />
           </div>
           <div className="sec-actions">
-            <button type="submit" className="btn btn-primary btn-sm" disabled={saving || emails === (s.alerts.emails || '')}>Save</button>
+            <button type="submit" className="btn btn-accent btn-sm" disabled={saving || emails === (s.alerts.emails || '')}>Save</button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={sendTest} disabled={testing}>{testing ? 'Sending…' : 'Send a test alert'}</button>
           </div>
         </form>
