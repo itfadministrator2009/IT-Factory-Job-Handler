@@ -12,6 +12,8 @@ const TEST_UPLOAD_DIR = path.join(os.tmpdir(), `worksdesk-test-uploads-${process
 process.env.DB_PATH = TEST_DB_PATH;
 process.env.UPLOAD_DIR = TEST_UPLOAD_DIR;
 process.env.JWT_SECRET = 'test-secret';
+// Tests create many accounts through sign-up; in production it's closed after the first.
+process.env.ALLOW_PUBLIC_SIGNUP = 'true';
 
 // calendar.js is required by email.js and backup.js — faking it here means every
 // test run is fully offline, with no real Microsoft Graph calls possible. This
