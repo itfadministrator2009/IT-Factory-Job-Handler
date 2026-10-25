@@ -27,6 +27,7 @@ const { startBackupScheduler } = require('./backup');
 const { startStorageWeeklyScheduler } = require('./storageWeekly');
 const { startTimecardReminderScheduler } = require('./timecardReminders');
 const { startDiskAlertScheduler } = require('./diskAlert');
+const { startFileSync } = require('./fileStore');
 
 const app = express();
 // Render sits in front of the app as a reverse proxy, adding an X-Forwarded-For
@@ -116,4 +117,5 @@ startBackupScheduler();
 startStorageWeeklyScheduler();
 startTimecardReminderScheduler();
 startDiskAlertScheduler();
+startFileSync();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));

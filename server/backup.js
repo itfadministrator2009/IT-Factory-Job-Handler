@@ -11,7 +11,8 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
 // Same folder every uploaded photo (job attachments and project entry photos alike)
 // actually lives in — must match UPLOAD_DIR in routes/attachments.js and
 // routes/projects.js exactly, or backups would silently miss real files.
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const fileStore = require('./fileStore');
+const UPLOAD_DIR = fileStore.UPLOAD_DIR;
 // Which mailbox's OneDrive holds the backups, and which folder within it. Reuses the
 // same Azure AD app already set up for the calendar — just needs one more permission
 // granted (Files.ReadWrite.All) in that same app registration.
@@ -91,17 +92,34 @@ async function uploadBackupToOneDrive(source, filename) {
 // Zips every file in a directory (attachments and photos are stored flat, one level
 // deep) into a temporary file on disk — not into memory, which could run the
 // server out of memory once there are a lot of photos.
-function zipDirectoryToFile(sourceDir, outFile) {
+// cloudNames: files that are only in Cloudflare R2 (not on the disk) — they're
+// streamed into the same zip one at a time, so the backup still has every file.
+function zipDirectoryToFile(sourceDir, outFile, cloudNames = []) {
   return new Promise((resolve, reject) => {
     const archive = archiver('zip', { zlib: { level: 6 } });
     const out = fs.createWriteStream(outFile);
-    out.on('close', resolve);
-    out.on('error', reject);
-    archive.on('warning', (err) => { if (err.code !== 'ENOENT') reject(err); });
-    archive.on('error', reject);
+    let failed = false;
+    const fail = (err) => { if (!failed) { failed = true; reject(err); } };
+    out.on('close', () => { if (!failed) resolve(); });
+    out.on('error', fail);
+    archive.on('warning', (err) => { if (err.code !== 'ENOENT') fail(err); });
+    archive.on('error', fail);
     archive.pipe(out);
-    archive.directory(sourceDir, false);
-    archive.finalize();
+    if (fs.existsSync(sourceDir)) archive.directory(sourceDir, false, (entry) => (/\.(downloading|shrinking)$/.test(entry.name) ? false : entry));
+    (async () => {
+      for (const name of cloudNames) {
+        if (failed) return;
+        const obj = await fileStore.getCloud(name);
+        if (!obj) continue;
+        // One file at a time: wait until this one is in the zip before fetching the next.
+        await new Promise((done) => {
+          const onEntry = (e) => { if (e.name === name) { archive.off('entry', onEntry); done(); } };
+          archive.on('entry', onEntry);
+          archive.append(obj.stream, { name });
+        });
+      }
+      archive.finalize();
+    })().catch((err) => { archive.abort(); fail(err); });
   });
 }
 
@@ -154,12 +172,14 @@ async function doBackup(filenameOverride) {
 
     const warnings = [];
     let uploadsFilename = null;
-    const hasUploads = fs.existsSync(UPLOAD_DIR) && fs.readdirSync(UPLOAD_DIR).length > 0;
+    // Files moved to Cloudflare R2 are no longer on the disk; fetch those too.
+    const cloudOnly = fileStore.enabled() ? fileStore.cloudNames().filter((n) => !fs.existsSync(path.join(UPLOAD_DIR, n))) : [];
+    const hasUploads = (fs.existsSync(UPLOAD_DIR) && fs.readdirSync(UPLOAD_DIR).length > 0) || cloudOnly.length > 0;
     if (hasUploads) {
       step('photos');
       const tmpZip = path.join(os.tmpdir(), `workdesk-uploads-${process.pid}-${Date.now()}.zip`);
       try {
-        await zipDirectoryToFile(UPLOAD_DIR, tmpZip);
+        await zipDirectoryToFile(UPLOAD_DIR, tmpZip, cloudOnly);
         uploadsFilename = filenameOverride
           ? filenameOverride.replace(/\.db$/, '-uploads.zip')
           : `helpdesk-uploads-${dateStr}.zip`;
@@ -290,4 +310,4 @@ function startBackupScheduler() {
   }, 60 * 60 * 1000);
 }
 
-module.exports = { runBackup, backupStatus, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH };
+module.exports = { runBackup, backupStatus, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH, zipDirectoryToFile };

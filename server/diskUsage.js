@@ -10,7 +10,9 @@ const { db } = require('./db');
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'helpdesk.db');
 // The upload routes and the backup have used two different defaults over time;
 // look in every place uploads could be.
+const fileStore = require('./fileStore');
 const UPLOAD_DIRS = [...new Set([
+  fileStore.UPLOAD_DIR,
   process.env.UPLOAD_DIR,
   path.join(__dirname, '..', 'uploads'),
   path.join(__dirname, 'uploads'),
@@ -115,7 +117,8 @@ function uploadsBreakdown() {
     byMonth: Object.entries(months).map(([month, v]) => ({ month, ...v })).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12),
     topOwners: Object.values(owners).sort((a, b) => b.bytes - a.bytes).slice(0, 10),
     largestFiles: files.sort((a, b) => b.bytes - a.bytes).slice(0, 15),
-    missingFiles: [...known.keys()].filter((n) => !UPLOAD_DIRS.some((d) => fs.existsSync(path.join(d, n)))).length,
+    // Files moved to Cloudflare R2 aren't on the disk any more, but aren't missing.
+    missingFiles: [...known.keys()].filter((n) => !UPLOAD_DIRS.some((d) => fs.existsSync(path.join(d, n))) && !(fileStore.enabled() && fileStore.cloudSize(n) != null)).length,
   };
 }
 
@@ -169,6 +172,7 @@ function diskUsage() {
     restorePoints: restorePoints(),
     besideDatabase: besideDatabase(),
     tempFiles: leftoverTempFiles(),
+    cloud: fileStore.status(),
   };
 }
 

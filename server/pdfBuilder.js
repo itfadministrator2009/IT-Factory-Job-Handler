@@ -4,7 +4,8 @@ const { PDFDocument: PDFLibDocument } = require('pdf-lib');
 const { db } = require('./db');
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'logo.jpg');
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const fileStore = require('./fileStore');
+const UPLOAD_DIR = fileStore.UPLOAD_DIR;
 const COMPANY = {
   addressLines: (process.env.COMPANY_ADDRESS || '3 Allen Place|Wetherill Park, Sydney, NSW, 2164').split('|'),
   abn: process.env.COMPANY_ABN || 'ABN:14 137 802 272',
@@ -256,8 +257,8 @@ function drawJobSheet(doc, job, items, owner, attachments, fieldPositions) {
       py += 18;
       const availableHeight = doc.page.height - py - doc.page.margins.bottom;
       try {
-        const filePath = path.join(UPLOAD_DIR, att.stored_name);
-        doc.image(filePath, pl, py, { fit: [pw, availableHeight] });
+        // Read ahead in renderJobSheet (the disk, or Cloudflare R2).
+        doc.image(att.imageBuffer || path.join(UPLOAD_DIR, att.stored_name), pl, py, { fit: [pw, availableHeight] });
       } catch (e) { /* unreadable or unsupported image — skip rather than fail the whole PDF */ }
     });
   }
@@ -275,6 +276,11 @@ function loadJobData(jobId) {
 async function renderJobSheet(jobId) {
   const data = loadJobData(jobId);
   if (!data) return null;
+  // Photos may live in Cloudflare R2 rather than on the disk: load them first.
+  for (const att of data.attachments) {
+    if (!String(att.mime_type || '').startsWith('image/')) continue;
+    try { att.imageBuffer = await fileStore.readBuffer(att.stored_name, UPLOAD_DIR); } catch (e) { /* skipped like an unreadable image */ }
+  }
 
   const fieldPositions = {};
   const baseBuffer = await new Promise((resolve, reject) => {

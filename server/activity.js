@@ -29,6 +29,7 @@ const ACTIONS = {
   'records.restored': 'Restored records',
   'settings.changed': 'Changed security settings',
   'settings.disk_alert': 'Disk space warning sent',
+  'files.moved': 'Moved files to Cloudflare R2',
 };
 
 function clientIp(req) {

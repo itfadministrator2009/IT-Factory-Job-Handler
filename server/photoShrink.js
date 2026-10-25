@@ -18,8 +18,9 @@ const MAX_SIDE = 1600;
 const JPEG_QUALITY = 80;
 const MIN_BYTES = 500 * 1024; // smaller files are left alone (already small, or already shrunk)
 
-// Same folder the upload routes use (server/uploads unless UPLOAD_DIR is set).
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+// Same folder the upload routes use.
+const fileStore = require('./fileStore');
+const UPLOAD_DIR = fileStore.UPLOAD_DIR;
 
 const PHOTO_EXT = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.tif', '.tiff'];
 function isPhoto(mime, name) {
@@ -123,9 +124,14 @@ async function runShrinkExisting(uploadDir = UPLOAD_DIR) {
   const rows = photoRows();
   job.total = rows.length;
   for (const r of rows) {
-    const filePath = path.join(uploadDir, r.stored_name);
+    let filePath = path.join(uploadDir, r.stored_name);
     try {
-      const res = await shrinkFile(filePath, { mime: r.mime_type });
+      // Moved to Cloudflare R2: bring it back only if it's big enough to be worth shrinking.
+      if (!fs.existsSync(filePath)) {
+        const cloudSize = fileStore.cloudSize(r.stored_name);
+        filePath = cloudSize != null && cloudSize >= MIN_BYTES ? await fileStore.fetchLocal(r.stored_name, uploadDir) : null;
+      }
+      const res = filePath ? await shrinkFile(filePath, { mime: r.mime_type }) : null;
       if (res) {
         job.shrunk += 1; job.before += res.before; job.after += res.after;
         if (r.table === 'attachments') {
@@ -135,6 +141,8 @@ async function runShrinkExisting(uploadDir = UPLOAD_DIR) {
           db.prepare('UPDATE project_entry_photos SET stored_name = ?, mime_type = ?, original_name = ? WHERE id = ?')
             .run(res.newName, res.newMime, res.renamed ? jpgName(r.original_name) : r.original_name, r.id);
         }
+        // Keep Cloudflare R2 in step with the smaller file.
+        if (res.newName !== r.stored_name) { fileStore.remove(r.stored_name, uploadDir); fileStore.offloadSoon(res.newName, { dir: uploadDir, contentType: res.newMime }); } else fileStore.changed(res.newName, { dir: uploadDir, contentType: res.newMime });
       } else {
         job.skipped += 1;
       }
