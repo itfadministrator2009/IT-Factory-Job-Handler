@@ -172,7 +172,7 @@ test('CSV export has the old columns', async () => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/timecard/admin/approved.csv`, { headers: { Authorization: `Bearer ${admin.token}` } });
   assert.equal(res.status, 200);
   const lines = (await res.text()).trim().split('\r\n');
-  assert.equal(lines[0], 'Contractor,Email,Week Ending,Approved By,Approval Date,Total Hours,Hourly Rate,Est. Pay,Expenses');
+  assert.equal(lines[0], 'Casual,Email,Week Ending,Approved By,Approval Date,Total Hours,Hourly Rate,Est. Pay,Expenses');
   assert.match(lines[1], /^Cara Contractor,cara@contractor\.test,\d\d\/\d\d\/\d{4},Ben Boss,\d\d\/\d\d\/\d{4},12\.00,80\.00,960\.00,12\.50$/);
 });
 
