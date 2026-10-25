@@ -236,10 +236,10 @@ function ManageUsersTab({ currentUser }) {
     const contractor = u.role === 'contractor';
     if (field === 'accessTimecard') {
       if (admin) return <span className="mu-fixed" title="Admins approve timesheets">Approves</span>;
-      if (contractor) return <span className="mu-fixed on" title="Contractors always log their hours">Always</span>;
+      if (contractor) return <span className="mu-fixed on" title="Casuals always log their hours">Always</span>;
     } else {
       if (admin) return <span className="mu-fixed on" title="Admins always have access">Full</span>;
-      if (contractor) return <span className="mu-fixed" title="Contractors only see ITF Time Card">—</span>;
+      if (contractor) return <span className="mu-fixed" title="Casuals only see ITF Time Card">—</span>;
     }
     const on = field === 'accessTimecard' ? !!u.accessTimecard : u[field] !== false;
     return (
@@ -320,7 +320,7 @@ function ManageUsersTab({ currentUser }) {
                         disabled={lockedAdmin} title={lockedAdmin ? 'Only the Super Admin can change an admin’s role' : undefined}>
                         <option value="admin">Admin</option>
                         <option value="user">User</option>
-                        <option value="contractor">Contractor</option>
+                        <option value="contractor">Casual</option>
                       </select>
                     </td>
                     <td className="c">{accessCell(u, 'accessAssets', 'ITF Asset Tracker')}</td>
@@ -348,7 +348,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p className="mu-foot">
-        <ShieldCheck size={13} /> <span><strong>Admins</strong> have full access and approve timesheets. <strong>Users</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>Contractors</strong> only see ITF Time Card. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
+        <ShieldCheck size={13} /> <span><strong>Admins</strong> have full access and approve timesheets. <strong>Users</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>Casuals</strong> only see ITF Time Card. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
       </p>
 
       {showForm && (
@@ -393,14 +393,14 @@ function ManageUsersTab({ currentUser }) {
               <select id="urole" value={role} onChange={(e) => setRole(e.target.value)}>
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
-                <option value="contractor">Contractor (ITF Time Card only)</option>
+                <option value="contractor">Casual (ITF Time Card only)</option>
               </select>
             </div>
             {(role === 'contractor' || (role === 'user' && newAccessTimecard)) && (
               <div className="field">
                 <label htmlFor="urate">Hourly rate (optional)</label>
                 <input id="urate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={newRate} onChange={(e) => setNewRate(e.target.value)} />
-                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Used for estimated pay on approved timesheets. Contractors only see ITF Time Card.</p>
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Used for estimated pay on approved timesheets. Casuals only see ITF Time Card.</p>
               </div>
             )}
             {role === 'user' && (
@@ -452,7 +452,7 @@ function ManageUsersTab({ currentUser }) {
                 <select id="edit-role" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
-                  <option value="contractor">Contractor (ITF Time Card only)</option>
+                  <option value="contractor">Casual (ITF Time Card only)</option>
                 </select>
               </div>
               {(editRole === 'contractor' || (editRole === 'user' && editTarget.accessTimecard)) && (
