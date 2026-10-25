@@ -222,7 +222,9 @@ function diskUsage() {
     besideDatabase: besideDatabase(),
     tempFiles: leftoverTempFiles(),
     cloud: fileStore.status(),
+    // Files no job or project uses (over a day old), on the disk or in R2.
+    leftovers: require('./leftovers').summary({ dirs: UPLOAD_DIRS }),
   };
 }
 
-module.exports = { diskUsage, diskSpace, DB_PATH };
+module.exports = { diskUsage, diskSpace, DB_PATH, UPLOAD_DIRS };
