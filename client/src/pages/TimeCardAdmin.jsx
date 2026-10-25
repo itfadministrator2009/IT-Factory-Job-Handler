@@ -189,7 +189,7 @@ function PeopleHours({ people: allPeople }) {
   async function runCustom(e) {
     e.preventDefault(); setErr(''); setBusy(true);
     try {
-      const r = await api.get(`/timecard/admin/pay?from=${from}&to=${to}`);
+      const r = await api.get(`/timecard/admin/hours?from=${from}&to=${to}`);
       setCustom(r.data);
       setSort({ key: 'custom', dir: -1 });
     } catch (x) { setErr(errText(x)); setCustom(null); } finally { setBusy(false); }
@@ -198,7 +198,7 @@ function PeopleHours({ people: allPeople }) {
     setCustom(null); setFrom(''); setTo('');
     setSort((s) => (s.key === 'custom' ? { key: 'thisMonth', dir: -1 } : s));
   }
-  const people = allPeople.map((p) => ({ ...p, custom: custom ? (custom.pay[p.id]?.hours || 0) : 0 }));
+  const people = allPeople.map((p) => ({ ...p, custom: custom ? (custom.hours[p.id] || 0) : 0 }));
   const cols = custom
     ? [...PEOPLE_COLS.slice(0, 4), ['custom', `${dmy(custom.from)} – ${dmy(custom.to)}`], ...PEOPLE_COLS.slice(4)]
     : PEOPLE_COLS;
