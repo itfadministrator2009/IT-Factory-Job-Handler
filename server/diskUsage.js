@@ -25,6 +25,12 @@ const TABLE_LABELS = {
   storage_items: 'Storage items', storage_item_notes: 'Storage item notes', storage_restore_points: 'Storage restore points',
   storage_receiving_dispatch: 'Receiving / dispatch', storage_orders: 'Client orders', record_restore_log: 'Record restore log',
   users: 'Users', articles: 'Articles',
+  cloud_files: 'Cloudflare R2 file list', timecard_entries: 'Time Card entries', timecard_weeks: 'Time Card weeks',
+  timecard_expenses: 'Time Card expenses', activity_log: 'Activity log', app_settings: 'Settings', storage_meta: 'Storage Centre settings',
+  storage_clients: 'Storage clients', storage_locations_registry: 'Storage locations', storage_pallets: 'Storage pallets', login_challenges: 'Login codes',
+  trusted_devices: 'Remembered devices', job_templates: 'Job templates', asset_field_defs: 'Asset Tracker fields', project_assignments: 'Project assignments',
+  user_presence: 'Who is online', timecard_meta: 'Time Card settings', timecard_projects: 'Time Card projects', job_number_seq: 'Job numbers',
+  storage_order_number_seq: 'Order numbers',
 };
 
 function statSize(p) { try { return fs.statSync(p).size; } catch (e) { return 0; } }
@@ -84,41 +90,84 @@ function uploadsBreakdown() {
       .forEach((r) => known.set(r.stored_name, { area: 'Project photos', name: r.original_name, mime: r.mime_type, createdAt: r.created_at, owner: r.project ? `${r.project}${r.entry_number != null ? ` — entry #${r.entry_number}` : ''}` : 'Project (deleted)', ownerKey: `project:${r.project}` }));
   } catch (e) { /* table missing */ }
 
-  const areas = {}; const kinds = {}; const owners = {}; const months = {};
-  const files = [];
+  // Every uploaded file, wherever it is: on the Render disk, in Cloudflare R2, or both.
+  const all = new Map(); // stored name -> { name, area, kind, owner, ownerKey, createdAt, render, cloud }
+  const entryFor = (stored) => {
+    if (!all.has(stored)) {
+      const k = known.get(stored);
+      all.set(stored, {
+        name: k?.name || stored,
+        area: k ? k.area : 'Not linked to anything (left over)',
+        kind: kindOf(k?.mime, k?.name || stored),
+        owner: k?.owner || null, ownerKey: k?.ownerKey || null, createdAt: k?.createdAt || null,
+        render: 0, onRender: false, cloud: 0, inCloud: false,
+      });
+    }
+    return all.get(stored);
+  };
   const dirs = [];
   for (const dir of UPLOAD_DIRS) {
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { continue; }
-    let dirBytes = 0;
+    let dirBytes = 0; let dirFiles = 0;
     for (const e of entries) {
       if (!e.isFile()) continue;
       const bytes = statSize(path.join(dir, e.name));
-      dirBytes += bytes;
-      const k = known.get(e.name);
-      const area = k ? k.area : 'Not linked to anything (left over)';
-      const kind = kindOf(k?.mime, k?.name || e.name);
-      (areas[area] ||= { bytes: 0, files: 0 }).bytes += bytes; areas[area].files += 1;
-      (kinds[kind] ||= { bytes: 0, files: 0 }).bytes += bytes; kinds[kind].files += 1;
-      if (k) {
-        (owners[k.ownerKey] ||= { owner: k.owner, area: k.area, bytes: 0, files: 0 }).bytes += bytes; owners[k.ownerKey].files += 1;
-        const month = String(k.createdAt || '').slice(0, 7);
-        if (month) { (months[month] ||= { bytes: 0, files: 0 }).bytes += bytes; months[month].files += 1; }
-      }
-      files.push({ name: k?.name || e.name, area, owner: k?.owner || null, bytes, createdAt: k?.createdAt || null });
+      dirBytes += bytes; dirFiles += 1;
+      const f = entryFor(e.name);
+      f.render += bytes; f.onRender = true;
     }
-    dirs.push({ dir, bytes: dirBytes, files: entries.filter((e) => e.isFile()).length });
+    dirs.push({ dir, bytes: dirBytes, files: dirFiles });
+  }
+  try {
+    db.prepare('SELECT name, size FROM cloud_files').all().forEach((r) => {
+      const f = entryFor(r.name);
+      f.cloud = r.size; f.inCloud = true;
+    });
+  } catch (e) { /* no cloud storage yet */ }
+
+  const files = [...all.values()];
+  const render = summarise(files.filter((f) => f.onRender), (f) => f.render);
+  return {
+    // The Render disk (what the top of the page and the disk alert are about).
+    dirs,
+    ...render,
+    // The same breakdown for Cloudflare R2, and for every file wherever it is.
+    breakdowns: {
+      all: summarise(files, (f) => Math.max(f.render, f.cloud)),
+      render,
+      cloud: summarise(files.filter((f) => f.inCloud), (f) => f.cloud),
+    },
+    // Files moved to Cloudflare R2 aren't on the disk any more, but aren't missing.
+    missingFiles: [...known.keys()].filter((n) => !all.get(n)?.onRender && !all.get(n)?.inCloud).length,
+  };
+}
+
+const whereOf = (f) => (f.onRender && f.inCloud ? 'Both' : f.inCloud ? 'Cloudflare R2' : 'Render');
+
+// Totals by area, type, month and job/project, plus the largest files.
+function summarise(files, bytesOf) {
+  const areas = {}; const kinds = {}; const owners = {}; const months = {};
+  let total = 0;
+  for (const f of files) {
+    const bytes = bytesOf(f);
+    total += bytes;
+    (areas[f.area] ||= { bytes: 0, files: 0 }).bytes += bytes; areas[f.area].files += 1;
+    (kinds[f.kind] ||= { bytes: 0, files: 0 }).bytes += bytes; kinds[f.kind].files += 1;
+    if (f.ownerKey) { (owners[f.ownerKey] ||= { owner: f.owner, area: f.area, bytes: 0, files: 0 }).bytes += bytes; owners[f.ownerKey].files += 1; }
+    const month = String(f.createdAt || '').slice(0, 7);
+    if (month) { (months[month] ||= { bytes: 0, files: 0 }).bytes += bytes; months[month].files += 1; }
   }
   const list = (o) => Object.entries(o).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.bytes - a.bytes);
   return {
-    dirs,
+    total,
+    files: files.length,
     byArea: list(areas),
     byKind: list(kinds),
     byMonth: Object.entries(months).map(([month, v]) => ({ month, ...v })).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12),
     topOwners: Object.values(owners).sort((a, b) => b.bytes - a.bytes).slice(0, 10),
-    largestFiles: files.sort((a, b) => b.bytes - a.bytes).slice(0, 15),
-    // Files moved to Cloudflare R2 aren't on the disk any more, but aren't missing.
-    missingFiles: [...known.keys()].filter((n) => !UPLOAD_DIRS.some((d) => fs.existsSync(path.join(d, n))) && !(fileStore.enabled() && fileStore.cloudSize(n) != null)).length,
+    largestFiles: files.map((f) => ({ name: f.name, area: f.area, owner: f.owner, bytes: bytesOf(f), createdAt: f.createdAt, where: whereOf(f) }))
+      .sort((a, b) => b.bytes - a.bytes).slice(0, 15),
   };
 }
 

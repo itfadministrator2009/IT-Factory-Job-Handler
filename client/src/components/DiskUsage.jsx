@@ -186,6 +186,7 @@ export default function DiskUsage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [view, setView] = useState('all');
 
   function load() {
     setLoading(true); setError('');
@@ -203,7 +204,16 @@ export default function DiskUsage() {
   const restoreBytes = (restorePoints.storage?.bytes || 0) + (restorePoints.records?.bytes || 0);
   const otherBytes = besideDatabase.items.reduce((t, i) => t + i.bytes, 0);
   const counted = database.total + uploadsTotal + otherBytes;
-  const leftover = uploads.byArea.find((a) => a.name.startsWith('Not linked'));
+  // The file breakdowns can show the Render disk, Cloudflare R2, or every file.
+  const breakdowns = uploads.breakdowns || { render: uploads };
+  const hasCloud = !!(data.cloud?.enabled || breakdowns.cloud?.files);
+  const shown = hasCloud ? view : 'render';
+  const bd = breakdowns[shown] || uploads;
+  const bdTotal = bd.total ?? bd.byArea.reduce((t, a) => t + a.bytes, 0);
+  const bdFiles = bd.files ?? bd.byArea.reduce((t, a) => t + a.files, 0);
+  const placeLabel = { all: 'Render and Cloudflare R2', render: 'on the Render disk', cloud: 'in Cloudflare R2' }[shown];
+  const leftover = bd.byArea.find((a) => a.name.startsWith('Not linked'));
+  const VIEWS = [['all', 'Everything'], ['render', 'Render'], ['cloud', 'Cloudflare R2']];
 
   const overview = [
     { label: 'Uploaded files (photos & attachments)', bytes: uploadsTotal },
@@ -237,37 +247,53 @@ export default function DiskUsage() {
       <ShrinkPhotos onDone={load} />
 
       <div className="panel" style={card}>
-        <h3 style={h3}>Uploaded files — {formatBytes(uploadsTotal)} in {uploads.byArea.reduce((t, a) => t + a.files, 0)} files</h3>
-        <Bars rows={uploads.byArea.map((a) => ({ label: a.name, bytes: a.bytes, files: a.files }))} total={uploadsTotal} sub={(r) => `${r.files} files`} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <h3 style={{ ...h3, marginBottom: 0 }}>Uploaded files — {formatBytes(bdTotal)} in {bdFiles} file{bdFiles === 1 ? '' : 's'} <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted)' }}>{placeLabel}</span></h3>
+          {hasCloud && (
+            <div className="mu-filters" role="tablist" aria-label="Show files">
+              {VIEWS.map(([k, label]) => (
+                <button key={k} type="button" role="tab" aria-selected={shown === k} className={'mu-filter' + (shown === k ? ' active' : '')} onClick={() => setView(k)}>
+                  {label} <span className="mu-count">{breakdowns[k]?.files ?? 0}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {bd.byArea.length ? (
+          <Bars rows={bd.byArea.map((a) => ({ label: a.name, bytes: a.bytes, files: a.files }))} total={bdTotal} sub={(r) => `${r.files} files`} />
+        ) : <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>No uploaded files {placeLabel}.</p>}
         {leftover && leftover.bytes > 0 && (
-          <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>"Not linked to anything" files are on the disk but no job or project uses them any more (for example left behind when something was deleted or restored).</p>
+          <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>"Not linked to anything" files are stored but no job or project uses them any more (for example left behind when something was deleted or restored).</p>
         )}
-        <h4 style={{ fontSize: 13, margin: '18px 0 10px' }}>By type</h4>
-        <Bars rows={uploads.byKind.map((k) => ({ label: k.name, bytes: k.bytes, files: k.files }))} total={uploadsTotal} sub={(r) => `${r.files} files`} />
-        {uploads.byMonth.length > 0 && (<>
+        {bd.byKind.length > 0 && (<>
+          <h4 style={{ fontSize: 13, margin: '18px 0 10px' }}>By type</h4>
+          <Bars rows={bd.byKind.map((k) => ({ label: k.name, bytes: k.bytes, files: k.files }))} total={bdTotal} sub={(r) => `${r.files} files`} />
+        </>)}
+        {bd.byMonth.length > 0 && (<>
           <h4 style={{ fontSize: 13, margin: '18px 0 10px' }}>Added per month</h4>
-          <Bars rows={uploads.byMonth.map((m) => ({ label: m.month, bytes: m.bytes, files: m.files }))} sub={(r) => `${r.files} files`} />
+          <Bars rows={bd.byMonth.map((m) => ({ label: m.month, bytes: m.bytes, files: m.files }))} sub={(r) => `${r.files} files`} />
         </>)}
       </div>
 
-      {uploads.topOwners.length > 0 && (
+      {bd.topOwners.length > 0 && (
         <div className="panel" style={card}>
-          <h3 style={h3}>Biggest jobs and projects</h3>
-          <Bars rows={uploads.topOwners.map((o) => ({ label: o.owner, bytes: o.bytes, files: o.files }))} total={uploadsTotal} sub={(r) => `${r.files} files`} />
+          <h3 style={h3}>Biggest jobs and projects <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted)' }}>{placeLabel}</span></h3>
+          <Bars rows={bd.topOwners.map((o) => ({ label: o.owner, bytes: o.bytes, files: o.files }))} total={bdTotal} sub={(r) => `${r.files} files`} />
         </div>
       )}
 
-      {uploads.largestFiles.length > 0 && (
+      {bd.largestFiles.length > 0 && (
         <div className="panel" style={{ ...card, padding: 0 }}>
-          <h3 style={{ ...h3, padding: '20px 20px 0' }}>Largest files</h3>
+          <h3 style={{ ...h3, padding: '20px 20px 0' }}>Largest files <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted)' }}>{placeLabel}</span></h3>
           <div style={{ overflowX: 'auto' }}>
             <table className="ticket-table">
-              <thead><tr><th>File</th><th>Belongs to</th><th>Added</th><th style={{ textAlign: 'right' }}>Size</th></tr></thead>
+              <thead><tr><th>File</th><th>Belongs to</th>{hasCloud && <th>Where</th>}<th>Added</th><th style={{ textAlign: 'right' }}>Size</th></tr></thead>
               <tbody>
-                {uploads.largestFiles.map((f, i) => (
+                {bd.largestFiles.map((f, i) => (
                   <tr key={i}>
                     <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>{f.name}</td>
                     <td>{f.owner || <span style={{ color: 'var(--muted)' }}>{f.area}</span>}</td>
+                    {hasCloud && <td style={{ whiteSpace: 'nowrap' }}>{f.where === 'Cloudflare R2' ? <><Cloud size={12} style={{ verticalAlign: -1, marginRight: 4 }} />R2</> : f.where === 'Both' ? 'Both' : <><Server size={12} style={{ verticalAlign: -1, marginRight: 4 }} />Render</>}</td>}
                     <td style={{ whiteSpace: 'nowrap' }}>{f.createdAt ? String(f.createdAt).slice(0, 10).split('-').reverse().join('/') : ''}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(f.bytes)}</td>
                   </tr>
@@ -301,7 +327,7 @@ export default function DiskUsage() {
       {(tempFiles.files > 0 || uploads.missingFiles > 0) && (
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>
           {tempFiles.files > 0 && <div>{tempFiles.files} temporary backup file(s), {formatBytes(tempFiles.bytes)}, left in the server's temp folder.</div>}
-          {uploads.missingFiles > 0 && <div>{uploads.missingFiles} attachment/photo record(s) point to files that aren't on the disk.</div>}
+          {uploads.missingFiles > 0 && <div>{uploads.missingFiles} attachment/photo record(s) point to files that aren't on the disk or in Cloudflare R2.</div>}
         </div>
       )}
     </div>
