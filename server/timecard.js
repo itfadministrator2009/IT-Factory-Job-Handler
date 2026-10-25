@@ -405,7 +405,7 @@ function csvCell(v) {
 
 // Same columns as the old "Download CSV".
 function approvedCsv(opts) {
-  const lines = ['Contractor,Email,Week Ending,Approved By,Approval Date,Total Hours,Hourly Rate,Est. Pay,Expenses'];
+  const lines = ['Casual,Email,Week Ending,Approved By,Approval Date,Total Hours,Hourly Rate,Est. Pay,Expenses'];
   approvedWeeksDetailed(opts).forEach((w) => {
     lines.push([
       csvCell(w.fullName), csvCell(w.email), dmy(w.weekEnding), csvCell(w.approvedBy), dmy(w.approvalDate),
