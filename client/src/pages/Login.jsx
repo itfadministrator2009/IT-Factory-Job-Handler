@@ -96,7 +96,7 @@ export default function Login() {
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                 <span>Remember this device for 30 days</span>
               </label>
-              <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading || code.length !== 6}>
+              <button className="btn btn-accent" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading || code.length !== 6}>
                 {loading ? 'Checking…' : 'Verify and log in'}
               </button>
             </form>
@@ -110,7 +110,7 @@ export default function Login() {
         ) : (
           <>
             <h1>Welcome back</h1>
-            <p className="subtitle">Log in to your helpdesk account.</p>
+            <p className="subtitle">Log in to your Work Desk account.</p>
             {signedOut && !error && (
               <div className="error-banner" style={{ marginBottom: 14 }}>You were logged out by an admin. Please log in again.</div>
             )}
@@ -144,7 +144,7 @@ export default function Login() {
                   </button>
                 </div>
               </div>
-              <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+              <button className="btn btn-accent" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
                 {loading ? 'Logging in…' : 'Log in'}
               </button>
             </form>
@@ -153,9 +153,7 @@ export default function Login() {
               <Link to="/forgot-password"><button type="button">Forgot password?</button></Link>
             </div>
 
-            <div className="auth-switch">
-              Don't have an account? <Link to="/register"><button type="button">Sign up</button></Link>
-            </div>
+            <p className="auth-switch" style={{ color: 'var(--muted)' }}>New to Work Desk? Ask an admin to add you.</p>
           </>
         )}
       </div>

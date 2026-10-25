@@ -162,7 +162,7 @@ export default function TimeCard() {
               <div className="tc-formfoot">
                 <div className="tc-preview"><span className="tc-label">Hours worked</span><span className="tc-preview-val">{preview == null ? '—' : hrs(preview)}</span></div>
                 {entryError && <div className="tc-err">{entryError}</div>}
-                <button className="btn btn-primary" type="submit" disabled={busy}><Plus size={15} /> Add entry to week</button>
+                <button className="btn btn-accent" type="submit" disabled={busy}><Plus size={15} /> Add entry to week</button>
               </div>
             </form>
           )}

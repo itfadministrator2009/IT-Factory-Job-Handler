@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
@@ -54,35 +54,22 @@ export default function Dashboard() {
       </form>
 
       {stats && (
-        <div className="stat-grid">
-          <div className="stat-card accent-ink">
-            <div className="num">{stats.total}</div>
-            <div className="label">Total jobs</div>
-          </div>
-          <div className="stat-card accent-blue">
-            <div className="num">{stats.byStatus.Open}</div>
-            <div className="label">Open</div>
-          </div>
-          <div className="stat-card accent-yellow">
-            <div className="num">{stats.byStatus['In Progress']}</div>
-            <div className="label">In progress</div>
-          </div>
-          <div className="stat-card accent-aqua">
-            <div className="num">{stats.byStatus.Complete}</div>
-            <div className="label">Complete</div>
-          </div>
-          <div className="stat-card accent-green">
-            <div className="num">{stats.byStatus.Collected}</div>
-            <div className="label">Collected</div>
-          </div>
-          <div className="stat-card accent-orange">
-            <div className="num">{stats.unassigned}</div>
-            <div className="label">Unassigned</div>
-          </div>
-          <div className="stat-card accent-neutral">
-            <div className="num">{stats.byStatus.Closed}</div>
-            <div className="label">Closed</div>
-          </div>
+        // One row of tiles; each opens the job list filtered to match.
+        <div className="stat-grid stat-grid-7">
+          {[
+            ['accent-ink', stats.total, 'Total jobs', '/jobs'],
+            ['accent-blue', stats.byStatus.Open, 'Open', '/jobs?status=Open'],
+            ['accent-yellow', stats.byStatus['In Progress'], 'In progress', '/jobs?status=In%20Progress'],
+            ['accent-aqua', stats.byStatus.Complete, 'Complete', '/jobs?status=Complete'],
+            ['accent-green', stats.byStatus.Collected, 'Collected', '/jobs?status=Collected'],
+            ['accent-orange', stats.unassigned, 'Unassigned', '/jobs?owner=unassigned'],
+            ['accent-neutral', stats.byStatus.Closed, 'Closed', '/jobs?status=Closed'],
+          ].map(([accent, num, label, to]) => (
+            <Link key={label} to={to} className={`stat-card ${accent}`} title={`Show ${label.toLowerCase()}`}>
+              <div className="num">{num ?? 0}</div>
+              <div className="label">{label}</div>
+            </Link>
+          ))}
         </div>
       )}
 

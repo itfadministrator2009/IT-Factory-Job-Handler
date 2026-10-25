@@ -313,6 +313,11 @@ input, select, textarea {
 .stat-card .num { order: 2; font-family: var(--font-body); font-size: 28px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--ink); }
 .stat-card .label { order: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
 .stat-card .sub { order: 3; font-size: 12px; color: var(--muted); margin-top: 4px; }
+/* Job dashboard: seven tiles on one row. */
+.stat-grid.stat-grid-7 { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.stat-grid-7 .stat-card { padding: 12px 14px; }
+@media (max-width: 1200px) { .stat-grid.stat-grid-7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .stat-grid.stat-grid-7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 a.stat-card, .stat-card.clickable { color: inherit; text-decoration: none; cursor: pointer; transition: box-shadow 120ms, transform 120ms; }
 a.stat-card:hover, .stat-card.clickable:hover { box-shadow: 0 4px 14px rgba(22, 36, 31, 0.08); }
 
@@ -348,6 +353,9 @@ a.stat-card:hover, .stat-card.clickable:hover { box-shadow: 0 4px 14px rgba(22, 
 @media (max-width: 700px) {
   .ticket-table { min-width: 640px; }
 }
+
+/* Short text cells stay on one line (full text on hover). */
+.ticket-table td.cell-nowrap { white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 
 .ticket-table th {
   text-align: left;
@@ -944,21 +952,25 @@ a.stat-card:hover, .stat-card.clickable:hover { box-shadow: 0 4px 14px rgba(22, 
 }
 .back-link:hover { color: var(--teal); }
 
+/* Menu button: only shown on phones (see below). */
+.menu-toggle { display: none; }
+
 @media (max-width: 860px) {
   .app-shell { flex-direction: column; }
-  .sidebar { width: 100%; flex-direction: column; align-items: center; padding: 12px 16px; }
-  .sidebar-brand { flex-direction: row; margin-bottom: 10px; }
-  .sidebar-nav { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px; }
-  .sidebar-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  width: 100%;
-  margin-top: 10px;
-  padding: 10px 8px 0;
-}
-.sidebar-footer button { margin-top: 0; }
+  /* A slim bar at the top; the menu opens under it when Menu is tapped. */
+  .sidebar { width: 100%; flex-direction: column; align-items: stretch; padding: 10px 16px; position: sticky; top: 0; z-index: 60; }
+  .sidebar-brand { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; margin: 0; padding: 0; }
+  .sidebar-brand .brand-logo { height: 30px; }
+  .menu-toggle {
+    display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+    background: rgba(255,255,255,0.10); color: #fff; border: 1px solid rgba(255,255,255,0.22);
+    border-radius: var(--radius); padding: 7px 12px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .menu-toggle:hover { background: rgba(255,255,255,0.16); }
+  .sidebar-nav, .sidebar-footer { display: none; }
+  .sidebar.open .sidebar-nav { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 2px; margin-top: 12px; max-height: calc(100vh - 150px); overflow-y: auto; }
+  .sidebar.open .sidebar-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; margin-top: 10px; padding: 10px 8px 4px; }
+  .sidebar-footer button { margin-top: 0; }
   .main { padding: 20px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .detail-grid { grid-template-columns: 1fr; }
@@ -1586,3 +1598,12 @@ mark.search-hit { background: #fdf0c4; color: inherit; padding: 0 1px; border-ra
 .mu-movebar strong { margin-right: auto; }
 .mu-movebar label { font-weight: 600; }
 .mu-movebar select { border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13.5px; padding: 5px 8px; background: #fff; }
+
+/* Storage Centre dashboard: "N things need attention" box. */
+.attention-box { padding: 12px 16px; background: #fdf7ea; border-color: #f0dfb4; }
+.attention-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: #7a5a00; }
+.attention-box ul { list-style: none; margin: 0; padding: 0; }
+.attention-box li { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; border-top: 1px solid #f0e6c8; }
+.attention-box li:first-child { border-top: none; }
+.attention-box li.danger { color: var(--danger); }
+.attention-foot { font-size: 12px; color: var(--muted); margin-top: 6px; }

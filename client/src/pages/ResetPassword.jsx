@@ -101,7 +101,7 @@ export default function ResetPassword() {
                   </button>
                 </div>
               </div>
-              <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+              <button className="btn btn-accent" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
                 {loading ? 'Saving…' : 'Reset password'}
               </button>
             </form>

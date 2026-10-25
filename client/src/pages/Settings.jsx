@@ -319,7 +319,7 @@ function ManageUsersTab({ currentUser }) {
           <select id="mu-move" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
             {ROLE_OPTIONS.map(([v]) => <option key={v} value={v}>{ROLE_LABEL[v]}</option>)}
           </select>
-          <button type="button" className="btn btn-primary btn-sm" onClick={moveSelected} disabled={moving}>{moving ? 'Moving…' : 'Move'}</button>
+          <button type="button" className="btn btn-accent btn-sm" onClick={moveSelected} disabled={moving}>{moving ? 'Moving…' : 'Move'}</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())} disabled={moving}>Clear</button>
         </div>
       )}
