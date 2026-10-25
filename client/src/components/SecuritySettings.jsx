@@ -78,7 +78,7 @@ export default function SecuritySettings() {
           <span className="sec-icon"><ShieldCheck size={18} /></span>
           <div className="sec-title">
             <h3>Two-step login for admins</h3>
-            <p>After the right password, admins are emailed a code to finish logging in, so a stolen password alone isn’t enough. Ticking “Remember this device” skips the code on that browser for 30 days. Users and contractors aren’t affected.</p>
+            <p>After the right password, admins are emailed a code to finish logging in, so a stolen password alone isn’t enough. Ticking “Remember this device” skips the code on that browser for 30 days. Users and casuals aren’t affected.</p>
           </div>
           <button type="button" role="switch" aria-checked={tsOn} aria-label="Two-step login for admins" disabled={saving}
             className={'mu-switch' + (tsOn ? ' on' : '')} onClick={() => save({ twoStep: !tsOn }, tsOn ? 'Two-step login is off.' : 'Two-step login is on.')}>
