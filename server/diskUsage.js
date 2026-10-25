@@ -172,4 +172,4 @@ function diskUsage() {
   };
 }
 
-module.exports = { diskUsage };
+module.exports = { diskUsage, diskSpace, DB_PATH };

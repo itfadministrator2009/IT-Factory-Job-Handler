@@ -26,6 +26,7 @@ const { pruneActivity, logActivity } = require('./activity');
 const { startBackupScheduler } = require('./backup');
 const { startStorageWeeklyScheduler } = require('./storageWeekly');
 const { startTimecardReminderScheduler } = require('./timecardReminders');
+const { startDiskAlertScheduler } = require('./diskAlert');
 
 const app = express();
 // Render sits in front of the app as a reverse proxy, adding an X-Forwarded-For
@@ -114,4 +115,5 @@ try { require('./storageTools').cleanTrailingZeroIds(); } catch (err) { console.
 startBackupScheduler();
 startStorageWeeklyScheduler();
 startTimecardReminderScheduler();
+startDiskAlertScheduler();
 app.listen(PORT, () => console.log(`Job log API running on port ${PORT}`));
