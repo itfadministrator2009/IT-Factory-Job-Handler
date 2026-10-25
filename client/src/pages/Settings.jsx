@@ -228,7 +228,7 @@ function ManageUsersTab({ currentUser }) {
     .filter((u) => roleFilter === 'all' || roleKey(u) === roleFilter)
     .filter((u) => !q || `${u.name} ${u.email} ${roleKey(u)}`.toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const FILTERS = [['all', 'All', users.length], ['admin', 'Admins', counts.admin || 0], ['user', 'Users', counts.user || 0], ['contractor', 'Contractors', counts.contractor || 0]];
+  const FILTERS = [['all', 'All', users.length], ['admin', 'Admins', counts.admin || 0], ['user', 'Users', counts.user || 0], ['contractor', 'Casuals', counts.contractor || 0]];
 
   // One access cell: a switch for Users, a fixed state for admins and contractors.
   function accessCell(u, field, label) {
