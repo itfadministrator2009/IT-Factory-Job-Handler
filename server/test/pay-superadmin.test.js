@@ -125,3 +125,22 @@ test('activity log, security & alerts and backups are for the Super Admin only',
     assert.equal((await c2.get('/api/admin/security', { token: robert.token })).status, 200);
   } finally { c2.server.close(); }
 });
+
+test('ITF Staff group: staff accounts work like the old Users', async () => {
+  const r = await client.post('/api/users/admin', { token: robert.token, body: { name: 'Stella Staff', email: 'stella@itf.test', password: 'password123', role: 'staff', accessStorage: false } });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.user.role, 'staff');
+  const me = await client.post('/api/auth/login', { body: { email: 'stella@itf.test', password: 'password123' } });
+  assert.equal(me.data.user.accessAssets, true);
+  assert.equal(me.data.user.accessStorage, false);
+  assert.equal(me.data.user.accessTimecard, false);
+  // Move between groups.
+  let p = await client.patch(`/api/users/admin/${r.data.user.id}`, { token: robert.token, body: { role: 'user', accessTimecard: true } });
+  assert.equal(p.data.user.role, 'user');
+  assert.equal(p.data.user.accessTimecard, true);
+  p = await client.patch(`/api/users/admin/${r.data.user.id}`, { token: robert.token, body: { role: 'staff' } });
+  assert.equal(p.data.user.role, 'staff');
+  // Staff who log time show up in Time Card like other users.
+  const { TIMESHEET_USERS_SQL } = require('../permissions');
+  assert.ok(db.prepare(`SELECT 1 FROM users WHERE id = ? AND ${TIMESHEET_USERS_SQL}`).get(r.data.user.id));
+});
