@@ -127,7 +127,10 @@ function buildProjectEntryPdf(project, entry, photos, uploadDir) {
             const maxH = 170;
             ensureSpace(maxH + 20);
             try {
-              const resizedBuffer = await loadResizedPhoto(path.join(uploadDir, p.stored_name));
+              // From the server disk, or Cloudflare R2 once it's been moved there.
+              const src = await require('./fileStore').readBuffer(p.stored_name, uploadDir);
+              if (!src) throw new Error('photo file missing');
+              const resizedBuffer = await loadResizedPhoto(src);
               // The cursor position is captured BEFORE drawing and set explicitly
               // afterward (not read back from doc.y) — some real-world photos were
               // found to make pdfkit silently move the cursor during doc.image()

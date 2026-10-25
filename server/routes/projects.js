@@ -20,6 +20,7 @@ const router = express.Router();
 router.use(authRequired);
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+const fileStore = require('../fileStore');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
@@ -458,7 +459,7 @@ router.post('/:id/entries/bulk-delete', (req, res) => {
     const entry = db.prepare('SELECT id FROM project_entries WHERE id = ? AND project_id = ?').get(entryId, req.params.id);
     if (!entry) return;
     const entryPhotos = db.prepare('SELECT stored_name FROM project_entry_photos WHERE entry_id = ?').all(entryId);
-    entryPhotos.forEach((p) => fs.unlink(path.join(UPLOAD_DIR, p.stored_name), () => {}));
+    entryPhotos.forEach((p) => fileStore.remove(p.stored_name, UPLOAD_DIR));
     db.prepare('DELETE FROM project_entries WHERE id = ?').run(entryId);
     deleted++;
   });
@@ -596,7 +597,7 @@ router.delete('/:id/entries/:entryId', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
   const photos = db.prepare('SELECT stored_name FROM project_entry_photos WHERE entry_id = ?').all(entry.id);
-  photos.forEach((p) => fs.unlink(path.join(UPLOAD_DIR, p.stored_name), () => {}));
+  photos.forEach((p) => fileStore.remove(p.stored_name, UPLOAD_DIR));
   db.prepare('DELETE FROM project_entries WHERE id = ?').run(req.params.entryId);
   res.json({ ok: true });
 });
@@ -622,19 +623,18 @@ router.post('/:id/entries/:entryId/photos', upload.single('file'), async (req, r
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(id, entry.id, field_id, repeat_index !== undefined && repeat_index !== '' ? Number(repeat_index) : null, file.filename, file.originalname, file.mimetype);
 
+  fileStore.offloadSoon(file.filename, { dir: UPLOAD_DIR, contentType: file.mimetype }); // to Cloudflare R2, when set up
   const photo = db.prepare('SELECT id, field_id, repeat_index, original_name, mime_type, created_at FROM project_entry_photos WHERE id = ?').get(id);
   res.status(201).json({ photo });
 });
 
-router.get('/photos/:photoId/download', (req, res) => {
+router.get('/photos/:photoId/download', async (req, res) => {
   const photo = db.prepare('SELECT * FROM project_entry_photos WHERE id = ?').get(req.params.photoId);
   if (!photo) return res.status(404).json({ error: 'Photo not found' });
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(photo.entry_id);
   if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Photo not found' });
 
-  const filePath = path.join(UPLOAD_DIR, photo.stored_name);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
-  res.sendFile(filePath);
+  return fileStore.send(res, photo.stored_name, { dir: UPLOAD_DIR, contentType: photo.mime_type });
 });
 
 router.delete('/photos/:photoId', (req, res) => {
@@ -643,7 +643,7 @@ router.delete('/photos/:photoId', (req, res) => {
   const entry = db.prepare('SELECT * FROM project_entries WHERE id = ?').get(photo.entry_id);
   if (!entry || !canAccessEntry(req, entry)) return res.status(404).json({ error: 'Photo not found' });
 
-  fs.unlink(path.join(UPLOAD_DIR, photo.stored_name), () => {});
+  fileStore.remove(photo.stored_name, UPLOAD_DIR);
   db.prepare('DELETE FROM project_entry_photos WHERE id = ?').run(req.params.photoId);
   res.json({ ok: true });
 });

@@ -124,7 +124,7 @@ export default function ActivityLog() {
                     <span className={`al-icon al-${cat}`} aria-hidden="true"><Icon size={15} /></span>
                     <div className="al-body">
                       <div className="al-line">
-                        <strong>{e.userName || (e.action.startsWith('backup.') || e.action === 'settings.disk_alert' ? 'Work Desk' : 'Someone')}</strong>
+                        <strong>{e.userName || (e.action.startsWith('backup.') || e.action.startsWith('files.') || e.action === 'settings.disk_alert' ? 'Work Desk' : 'Someone')}</strong>
                         <span className="al-what">{e.label.charAt(0).toLowerCase() + e.label.slice(1)}</span>
                         {e.targetName && <span className="al-target">{e.targetName}</span>}
                       </div>

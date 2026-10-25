@@ -14,7 +14,8 @@ const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const { db } = require('./db');
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const fileStore = require('./fileStore');
+const UPLOAD_DIR = fileStore.UPLOAD_DIR;
 
 db.exec(`CREATE TABLE IF NOT EXISTS record_restore_log (
   id TEXT PRIMARY KEY,
@@ -285,7 +286,7 @@ function restore(src, backupName, typeId, ids, userName) {
       (t.children || []).filter((c) => c.files).forEach((c) => {
         const rows = snap.children[c.table] || [];
         snap.children[c.table] = rows.filter((row) => {
-          const ok = row[c.files] && fs.existsSync(path.join(UPLOAD_DIR, row[c.files]));
+          const ok = row[c.files] && fileStore.hasFile(row[c.files], UPLOAD_DIR); // on the disk or in Cloudflare R2
           if (!ok) missingFiles += 1;
           return ok;
         });

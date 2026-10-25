@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HardDrive, RefreshCw, Minimize2 } from 'lucide-react';
+import { HardDrive, RefreshCw, Minimize2, Cloud } from 'lucide-react';
 import api from '../api';
 
 // Settings → Disk usage: what is filling the server's disk. Read-only.
@@ -106,6 +106,31 @@ function ShrinkPhotos({ onDone }) {
 }
 const h3 = { fontSize: 15, marginBottom: 12 };
 
+// Where uploaded files live: the server disk, or Cloudflare R2 once it's set up.
+function CloudFiles({ cloud }) {
+  if (!cloud) return null;
+  if (!cloud.enabled) {
+    return (
+      <div className="panel" style={card}>
+        <h3 style={h3}><Cloud size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Cloudflare R2</h3>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Not set up — uploaded files are kept on the server disk. Add the R2 settings on Render to move them to Cloudflare R2.</p>
+      </div>
+    );
+  }
+  const when = cloud.lastSyncAt ? new Date(cloud.lastSyncAt).toLocaleString('en-AU') : null;
+  return (
+    <div className="panel" style={card}>
+      <h3 style={h3}><Cloud size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Cloudflare R2 <span style={{ fontSize: 12, fontWeight: 500, color: cloud.lastError ? 'var(--danger, #b42318)' : 'var(--success, #1f7a4d)', marginLeft: 6 }}>{cloud.lastError ? 'Problem' : 'Connected'}</span></h3>
+      <div style={{ fontSize: 22, fontWeight: 700 }}>{formatBytes(cloud.bytes || 0)} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--muted)' }}>in {cloud.files || 0} file{cloud.files === 1 ? '' : 's'} (bucket {cloud.bucket})</span></div>
+      <p style={{ fontSize: 13, color: 'var(--muted)', margin: '8px 0 0' }}>
+        {cloud.waiting ? `${cloud.waiting} file${cloud.waiting === 1 ? '' : 's'} still to copy across — this happens in the background every 10 minutes. ` : 'Every file is in R2. '}
+        New uploads go to R2 straight away; the copy on the server disk is removed an hour later.{when ? ` Last checked ${when}.` : ''}
+      </p>
+      {cloud.lastError && <div className="error-banner" style={{ marginTop: 10 }}>{cloud.lastError.message}. Files stay safely on the server disk until this is fixed.</div>}
+    </div>
+  );
+}
+
 export default function DiskUsage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -153,6 +178,8 @@ export default function DiskUsage() {
         <Bars rows={overview} total={counted} />
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>Measured {new Date(data.measuredAt).toLocaleString('en-AU')}. The disk is checked every hour: at 90% full the Super Admin is emailed, with a reminder each day it stays that full.</div>
       </div>
+
+      <CloudFiles cloud={data.cloud} />
 
       <ShrinkPhotos onDone={load} />
 

@@ -9,6 +9,8 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
@@ -21,7 +23,6 @@
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.15.2",
     "sharp": "^0.35.4",
-    "archiver": "^7.0.1",
     "uuid": "^14.0.1"
   },
   "devDependencies": {
