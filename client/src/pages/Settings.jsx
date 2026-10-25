@@ -676,7 +676,7 @@ function BackupTab() {
           <DatabaseBackup size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Back up now
         </h3>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
-          Everything in Work Desk — jobs, projects, ITF Asset Tracker, ITF Storage Centre and ITF Time Card — is backed up to OneDrive automatically every night at 2am (Sydney time), along with photos and attachments. Storage Centre and Time Card are also saved as spreadsheets (CSV files) you can open in Excel. You can also trigger a backup right now.
+          Everything in Work Desk — jobs, projects, ITF Asset Tracker, ITF Storage Centre and ITF Time Card — is backed up to OneDrive automatically every night at 2am (Sydney time), along with photos and attachments. Storage Centre and Time Card are also saved as spreadsheets (CSV files) you can open in Excel. You can also trigger a backup right now. Old backups are tidied automatically: photos are kept for every night of the last 30 days, the database and spreadsheets for every night of the last year, and after that one backup a month is kept for good.
         </p>
         {backupMsg && (
           <div className={backupMsg.startsWith('Backup uploaded') ? 'success-banner' : 'error-banner'} style={{ marginBottom: 12 }}>
