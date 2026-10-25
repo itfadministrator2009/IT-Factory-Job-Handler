@@ -76,8 +76,10 @@ router.post('/admin', adminRequired, (req, res) => {
   const finalRole = roleFrom(role);
   const id = uuid();
   const password_hash = bcrypt.hashSync(password, 10);
+  // Sections are on by default, except for ITF Casuals (off unless ticked).
+  const flag = (v) => (finalRole === 'contractor' ? (v === true ? 1 : 0) : (v === false ? 0 : 1));
   db.prepare('INSERT INTO users (id, name, email, password_hash, role, access_assets, access_storage, access_timecard, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, email, password_hash, finalRole, accessAssets === false ? 0 : 1, accessStorage === false ? 0 : 1, accessTimecard ? 1 : 0, rate ?? null);
+    .run(id, name, email, password_hash, finalRole, flag(accessAssets), flag(accessStorage), accessTimecard ? 1 : 0, rate ?? null);
 
   const user = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id));
   logActivity('user.created', { req, target: { type: 'user', id, name }, details: `Role: ${finalRole}` });
@@ -114,6 +116,11 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
       return res.status(400).json({ error: 'Cannot remove the last admin' });
     }
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(finalRole, req.params.id);
+    // Moved into ITF Casuals: the Asset Tracker and Storage Centre start off.
+    if (finalRole === 'contractor' && target.role !== 'contractor') {
+      if (accessAssets === undefined) db.prepare('UPDATE users SET access_assets = 0 WHERE id = ?').run(req.params.id);
+      if (accessStorage === undefined) db.prepare('UPDATE users SET access_storage = 0 WHERE id = ?').run(req.params.id);
+    }
   }
 
   if (name !== undefined && name.trim()) {
