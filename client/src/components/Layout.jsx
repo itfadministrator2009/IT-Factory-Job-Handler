@@ -63,12 +63,15 @@ export default function Layout({ children }) {
           <span>Work Desk</span>
         </div>
         <nav className="sidebar-nav">
-          {isContractor ? (
+          {/* ITF Casuals: their timesheet, plus any sections an admin switched on. */}
+          {isContractor && (
           <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard"
-            open current onToggle={() => {}}>
+            open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
             <NavLink to="/timecard" end className={linkClass}><Clock size={14} /> My Timesheet</NavLink>
           </Section>
-          ) : (<>
+          )}
+
+          {!isContractor && (
           <Section id="desk" title="ITF Work Desk" icon={ClipboardCheck} home={isAdmin ? '/dashboard' : '/jobs'}
             open={open.desk} current={current === 'desk'} onToggle={toggle}>
             {isAdmin && <NavLink to="/dashboard" className={linkClass}><LayoutDashboard size={14} /> Dashboard</NavLink>}
@@ -79,6 +82,7 @@ export default function Layout({ children }) {
             {isAdmin && <NavLink to="/templates" className={linkClass}><FileStack size={14} /> Templates</NavLink>}
             <NavLink to="/kb" className={linkClass}><BookOpen size={14} /> Knowledge Base</NavLink>
           </Section>
+          )}
 
           {canUseModule(user, 'assets') && (
           <Section id="assets" title="ITF Asset Tracker" icon={Boxes} home="/assets"
@@ -106,6 +110,7 @@ export default function Layout({ children }) {
           </Section>
           )}
 
+          {!isContractor && <>
           {!isAdmin && user?.accessTimecard && (
           <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard"
             open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
@@ -122,7 +127,7 @@ export default function Layout({ children }) {
             <NavLink to="/timecard/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>
           </Section>
           )}
-          </>)}
+          </>}
 
           {isAdmin && (
             <NavLink to="/settings" className={({ isActive }) => 'sidebar-link sidebar-settings' + (isActive ? ' active' : '')}>
