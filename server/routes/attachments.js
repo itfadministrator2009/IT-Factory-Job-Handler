@@ -7,6 +7,7 @@ const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { canAccessJob } = require('../permissions');
 const { shrinkUpload } = require('../photoShrink');
+const fileStore = require('../fileStore');
 
 const router = express.Router();
 // This router is mounted at /api, so the staff sign-in check is limited to its own
@@ -38,22 +39,21 @@ router.post('/jobs/:jobId/attachments', upload.array('files', 10), async (req, r
       INSERT INTO attachments (id, job_id, stored_name, original_name, mime_type, size, uploaded_by)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, req.params.jobId, file.filename, file.originalname, file.mimetype, file.size, req.user.id);
+    fileStore.offloadSoon(file.filename, { dir: UPLOAD_DIR, contentType: file.mimetype }); // to Cloudflare R2, when set up
     inserted.push(db.prepare('SELECT id, original_name, mime_type, size, created_at, uploaded_by FROM attachments WHERE id = ?').get(id));
   }
 
   res.status(201).json({ attachments: inserted });
 });
 
-router.get('/attachments/:id/download', (req, res) => {
+router.get('/attachments/:id/download', async (req, res) => {
   const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'Attachment not found' });
   const job = db.prepare('SELECT owner_id FROM jobs WHERE id = ?').get(att.job_id);
   if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Attachment not found' });
 
-  const filePath = path.join(UPLOAD_DIR, att.stored_name);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
-
-  res.download(filePath, att.original_name);
+  // From the server disk, or from Cloudflare R2 when it's been moved there.
+  return fileStore.send(res, att.stored_name, { dir: UPLOAD_DIR, downloadName: att.original_name, contentType: att.mime_type });
 });
 
 router.delete('/attachments/:id', (req, res) => {
@@ -62,8 +62,7 @@ router.delete('/attachments/:id', (req, res) => {
   const job = db.prepare('SELECT owner_id FROM jobs WHERE id = ?').get(att.job_id);
   if (!job || !canAccessJob(req.user, job)) return res.status(404).json({ error: 'Attachment not found' });
 
-  const filePath = path.join(UPLOAD_DIR, att.stored_name);
-  fs.unlink(filePath, () => {});
+  fileStore.remove(att.stored_name, UPLOAD_DIR);
   db.prepare('DELETE FROM attachments WHERE id = ?').run(req.params.id);
 
   res.json({ ok: true });
