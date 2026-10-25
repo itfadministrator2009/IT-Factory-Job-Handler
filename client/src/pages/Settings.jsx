@@ -9,6 +9,12 @@ import SearchField from '../components/SearchField';
 import ActivityLog from '../components/ActivityLog';
 import SecuritySettings from '../components/SecuritySettings';
 
+// Manage Users groups. Stored role → label. 'user' is the original staff role, now ITF Contractors.
+const ROLE_OPTIONS = [['admin', 'ITF Admin'], ['staff', 'ITF Staff'], ['user', 'ITF Contractor'], ['contractor', 'ITF Casual']];
+const ROLE_LABEL = { admin: 'ITF Admins', staff: 'ITF Staff', user: 'ITF Contractors', contractor: 'ITF Casuals' };
+// Staff and Contractors work the same way: sections are switched on for them.
+const staffLike = (r) => r === 'user' || r === 'staff';
+
 const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 export default function Settings() {
@@ -68,6 +74,10 @@ function ManageUsersTab({ currentUser }) {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+  // Tick people, then move them into a group in one go.
+  const [selected, setSelected] = useState(() => new Set());
+  const [moveTo, setMoveTo] = useState('staff');
+  const [moving, setMoving] = useState(false);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -109,8 +119,8 @@ function ManageUsersTab({ currentUser }) {
     setSaving(true);
     setError('');
     try {
-      const logsTime = role === 'contractor' || (role === 'user' && newAccessTimecard);
-      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, accessTimecard: role === 'user' && newAccessTimecard, hourlyRate: logsTime ? newRate : undefined });
+      const logsTime = role === 'contractor' || (staffLike(role) && newAccessTimecard);
+      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, accessTimecard: staffLike(role) && newAccessTimecard, hourlyRate: logsTime ? newRate : undefined });
       setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewAccessTimecard(false); setNewRate('');
       setShowForm(false);
       setNotice(`${name} has been added.`);
@@ -130,6 +140,26 @@ function ManageUsersTab({ currentUser }) {
     } catch (err) {
       setError(err.response?.data?.error || 'Could not update role');
     }
+  }
+
+  async function moveSelected() {
+    const ids = [...selected];
+    const target = ROLE_OPTIONS.find(([v]) => v === moveTo)?.[1] || moveTo;
+    setError(''); setNotice(''); setMoving(true);
+    let moved = 0; const failed = [];
+    for (const id of ids) {
+      const u = users.find((x) => x.id === id);
+      if (!u) continue;
+      const current = (u.role === 'agent' ? 'admin' : u.role);
+      if (current === moveTo) continue;
+      try { await api.patch(`/users/admin/${id}`, { role: moveTo }); moved += 1; } catch (err) { failed.push(`${u.name}: ${err.response?.data?.error || 'could not move'}`); }
+    }
+    setMoving(false);
+    setSelected(new Set());
+    await load();
+    if (moved) setNotice(`Moved ${moved} ${moved === 1 ? 'person' : 'people'} to ${target}.`);
+    if (failed.length) setError(failed.join(' '));
+    else if (!moved) setNotice(`Everyone ticked is already in ${target}.`);
   }
 
   // Switch a user's access to the ITF Asset Tracker / ITF Storage Centre on or off.
@@ -188,7 +218,7 @@ function ManageUsersTab({ currentUser }) {
     setEditSaving(true);
     setEditError('');
     try {
-      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole, hourlyRate: editRole === 'contractor' || (editRole === 'user' && editTarget.accessTimecard) ? editRate : undefined });
+      await api.patch(`/users/admin/${editTarget.id}`, { name: editName, email: editEmail, role: editRole, hourlyRate: editRole === 'contractor' || (staffLike(editRole) && editTarget.accessTimecard) ? editRate : undefined });
       setEditTarget(null);
       load();
     } catch (err) {
@@ -221,14 +251,14 @@ function ManageUsersTab({ currentUser }) {
 
   const isAdminRole = (r) => r === 'admin' || r === 'agent';
   const iAmSuper = !!(users.find((x) => x.id === currentUser.id)?.superAdmin ?? currentUser.superAdmin);
-  const roleKey = (u) => (isAdminRole(u.role) ? 'admin' : u.role === 'contractor' ? 'contractor' : 'user');
+  const roleKey = (u) => (isAdminRole(u.role) ? 'admin' : u.role === 'contractor' ? 'contractor' : u.role === 'staff' ? 'staff' : 'user');
   const counts = users.reduce((c, u) => ({ ...c, [roleKey(u)]: (c[roleKey(u)] || 0) + 1 }), {});
   const q = query.trim().toLowerCase();
   const shown = users
     .filter((u) => roleFilter === 'all' || roleKey(u) === roleFilter)
-    .filter((u) => !q || `${u.name} ${u.email} ${roleKey(u)}`.toLowerCase().includes(q))
+    .filter((u) => !q || `${u.name} ${u.email} ${ROLE_LABEL[roleKey(u)]}`.toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const FILTERS = [['all', 'All', users.length], ['admin', 'Admins', counts.admin || 0], ['user', 'Users', counts.user || 0], ['contractor', 'Casuals', counts.contractor || 0]];
+  const FILTERS = [['all', 'All', users.length], ['admin', 'ITF Admins', counts.admin || 0], ['staff', 'ITF Staff', counts.staff || 0], ['user', 'ITF Contractors', counts.user || 0], ['contractor', 'ITF Casuals', counts.contractor || 0]];
 
   // One access cell: a switch for Users, a fixed state for admins and contractors.
   function accessCell(u, field, label) {
@@ -256,7 +286,7 @@ function ManageUsersTab({ currentUser }) {
       <div className="mu-head">
         <div>
           <h3>Team members</h3>
-          <p>Add people, set their role, and choose which sections each person can use. Changes apply straight away.</p>
+          <p>Add people, put them in their group, and choose which sections each person can use. Tick people to move several into a group at once. Changes apply straight away.</p>
         </div>
         <button className="btn btn-accent" onClick={() => setShowForm(true)}><Plus size={16} /> Add user</button>
       </div>
@@ -282,6 +312,18 @@ function ManageUsersTab({ currentUser }) {
         <SearchField value={query} onChange={setQuery} placeholder="Search by name or email" label="Search users" style={{ maxWidth: 320, flex: '1 1 240px' }} />
       </div>
 
+      {selected.size > 0 && (
+        <div className="mu-movebar">
+          <strong>{selected.size} selected</strong>
+          <label htmlFor="mu-move">Move to</label>
+          <select id="mu-move" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
+            {ROLE_OPTIONS.map(([v]) => <option key={v} value={v}>{ROLE_LABEL[v]}</option>)}
+          </select>
+          <button type="button" className="btn btn-primary btn-sm" onClick={moveSelected} disabled={moving}>{moving ? 'Moving…' : 'Move'}</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())} disabled={moving}>Clear</button>
+        </div>
+      )}
+
       <div className="panel mu-panel">
         {loading ? (
           <div className="empty-state">Loading…</div>
@@ -289,8 +331,11 @@ function ManageUsersTab({ currentUser }) {
           <table className="mu-table">
             <thead>
               <tr>
+                <th className="mu-pick"><input type="checkbox" aria-label="Select everyone shown"
+                  checked={shown.length > 0 && shown.every((u) => selected.has(u.id))}
+                  onChange={(e) => setSelected((s) => { const n = new Set(s); shown.forEach((u) => (e.target.checked ? n.add(u.id) : n.delete(u.id))); return n; })} /></th>
                 <th>Name</th>
-                <th>Role</th>
+                <th>Group</th>
                 <th className="c">Asset Tracker</th>
                 <th className="c">Storage Centre</th>
                 <th className="c">Time Card</th>
@@ -305,7 +350,9 @@ function ManageUsersTab({ currentUser }) {
                 const lockedAdmin = !iAmSuper && rk === 'admin';
                 const lockedSuper = !iAmSuper && u.superAdmin && !me;
                 return (
-                  <tr key={u.id}>
+                  <tr key={u.id} className={selected.has(u.id) ? 'mu-picked' : ''}>
+                    <td className="mu-pick"><input type="checkbox" aria-label={`Select ${u.name}`} checked={selected.has(u.id)}
+                      onChange={(e) => setSelected((s) => { const n = new Set(s); if (e.target.checked) n.add(u.id); else n.delete(u.id); return n; })} /></td>
                     <td>
                       <div className="mu-person">
                         <span className={`mu-avatar ${rk}`} aria-hidden="true">{initials(u.name)}</span>
@@ -316,11 +363,9 @@ function ManageUsersTab({ currentUser }) {
                       </div>
                     </td>
                     <td>
-                      <select className={`mu-role ${rk}`} value={rk} onChange={(e) => handleRoleChange(u.id, e.target.value)} aria-label={`Role for ${u.name}`}
-                        disabled={lockedAdmin} title={lockedAdmin ? 'Only the Super Admin can change an admin’s role' : undefined}>
-                        <option value="admin">Admin</option>
-                        <option value="user">User</option>
-                        <option value="contractor">Casual</option>
+                      <select className={`mu-role ${rk}`} value={rk} onChange={(e) => handleRoleChange(u.id, e.target.value)} aria-label={`Group for ${u.name}`}
+                        disabled={lockedAdmin} title={lockedAdmin ? 'Only the Super Admin can move an admin to another group' : undefined}>
+                        {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                       </select>
                     </td>
                     <td className="c">{accessCell(u, 'accessAssets', 'ITF Asset Tracker')}</td>
@@ -340,7 +385,7 @@ function ManageUsersTab({ currentUser }) {
                 );
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={6} className="mu-empty">No one matches{query ? ` “${query}”` : ''}{roleFilter !== 'all' ? ` in ${FILTERS.find((f) => f[0] === roleFilter)[1]}` : ''}.</td></tr>
+                <tr><td colSpan={7} className="mu-empty">No one matches{query ? ` “${query}”` : ''}{roleFilter !== 'all' ? ` in ${FILTERS.find((f) => f[0] === roleFilter)[1]}` : ''}.</td></tr>
               )}
             </tbody>
           </table>
@@ -348,7 +393,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p className="mu-foot">
-        <ShieldCheck size={13} /> <span><strong>Admins</strong> have full access and approve timesheets. <strong>Users</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>Casuals</strong> only see ITF Time Card. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
+        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> only see ITF Time Card. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
       </p>
 
       {showForm && (
@@ -389,21 +434,19 @@ function ManageUsersTab({ currentUser }) {
               </div>
             </div>
             <div className="field">
-              <label htmlFor="urole">Role</label>
+              <label htmlFor="urole">Group</label>
               <select id="urole" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-                <option value="contractor">Casual (ITF Time Card only)</option>
+                {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}{v === 'contractor' ? ' (ITF Time Card only)' : ''}</option>)}
               </select>
             </div>
-            {(role === 'contractor' || (role === 'user' && newAccessTimecard)) && (
+            {(role === 'contractor' || (staffLike(role) && newAccessTimecard)) && (
               <div className="field">
                 <label htmlFor="urate">Hourly rate (optional)</label>
                 <input id="urate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={newRate} onChange={(e) => setNewRate(e.target.value)} />
                 <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Used for estimated pay on approved timesheets. Casuals only see ITF Time Card.</p>
               </div>
             )}
-            {role === 'user' && (
+            {staffLike(role) && (
               <div className="field">
                 <label>Access</label>
                 <label className="mu-check">
@@ -448,14 +491,12 @@ function ManageUsersTab({ currentUser }) {
                 )}
               </div>
               <div className="field">
-                <label htmlFor="edit-role">Role</label>
+                <label htmlFor="edit-role">Group</label>
                 <select id="edit-role" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                  <option value="contractor">Casual (ITF Time Card only)</option>
+                  {ROLE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}{v === 'contractor' ? ' (ITF Time Card only)' : ''}</option>)}
                 </select>
               </div>
-              {(editRole === 'contractor' || (editRole === 'user' && editTarget.accessTimecard)) && (
+              {(editRole === 'contractor' || (staffLike(editRole) && editTarget.accessTimecard)) && (
                 <div className="field">
                   <label htmlFor="edit-rate">Hourly rate (optional)</label>
                   <input id="edit-rate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 75" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
