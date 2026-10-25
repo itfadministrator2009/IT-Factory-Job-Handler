@@ -88,12 +88,21 @@ test('pay per person for last week / month / quarter / year / financial year and
 
   const ana2 = await registerUser(client, { name: 'Zed Admin', email: 'zed@itf.test' });
   db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(ana2.id);
-  const r = await client.get('/api/timecard/admin/pay?from=2026-10-05&to=2026-10-18', { token: ana2.token });
+  // Paid to each person: the Super Admin (Robert) only.
+  const r = await client.get('/api/timecard/admin/pay?from=2026-10-05&to=2026-10-18', { token: robert.token });
   assert.equal(r.status, 200);
   assert.equal(r.data.pay[cara].total, 1212.5);
-  assert.equal((await client.get('/api/timecard/admin/pay?from=2026-10-18&to=2026-10-01', { token: ana2.token })).status, 400);
+  assert.equal((await client.get('/api/timecard/admin/pay?from=2026-10-18&to=2026-10-01', { token: robert.token })).status, 400);
+  assert.equal((await client.get('/api/timecard/admin', { token: robert.token })).data.pay.periods.length, 5);
+  // Other admins: no pay at all, but hours for custom dates still work.
+  assert.equal((await client.get('/api/timecard/admin/pay?from=2026-10-05&to=2026-10-18', { token: ana2.token })).status, 403);
   const dash = await client.get('/api/timecard/admin', { token: ana2.token });
-  assert.equal(dash.data.pay.periods.length, 5);
+  assert.equal(dash.status, 200);
+  assert.equal(dash.data.pay, undefined);
+  const h = await client.get('/api/timecard/admin/hours?from=2026-10-05&to=2026-10-18', { token: ana2.token });
+  assert.equal(h.data.hours[cara], 15);
+  assert.equal(h.data.hours[dan], 4);
+  assert.equal(JSON.stringify(h.data).includes('812'), false);
 });
 
 test('activity log, security & alerts and backups are for the Super Admin only', async () => {

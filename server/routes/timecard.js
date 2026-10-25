@@ -2,7 +2,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole, logsTime } = require('../permissions');
+const { isAdminRole, logsTime, isSuperAdmin } = require('../permissions');
 const tc = require('../timecard');
 const mail = require('../timecardEmail');
 const { sendReminders, contractorsToRemind } = require('../timecardReminders');
@@ -83,7 +83,8 @@ router.get('/admin', adminOnly, handle((req, res) => {
     projects: tc.approvedProjects(),
     projectBreakdown: tc.projectBreakdown(),
     people: tc.peopleSummary(),
-    pay: tc.paySummary(),
+    // Paid to each person: the Super Admin only.
+    ...(isSuperAdmin(req.user.id) ? { pay: tc.paySummary() } : {}),
     today: tc.todayYmd(),
   });
 }));
@@ -99,8 +100,18 @@ router.get('/admin/range', adminOnly, handle((req, res) => {
   res.json({ from, to, totalHours: tc.approvedHoursInRange(from, to) });
 }));
 
-// Pay per person for a custom date range (by week-ending date).
+// Approved hours per person for a custom date range (by week-ending date).
+router.get('/admin/hours', adminOnly, handle((req, res) => {
+  const { from, to } = req.query;
+  if (!tc.YMD.test(from || '') || !tc.YMD.test(to || '')) throw new tc.TimecardError('Pick a start and end date.');
+  if (from > to) throw new tc.TimecardError('Start date must be before end date.');
+  const pay = tc.payInRange(from, to);
+  res.json({ from, to, hours: Object.fromEntries(Object.entries(pay).map(([id, v]) => [id, v.hours])) });
+}));
+
+// Pay per person for a custom date range (by week-ending date): the Super Admin only.
 router.get('/admin/pay', adminOnly, handle((req, res) => {
+  if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can see what people were paid.' });
   const { from, to } = req.query;
   if (!tc.YMD.test(from || '') || !tc.YMD.test(to || '')) throw new tc.TimecardError('Pick a start and end date.');
   if (from > to) throw new tc.TimecardError('Start date must be before end date.');
