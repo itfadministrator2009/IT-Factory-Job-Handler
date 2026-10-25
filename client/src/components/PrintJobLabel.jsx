@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import api from '../api';
 import { Tag, X, Printer } from 'lucide-react';
 import qrcode from 'qrcode-generator';
 import { formatDMY } from '../utils/date';
@@ -39,23 +40,45 @@ export function dateCollected(job) {
   return formatDMY(job.due_date || job.resolved_at || job.created_at) || '';
 }
 
-export function labelRows(job) {
+// A job going into storage, e.g. "Collection of IT Equipment to Store".
+export function isStorageJob(job) {
+  return /\bstor(e|ed|age|ing)\b/i.test(job.classifications || '');
+}
+
+// extra: rows added for storage jobs (the item and its Reference / Serial).
+export function labelRows(job, extra = []) {
   return [
     ['Date Collected', dateCollected(job)],
     ['Account', job.account_name || job.contact_name || ''],
     ['Site Address', job.site_address || ''],
     ['Classification', job.classifications || ''],
     ['Data Destruction', job.data_destruction || ''],
+    ...extra,
   ];
 }
 
-function labelHtml(job, sizeKey, copies) {
+// The labels to print: for a storage job either one label per item (showing
+// that item's Reference / Serial) or one label listing every reference.
+export function labelSets(job, items, perItem) {
+  if (!isStorageJob(job) || !items.length) return [[]];
+  if (perItem) {
+    return items.map((it) => [
+      ['Item', `${it.description || ''}${Number(it.qty) > 1 ? ` (×${it.qty})` : ''}`],
+      ['Reference / Serial', it.reference || ''],
+    ]);
+  }
+  const refs = items.map((it) => it.reference).filter(Boolean);
+  return [[['Reference / Serial', refs.join(', ')]]];
+}
+
+function labelHtml(job, sizeKey, copies, sets = [[]]) {
   const s = SIZES[sizeKey];
   const mm = (x) => `${x}mm`;
   const wide = !!s.wide; // 100×50: short label, tighter rows
   const url = `${window.location.origin}/jobs/${job.id}`;
-  const rows = labelRows(job).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v) || '&mdash;'}</td></tr>`).join('');
-  const one = `<section class="label${wide ? ' wide' : ''}">
+  const section = (extra) => {
+  const rows = labelRows(job, extra).map(([k, v]) => `<tr><th>${esc(k)}</th><td${k === 'Reference / Serial' ? ' class="ref"' : ''}>${esc(v) || '&mdash;'}</td></tr>`).join('');
+  return `<section class="label${wide ? ' wide' : ''}">
     <div class="top">
       <div><div class="cap">Job Number</div><div class="num">#${esc(job.job_number)}</div></div>
       <div class="qr">${qrSvg(url)}</div>
@@ -63,6 +86,8 @@ function labelHtml(job, sizeKey, copies) {
     <table>${rows}</table>
     <div class="foot">IT Factory</div>
   </section>`;
+  };
+  const all = sets.flatMap((extra) => Array.from({ length: copies }, () => section(extra))).join('');
   return `<!doctype html><html><head><meta charset="utf-8"><title>Label — Job #${esc(job.job_number)}</title>
 <style>
   @page { size: ${s.w}mm ${s.h}mm; margin: 0; }
@@ -78,10 +103,21 @@ function labelHtml(job, sizeKey, copies) {
   th, td { text-align: left; vertical-align: top; padding: ${mm(s.row * (wide ? 0.25 : 0.45))} 0; border-bottom: ${mm(Math.max(s.row * 0.05, 0.2))} solid #888; font-size: ${mm(s.row)}; line-height: 1.2; }
   th { width: 38%; font-weight: 700; padding-right: ${mm(s.row * 0.4)}; }
   td { font-weight: 400; word-break: break-word; }
+  td.ref { font-weight: 700; font-family: "Courier New", monospace; }
   .foot { margin-top: auto; padding-top: ${mm(s.row * 0.4)}; font-size: ${mm(s.cap)}; color: #333; }
   .wide .foot { display: none; }
-</style></head><body>${Array.from({ length: copies }, () => one).join('')}
-<script>window.onload = function () { setTimeout(function () { window.print(); }, 150); };</script>
+</style></head><body>${all}
+<script>
+// Shrink the detail text on any label whose rows don't fit, so nothing
+// (like the Reference / Serial) is cut off the bottom.
+function fit() {
+  document.querySelectorAll('.label').forEach(function (l) {
+    var t = l.querySelector('table'); var f = 1;
+    while (l.scrollHeight > l.clientHeight + 1 && f > 0.5) { f -= 0.04; t.style.zoom = f; }
+  });
+}
+window.onload = function () { fit(); setTimeout(function () { window.print(); }, 150); };
+</script>
 </body></html>`;
 }
 
@@ -89,6 +125,15 @@ export default function PrintJobLabel({ job }) {
   const [open, setOpen] = useState(false);
   const [size, setSize] = useState(savedSize);
   const [copies, setCopies] = useState(1);
+  const [items, setItems] = useState([]);
+  const [perItem, setPerItem] = useState(true);
+  const storage = isStorageJob(job);
+
+  // Fetch the job's items fresh when opened, so newly added items are included.
+  function openDialog() {
+    setOpen(true);
+    if (storage) api.get(`/jobs/${job.id}`).then((res) => setItems(res.data.items || [])).catch(() => setItems([]));
+  }
 
   function print() {
     try { localStorage.setItem(SIZE_KEY, size); } catch (e) { /* not saved */ }
@@ -96,16 +141,18 @@ export default function PrintJobLabel({ job }) {
     const w = window.open('', '_blank');
     if (!w) { alert('Please allow pop-ups for this site to print the label.'); return; }
     w.document.open();
-    w.document.write(labelHtml(job, size, n));
+    w.document.write(labelHtml(job, size, n, labelSets(job, items, perItem)));
     w.document.close();
     setOpen(false);
   }
 
-  const rows = labelRows(job);
+  const sets = labelSets(job, items, perItem);
+  const rows = labelRows(job, sets[0]);
+  const total = sets.length * (Math.min(Math.max(parseInt(copies, 10) || 1, 1), 50));
 
   return (
     <>
-      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
+      <button className="btn btn-ghost btn-sm" onClick={openDialog}>
         <Tag size={14} /> Print Label
       </button>
       {open && (
@@ -129,6 +176,21 @@ export default function PrintJobLabel({ job }) {
                 </tbody>
               </table>
             </div>
+            {storage && items.length > 1 && (
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label htmlFor="label-mode">Storage labels</label>
+                <select id="label-mode" value={perItem ? 'each' : 'one'} onChange={(e) => setPerItem(e.target.value === 'each')}>
+                  <option value="each">One label per item ({items.length} labels)</option>
+                  <option value="one">One label listing every Reference / Serial</option>
+                </select>
+                {perItem && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 0' }}>Preview shows the first item's label.</p>}
+              </div>
+            )}
+            {storage && !items.length && (
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+                This is a storage job, but it has no items yet. Add items with a <strong>Reference / Serial</strong> on the job to show them on the label.
+              </p>
+            )}
             {(!job.classifications || !job.data_destruction) && (
               <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
                 Classification and Data Destruction are set with <strong>Edit details</strong>.
@@ -148,7 +210,7 @@ export default function PrintJobLabel({ job }) {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
               <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} style={{ flex: 1 }}>Cancel</button>
-              <button type="button" className="btn btn-accent" onClick={print} style={{ flex: 1 }}><Printer size={14} /> Print</button>
+              <button type="button" className="btn btn-accent" onClick={print} style={{ flex: 1 }}><Printer size={14} /> Print{total > 1 ? ` ${total} labels` : ''}</button>
             </div>
           </div>
         </div>
