@@ -44,8 +44,10 @@ const toAdminUser = (u) => u && ({
   ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0, accessTimecard: u.access_timecard === 1,
   hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null, superAdmin: u.super_admin === 1,
 });
-// 'admin', 'user' (staff) or 'contractor' (ITF Time Card only).
-const roleFrom = (role) => (role === 'admin' ? 'admin' : role === 'contractor' ? 'contractor' : 'user');
+// Groups in Manage Users: 'admin' (ITF Admins), 'staff' (ITF Staff), 'user' (ITF
+// Contractors) and 'contractor' (ITF Casuals — ITF Time Card only). Staff and
+// Contractors work the same way: they get the sections switched on for them.
+const roleFrom = (role) => (role === 'admin' ? 'admin' : role === 'contractor' ? 'contractor' : role === 'staff' ? 'staff' : 'user');
 // Hourly rate (optional) — used for the Time Card's estimated pay. Blank clears it.
 function rateFrom(v) {
   if (v === undefined) return undefined;
