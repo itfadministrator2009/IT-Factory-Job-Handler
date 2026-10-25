@@ -51,7 +51,7 @@ function timesheetHtml(week, { badge, introHtml }) {
     <div style="padding:24px 24px 6px;">
       <span style="display:inline-block;background:${b.bg};color:${b.color};border:1px solid ${b.color};border-radius:20px;padding:4px 12px;font-size:10px;letter-spacing:0.8px;text-transform:uppercase;font-weight:bold;">${esc(b.text)}</span>
       <div style="font-size:13.5px;color:#3d4a45;line-height:1.6;margin-top:14px;">${introHtml}</div>
-      <div style="font-size:13px;color:#16241f;line-height:1.8;margin-top:12px;"><b>Contractor:</b> ${esc(week.fullName)}<br><b>Week ending:</b> ${esc(dmy(week.weekEnding))}</div>
+      <div style="font-size:13px;color:#16241f;line-height:1.8;margin-top:12px;"><b>Casual:</b> ${esc(week.fullName)}<br><b>Week ending:</b> ${esc(dmy(week.weekEnding))}</div>
     </div>
     <div style="padding:14px 24px;">
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
@@ -65,7 +65,7 @@ function timesheetHtml(week, { badge, introHtml }) {
 }
 
 function timesheetText(week, intro) {
-  const lines = [intro, '', `Contractor: ${week.fullName}`, `Week ending: ${dmy(week.weekEnding)}`, ''];
+  const lines = [intro, '', `Casual: ${week.fullName}`, `Week ending: ${dmy(week.weekEnding)}`, ''];
   week.entries.forEach((e) => lines.push(`${e.day} ${dmy(e.date) || ''}  ${e.clientProject || '-'}  ${e.start}-${e.finish}  break ${e.breakMins}m  ${e.hours.toFixed(2)} hrs  ${e.task || ''}`.trim()));
   lines.push('', `Total hours: ${week.total.toFixed(2)}`);
   if (week.expenses.length) {
