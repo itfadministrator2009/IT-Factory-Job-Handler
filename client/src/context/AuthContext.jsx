@@ -91,7 +91,8 @@ export function canUseModule(user, module) {
   // ITF Time Card ('timecard'): admins approve; contractors and ticked Users log time.
   if (module === 'timecard') return user.role === 'admin' || user.role === 'agent' || user.accessTimecard === true;
   if (user.role === 'admin' || user.role === 'agent') return true;
-  if (user.role === 'contractor') return false;
+  // ITF Casuals: only when an admin has switched it on for them.
+  if (user.role === 'contractor') return (module === 'assets' ? user.accessAssets : user.accessStorage) === true;
   return (module === 'assets' ? user.accessAssets : user.accessStorage) !== false;
 }
 
