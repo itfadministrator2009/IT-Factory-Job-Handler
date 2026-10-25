@@ -32,8 +32,8 @@ function Header({ subtitle }) {
         <h1>ITF Time Card</h1>
         <div className="subtitle">{subtitle}</div>
       </div>
-      <button type="button" className="btn btn-ghost" onClick={() => navigate('/settings')} title="Add contractors in Settings → Team members, with the Contractor role">
-        <UserPlus size={15} /> Add a contractor
+      <button type="button" className="btn btn-ghost" onClick={() => navigate('/settings')} title="Add casuals in Settings → Manage Users, with the Casual role">
+        <UserPlus size={15} /> Add a casual
       </button>
     </div>
   );
@@ -92,16 +92,16 @@ function Reminders() {
   if (!data) return null;
   const n = data.contractors.length;
   async function send() {
-    if (!confirm(`Email a reminder to ${n} contractor${n === 1 ? '' : 's'} now?`)) return;
+    if (!confirm(`Email a reminder to ${n} casual${n === 1 ? '' : 's'} now?`)) return;
     setBusy(true); setMsg('');
-    try { const r = await api.post('/timecard/admin/reminders/send'); setMsg(`Reminder sent to ${r.data.sent} contractor${r.data.sent === 1 ? '' : 's'}.`); } catch (e) { setMsg(errText(e)); } finally { setBusy(false); }
+    try { const r = await api.post('/timecard/admin/reminders/send'); setMsg(`Reminder sent to ${r.data.sent} casual${r.data.sent === 1 ? '' : 's'}.`); } catch (e) { setMsg(errText(e)); } finally { setBusy(false); }
   }
   return (
     <div className="panel tc-panel tc-reminders">
       <BellRing size={16} style={{ color: 'var(--teal)', flex: 'none' }} />
       <div style={{ flex: 1, minWidth: 200 }}>
-        {n === 0 ? <span>Every contractor has sent this week's timesheet.</span> : (
-          <span><strong>{n} contractor{n === 1 ? " hasn't" : "s haven't"}</strong> sent this week's timesheet (or {n === 1 ? 'has' : 'have'} a declined week to fix): {data.contractors.map((c) => c.name).join(', ')}.</span>
+        {n === 0 ? <span>Every casual has sent this week's timesheet.</span> : (
+          <span><strong>{n} casual{n === 1 ? " hasn't" : "s haven't"}</strong> sent this week's timesheet (or {n === 1 ? 'has' : 'have'} a declined week to fix): {data.contractors.map((c) => c.name).join(', ')}.</span>
         )}
         <div className="tc-muted" style={{ marginTop: 2 }}>{data.automatic ? 'Reminders go out automatically on Friday afternoons.' : 'Automatic Friday reminders are off.'}{msg && ` ${msg}`}</div>
       </div>
@@ -118,7 +118,7 @@ function Approvals({ state, reload }) {
   useEffect(() => { setSelected((s) => new Set([...s].filter((id) => pending.some((w) => w.id === id)))); }, [pending]);
 
   async function approveSelected() {
-    if (!confirm(`Approve ${selected.size} timesheet${selected.size === 1 ? '' : 's'}? Accounts and each contractor will be emailed.`)) return;
+    if (!confirm(`Approve ${selected.size} timesheet${selected.size === 1 ? '' : 's'}? Accounts and each casual will be emailed.`)) return;
     setBusy(true); setMsg('');
     try {
       const { data } = await api.post('/timecard/admin/approve-bulk', { weekIds: [...selected] });
@@ -152,7 +152,7 @@ function Approvals({ state, reload }) {
         {state.recent.length === 0 ? <p className="tc-empty">No approvals or declines yet.</p> : (
           <div className="tc-table-wrap">
             <table className="tc-table">
-              <thead><tr><th>Contractor</th><th>Week ending</th><th>Status</th><th>By</th><th>On</th><th className="num">Hours</th></tr></thead>
+              <thead><tr><th>Casual</th><th>Week ending</th><th>Status</th><th>By</th><th>On</th><th className="num">Hours</th></tr></thead>
               <tbody>{state.recent.map((w) => (
                 <tr key={w.id}>
                   <td>{w.fullName}</td><td>{dmy(w.weekEnding)}</td>
@@ -400,7 +400,7 @@ function Dashboard({ state }) {
       <div className="tc-tiles">
         {tiles.map(([label, v], i) => <StatTile key={label} label={label} value={Number(hrs(v))} sub="approved hours" accent={i === 0 ? CHART_COLORS.blue : '#16241f'} />)}
         <StatTile label="Awaiting approval" value={state.pending.length} sub="timesheets" accent={CHART_COLORS.orange} />
-        <StatTile label="Contractors" value={state.contractors.length} sub="with a login" accent={CHART_COLORS.aqua} />
+        <StatTile label="Casuals" value={state.contractors.length} sub="with a login" accent={CHART_COLORS.aqua} />
       </div>
       <p className="tc-muted" style={{ margin: '-6px 0 16px' }}>Approved hours are counted by each timesheet's week-ending date. The financial year runs 1 July – 30 June.</p>
 
@@ -478,9 +478,9 @@ function Approved({ state }) {
   return (
     <>
       <div className="panel tc-panel tc-filters">
-        <div className="field"><label htmlFor="ap-user">Contractor</label>
+        <div className="field"><label htmlFor="ap-user">Casual</label>
           <select id="ap-user" value={userId} onChange={(e) => setUserId(e.target.value)}>
-            <option value="">All contractors</option>
+            <option value="">All casuals</option>
             {state.contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select></div>
         <div className="field"><label htmlFor="ap-from">Week ending from</label><input id="ap-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
@@ -514,7 +514,7 @@ function Approved({ state }) {
 }
 
 const SUBTITLES = {
-  approvals: 'Approve or decline the timesheets contractors have sent.',
+  approvals: 'Approve or decline the timesheets casuals have sent.',
   dashboard: 'Approved hours at a glance, by period and by client / project.',
   approved: 'Every approved timesheet — print it or download a CSV for payroll.',
   reports: 'Hours and pay for each person, by period or for your own dates.',
