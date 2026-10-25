@@ -227,6 +227,10 @@ async function doBackup(filenameOverride) {
 
     console.log(`[backup] Uploaded ${[filename, uploadsFilename, storageFilename, timecardFilename].filter(Boolean).join(', ')} to ${BACKUP_USER}'s OneDrive (/${BACKUP_FOLDER})`);
     const result = { ok: true, folder: BACKUP_FOLDER, filename, uploadsFilename, storageFilename, timecardFilename, warnings };
+    // Tidy old nightly backups — only after a nightly backup that fully worked.
+    if (!filenameOverride && !warnings.length) {
+      try { result.pruned = await pruneOldBackups(dateStr); } catch (err) { console.error('[backup] Could not tidy old backups:', err.message); }
+    }
     saveStatus({ ...status, state: 'done', finishedAt: new Date().toISOString(), result });
     if (warnings.length) {
       require('./alerts').sendAlert('backup-partial', 'Backup finished with problems',
@@ -292,6 +296,83 @@ async function downloadBackup(itemId) {
   return Buffer.from(arrayBuffer);
 }
 
+// ---------------------------------------------------------------------------
+// Old backups. Each night adds a new set of files, so without tidying the
+// OneDrive folder grows forever (the photo zip alone is gigabytes). Kept:
+//  - photo zips: every night for 30 days, then the first backup of each month;
+//  - database and spreadsheet files (small): every night for a year, then the
+//    first of each month.
+// Only files with Work Desk's own nightly names are touched — never "Back up
+// now" safety copies (pre-restore-safety-…) or anything else in the folder.
+// Deleted files go to the OneDrive recycle bin.
+// ---------------------------------------------------------------------------
+const BACKUP_KINDS = [
+  ['db', /^helpdesk-backup-(\d{4}-\d{2}-\d{2})\.db$/],
+  ['photos', /^helpdesk-uploads-(\d{4}-\d{2}-\d{2})\.zip$/],
+  ['storage', /^storage-centre-(\d{4}-\d{2}-\d{2})\.zip$/],
+  ['timecard', /^time-card-(\d{4}-\d{2}-\d{2})\.zip$/],
+];
+const KEEP_DAILY_DAYS = { photos: 30, db: 365, storage: 365, timecard: 365 };
+const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+
+// Which backup files to remove, given everything in the folder and today's date (yyyy-mm-dd).
+function planPrune(files, today) {
+  const ours = [];
+  for (const f of files) {
+    for (const [kind, re] of BACKUP_KINDS) {
+      const m = String(f.name || '').match(re);
+      if (m) { ours.push({ ...f, kind, date: m[1] }); break; }
+    }
+  }
+  // The first backup of each month (per kind) is kept for good.
+  const firstOfMonth = new Map();
+  for (const f of ours) {
+    const key = `${f.kind}|${f.date.slice(0, 7)}`;
+    const cur = firstOfMonth.get(key);
+    if (!cur || f.date < cur.date) firstOfMonth.set(key, f);
+  }
+  const monthly = new Set([...firstOfMonth.values()].map((f) => f.id));
+  return ours.filter((f) => !monthly.has(f.id) && daysBetween(f.date, today) > KEEP_DAILY_DAYS[f.kind]);
+}
+
+async function listFolder() {
+  const token = await getAccessToken();
+  const files = [];
+  let url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(BACKUP_USER)}/drive/root:/${BACKUP_FOLDER}:/children?$select=id,name,size&$top=200`;
+  while (url) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Could not list the backup folder (${res.status}): ${await res.text()}`);
+    const data = await res.json();
+    (data.value || []).forEach((f) => files.push({ id: f.id, name: f.name, size: f.size || 0 }));
+    url = data['@odata.nextLink'] || null;
+  }
+  return { token, files };
+}
+
+// Runs after a successful nightly backup. today: the date that backup was named with.
+async function pruneOldBackups(today) {
+  const { token, files } = await listFolder();
+  // Safety: only tidy up once tonight's database backup is definitely there.
+  if (!files.some((f) => f.name === `helpdesk-backup-${today}.db`)) {
+    return { removed: 0, bytes: 0, skipped: "tonight's backup isn't in the folder yet" };
+  }
+  const doomed = planPrune(files, today);
+  let removed = 0; let bytes = 0; const failed = [];
+  for (const f of doomed) {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(BACKUP_USER)}/drive/items/${encodeURIComponent(f.id)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok || res.status === 404) { removed += 1; bytes += f.size; } else failed.push(`${f.name} (${res.status})`);
+  }
+  if (removed) {
+    console.log(`[backup] Removed ${removed} old backup file(s), ${(bytes / 1024 ** 3).toFixed(2)} GB`);
+    try {
+      require('./activity').logActivity('backup.pruned', { details: `Removed ${removed} old backup file${removed === 1 ? '' : 's'} (${(bytes / 1024 ** 3).toFixed(2)} GB) from OneDrive — photos are kept nightly for 30 days and data for a year, then one a month. They're in the OneDrive recycle bin if needed.` });
+    } catch (e) { /* log only */ }
+  }
+  if (failed.length) console.error('[backup] Could not remove some old backups:', failed.join(', '));
+  return { removed, bytes, failed };
+}
+
 // Checks once an hour whether it's the configured local hour in BACKUP_TIMEZONE and
 // today's backup hasn't run yet. Timezone-aware (via Intl, no extra dependency) so
 // "2am" means 2am in Sydney, not 2am UTC, and it stays correct across daylight saving.
@@ -310,4 +391,4 @@ function startBackupScheduler() {
   }, 60 * 60 * 1000);
 }
 
-module.exports = { runBackup, backupStatus, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH, zipDirectoryToFile };
+module.exports = { runBackup, backupStatus, listBackups, downloadBackup, startBackupScheduler, snapshotDatabase, DB_PATH, zipDirectoryToFile, planPrune, pruneOldBackups };

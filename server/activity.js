@@ -26,6 +26,7 @@ const ACTIONS = {
   'backup.started': 'Started a backup',
   'backup.failed': 'Backup failed',
   'backup.restored': 'Restored a full backup',
+  'backup.pruned': 'Tidied old backups',
   'records.restored': 'Restored records',
   'settings.changed': 'Changed security settings',
   'settings.disk_alert': 'Disk space warning sent',
