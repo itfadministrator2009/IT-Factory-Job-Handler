@@ -34,6 +34,12 @@ router.get('/', (req, res) => {
   res.json({ users: activeUsers() });
 });
 
+// Refresh button: how many changes other people have made since this page loaded.
+// GET /api/presence/changes?since=<ms> (no since = just the server's clock).
+router.get('/changes', (req, res) => {
+  res.json(require('../changeTracker').changesSince(req.query.since, req.user.id));
+});
+
 // Admin: log someone out of Work Desk on every device. Their current sign-in
 // stops working at once (the page sends them to the login screen within a
 // minute, or on their next click) and they drop off the online list.
