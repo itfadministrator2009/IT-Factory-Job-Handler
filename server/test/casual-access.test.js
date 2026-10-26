@@ -13,6 +13,9 @@ async function loginAs(email) {
 before(async () => {
   ({ db } = freshDb());
   require('../email').sendMail = async () => {};
+  // No real calendar from tests.
+  const cal = require.cache[require.resolve('../calendar')];
+  cal.exports = { ...cal.exports, createCalendarEvent: async () => null, syncCalendarEvent: async () => null, deleteCalendarEvent: async () => null };
   const app = express();
   app.use(express.json());
   app.use('/api/auth', require('../routes/auth'));
@@ -22,6 +25,7 @@ before(async () => {
   app.use('/api/storage', require('../routes/storage'));
   app.use('/api/projects', require('../routes/projects'));
   app.use('/api/jobs', require('../routes/jobs'));
+  app.use('/api/templates', require('../routes/templates'));
   client = await startTestServer(app);
   server = client.server;
   ana = await registerUser(client, { name: 'Ana Admin', email: 'ana@itf.test' });
@@ -51,9 +55,9 @@ test('switching sections on lets a Casual in to just those, never the rest of Wo
 
   await client.patch(`/api/users/admin/${cas.id}`, { token: ana.token, body: { accessStorage: true } });
   assert.notEqual((await client.get('/api/storage/pallets', { token })).status, 403);
-  const jobs = await client.get('/api/jobs', { token });
-  assert.equal(jobs.status, 403);
-  assert.equal(jobs.data.code, 'contractor_only');
+  const templates = await client.get('/api/templates', { token });
+  assert.equal(templates.status, 403);
+  assert.equal(templates.data.code, 'contractor_only');
 
   // Switched off again: locked out on the next request.
   await client.patch(`/api/users/admin/${cas.id}`, { token: ana.token, body: { accessAssets: false, accessStorage: false } });
@@ -94,4 +98,31 @@ test('Projects "Assign to" lists casuals too, and a casual sees only the entries
   // Still admin-only: creating entries or projects.
   assert.equal((await client.post(`/api/projects/${project.id}/entries`, { token, body: { site_name: 'x' } })).status, 403);
   assert.equal((await client.post('/api/projects', { token, body: { name: 'x', template: HARVEY_NORMAN_TEMPLATE } })).status, 403);
+});
+
+test('a casual can be a job owner, and sees and works only the jobs assigned to them', async () => {
+  let n = 900;
+  const mk = async (subject, owner) => {
+    const id = require('crypto').randomUUID();
+    n += 1;
+    db.prepare("INSERT INTO jobs (id, job_number, contact_name, subject, owner_id, status) VALUES (?, ?, 'HN', ?, ?, 'Open')").run(id, n, subject, owner);
+    return { id };
+  };
+  const mine = await mk('Casual job', cas.id);
+  const other = await mk('Someone else', null);
+  const { token } = await loginAs('cass@itf.test');
+  const list = await client.get('/api/jobs', { token });
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.data.jobs.map((j) => j.subject), ['Casual job']);
+  assert.equal((await client.get(`/api/jobs/${mine.id}`, { token })).status, 200);
+  assert.equal((await client.get(`/api/jobs/${other.id}`, { token })).status, 404);
+  // Can work their own job (status, notes)…
+  assert.equal((await client.patch(`/api/jobs/${mine.id}`, { token, body: { status: 'In Progress' } })).status, 200);
+  assert.equal((await client.post(`/api/jobs/${mine.id}/notes`, { token, body: { body: 'On site' } })).status < 300, true);
+  // …but not touch anyone else's, create, delete or export.
+  assert.equal((await client.patch(`/api/jobs/${other.id}`, { token, body: { status: 'Closed' } })).status, 404);
+  assert.equal((await client.post('/api/jobs', { token, body: { contact_name: 'x', subject: 'x' } })).status, 403);
+  assert.equal((await client.delete(`/api/jobs/${mine.id}`, { token })).status, 403);
+  assert.equal((await client.get('/api/jobs/export.csv', { token })).status, 403);
+  assert.equal((await client.get('/api/users/admin', { token })).status, 403);
 });
