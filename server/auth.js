@@ -11,11 +11,12 @@ function signToken(user) {
 }
 
 // What an ITF Casual (role 'contractor') login can reach: their timesheets, their
-// own account and "online now", the project entries assigned to them (the
-// projects routes only ever show a non-admin their own assigned entries) —
+// own account and "online now", the jobs and project entries assigned to them
+// (those routes only ever show a non-admin their own assigned work, attachments
+// included), and the staff name list for the owner pickers —
 // plus the ITF Asset Tracker and/or ITF Storage Centre when an admin has
 // switched those on for them in Settings.
-const CONTRACTOR_PATHS = /^\/api\/(timecard|auth|presence|projects)(\/|\?|$)/;
+const CONTRACTOR_PATHS = /^\/api\/(timecard|auth|presence|projects|jobs|attachments|users)(\/|\?|$)/;
 const CASUAL_MODULE_PATHS = { access_assets: /^\/api\/assets(\/|\?|$)/, access_storage: /^\/api\/storage(\/|\?|$)/ };
 function casualMayOpen(row, url) {
   if (CONTRACTOR_PATHS.test(url)) return true;
