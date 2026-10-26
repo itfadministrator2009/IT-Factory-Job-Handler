@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Trash2, Pencil, X, Upload, DollarSign, AlertTriangle, Wand2, Download, Printer, QrCode, LogOut as MarkOut, LogIn as MarkIn, Edit3, FileSpreadsheet } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
@@ -124,7 +124,26 @@ export default function StorageManifest() {
   );
   const noteLabels = (it) => Object.fromEntries(GROUP_FIELDS.map(([k, l]) => [`${k}:${String(it[k] ?? '').trim()}`, `${l} ${it[k]}`]));
 
-  async function handleSave(e) {
+  // "Save & add to Receiving / Dispatch": after saving a new item, open a new
+  // Receiving entry filled in from it, to check and save.
+  const navigate = useNavigate();
+  function receivingPrefill(v) {
+    const qty = Math.max(1, Math.round(Number(String(v.quantity ?? '').replace(/[^0-9.]/g, '')) || 1));
+    const describe = [v.item, v.make, v.model].filter(Boolean).join(' ');
+    const notes = [
+      describe,
+      v.serial && `Serial ${v.serial}`,
+      v.assetTag && `Asset tag ${v.assetTag}`,
+      v.referenceNumber && `Ref ${v.referenceNumber}`,
+      v.jobNumber && `Job ${v.jobNumber}`,
+      v.poNumber && `PO ${v.poNumber}`,
+      v.orderNumber && `Order ${v.orderNumber}`,
+      [v.storageCentre, v.location].filter(Boolean).join(' — '),
+    ].filter(Boolean).join(' · ');
+    return { client: v.client || '', dateReceived: v.startDate || sydneyToday(), receiving: notes, qty };
+  }
+
+  async function handleSave(e, toReceiving = false) {
     e.preventDefault();
     setSaving(true);
     setError('');
@@ -134,6 +153,10 @@ export default function StorageManifest() {
     try {
       if (editing) await api.patch(`/storage/items/${editing.id}`, payload);
       else await api.post('/storage/items', payload);
+      if (toReceiving && !editing) {
+        navigate('/storage/receiving', { state: { receivingPrefill: receivingPrefill(formValues) } });
+        return;
+      }
       closeForm();
       loadItems();
     } catch (err) {
@@ -377,9 +400,18 @@ export default function StorageManifest() {
                   {[editing.addedBy && `Added by ${editing.addedBy}`, editing.lastEditedBy && `last edited by ${editing.lastEditedBy}`, editing.startDate && `${weeksStored(editing)} week(s) stored`].filter(Boolean).join(' · ')}
                 </div>
               )}
-              <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 16 }}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+                <button className="btn btn-accent" type="submit" disabled={saving}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                {!editing && (
+                  <button type="button" className="btn btn-ghost" disabled={saving || !String(formValues.client || '').trim()}
+                    title={String(formValues.client || '').trim() ? 'Save this item, then log it as received' : 'Enter the client first'}
+                    onClick={(e) => handleSave(e, true)}>
+                    <MarkIn size={14} /> Save &amp; add to Receiving / Dispatch
+                  </button>
+                )}
+              </div>
               {editing && <NotesPanel keys={itemNoteKeys(editing)} addKey={`item:${editing.id}`} labels={noteLabels(editing)} />}
             </form>
           </div>

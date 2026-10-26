@@ -242,6 +242,7 @@ export default function StorageReceiving() {
   function openAdd(prefill) {
     setFormValues({ ...EMPTY_FORM, client: clientFilter === ALL ? '' : clientFilter, ...(prefill || {}) });
     setError('');
+    setFromItem(false);
     setEditing({});
   }
 
@@ -263,8 +264,20 @@ export default function StorageReceiving() {
   const location = useLocation();
   const navigate = useNavigate();
   const [matchSummary, setMatchSummary] = useState(null);
+  const [fromItem, setFromItem] = useState(false);
   useEffect(() => {
     const st = location.state;
+    // Arriving from the Manifest's "Save & add to Receiving / Dispatch".
+    if (st?.receivingPrefill) {
+      const p = st.receivingPrefill;
+      openAdd({
+        client: p.client, mode: 'receiving', dateReceived: p.dateReceived, receiving: p.receiving,
+        receivedLines: [{ type: 'Individual Item', qty: String(p.qty || 1), rate: DEFAULT_RATE['Individual Item'] }],
+      });
+      setFromItem(true);
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
     if (!st?.dispatchPrefill) return;
     const p = st.dispatchPrefill;
     openAdd({
@@ -303,6 +316,7 @@ export default function StorageReceiving() {
       else await api.post('/storage/receiving-dispatch', payload);
       setEditing(null);
       setMatchSummary(null);
+      setFromItem(false);
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save');
@@ -465,6 +479,11 @@ export default function StorageReceiving() {
             {matchSummary?.orderNumber && !editing.id && (
               <div className="success-banner" style={{ marginBottom: 8, display: 'block', fontSize: 13 }}>
                 Order {matchSummary.orderNumber} marked Delivered{matchSummary.emailedTo ? ` — tracking email sent to ${matchSummary.emailedTo}` : ' (no email sent)'}. Check the dispatch details below and save.
+              </div>
+            )}
+            {fromItem && !editing.id && (
+              <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 13, background: '#e6f2e8' }}>
+                Item saved to the Manifest. This receiving entry is filled in from it. Check the stock type and rate (e.g. change to Pallet), then save.
               </div>
             )}
             {matchSummary && !editing.id && (
