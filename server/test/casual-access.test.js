@@ -2,7 +2,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { freshDb, startTestServer, registerUser } = require('./helpers');
+const { freshDb, startTestServer, registerUser, HARVEY_NORMAN_TEMPLATE } = require('./helpers');
 
 let client, server, db, ana, cas;
 
@@ -21,6 +21,7 @@ before(async () => {
   app.use('/api/assets', require('../routes/assets'));
   app.use('/api/storage', require('../routes/storage'));
   app.use('/api/projects', require('../routes/projects'));
+  app.use('/api/jobs', require('../routes/jobs'));
   client = await startTestServer(app);
   server = client.server;
   ana = await registerUser(client, { name: 'Ana Admin', email: 'ana@itf.test' });
@@ -50,7 +51,7 @@ test('switching sections on lets a Casual in to just those, never the rest of Wo
 
   await client.patch(`/api/users/admin/${cas.id}`, { token: ana.token, body: { accessStorage: true } });
   assert.notEqual((await client.get('/api/storage/pallets', { token })).status, 403);
-  const jobs = await client.get('/api/projects', { token });
+  const jobs = await client.get('/api/jobs', { token });
   assert.equal(jobs.status, 403);
   assert.equal(jobs.data.code, 'contractor_only');
 
@@ -68,4 +69,29 @@ test('moving someone into ITF Casuals turns the extra sections off', async () =>
   assert.equal(moved.data.user.accessStorage, false);
   const row = db.prepare('SELECT access_assets, access_storage FROM users WHERE id = ?').get(r.data.user.id);
   assert.deepEqual([row.access_assets, row.access_storage], [0, 0]);
+});
+
+test('Projects "Assign to" lists casuals too, and a casual sees only the entries assigned to them', async () => {
+  const staff = (await client.post('/api/users/admin', { token: ana.token, body: { name: 'Sam Staff', email: 'sam@itf.test', password: 'password123', role: 'staff' } })).data.user;
+  // Jobs' owner list still leaves casuals out; the Projects list includes everyone.
+  const plain = (await client.get('/api/users', { token: ana.token })).data.users.map((u) => u.name);
+  assert.ok(!plain.includes('Cass Casual'));
+  const all = (await client.get('/api/users?include=casuals', { token: ana.token })).data.users.map((u) => u.name);
+  for (const n of ['Ana Admin', 'Cass Casual', 'Sam Staff']) assert.ok(all.includes(n), n);
+
+  const project = (await client.post('/api/projects', { token: ana.token, body: { name: 'Harvey Norman', template: HARVEY_NORMAN_TEMPLATE } })).data.project;
+  const mine = (await client.post(`/api/projects/${project.id}/entries`, { token: ana.token, body: { site_name: 'HN Auburn', assigned_to: cas.id } })).data.entry;
+  const other = (await client.post(`/api/projects/${project.id}/entries`, { token: ana.token, body: { site_name: 'HN Penrith', assigned_to: staff.id } })).data.entry;
+
+  const { token } = await loginAs('cass@itf.test');
+  const list = await client.get('/api/projects', { token });
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.data.projects.map((p) => p.name), ['Harvey Norman']);
+  const entries = await client.get(`/api/projects/${project.id}/entries`, { token });
+  assert.deepEqual(entries.data.entries.map((e) => e.site_name), ['HN Auburn']);
+  assert.equal((await client.get(`/api/projects/${project.id}/entries/${mine.id}`, { token })).status, 200);
+  assert.equal((await client.get(`/api/projects/${project.id}/entries/${other.id}`, { token })).status, 404);
+  // Still admin-only: creating entries or projects.
+  assert.equal((await client.post(`/api/projects/${project.id}/entries`, { token, body: { site_name: 'x' } })).status, 403);
+  assert.equal((await client.post('/api/projects', { token, body: { name: 'x', template: HARVEY_NORMAN_TEMPLATE } })).status, 403);
 });

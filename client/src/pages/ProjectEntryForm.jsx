@@ -51,7 +51,7 @@ export default function ProjectEntryForm() {
   const [emailSentMsg, setEmailSentMsg] = useState('');
   const saveTimer = useRef(null);
 
-  useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
+  useEffect(() => { if (isAdmin) api.get('/users', { params: { include: 'casuals' } }).then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
 
   useEffect(() => {
     api.get(`/projects/${id}`).then((res) => setProject(res.data.project));

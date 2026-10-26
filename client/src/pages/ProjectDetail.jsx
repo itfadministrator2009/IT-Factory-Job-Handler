@@ -77,7 +77,7 @@ export default function ProjectDetail() {
     }, 300);
     return () => clearTimeout(t);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (isAdmin) api.get('/users').then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
+  useEffect(() => { if (isAdmin) api.get('/users', { params: { include: 'casuals' } }).then((res) => setAllUsers(res.data.users)); }, [isAdmin]);
   useEffect(() => { setSelected(new Set()); }, [entries?.length === 0]);
 
   function goToPage(page) {

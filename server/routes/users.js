@@ -33,8 +33,12 @@ function countAdmins() {
 
 // Everyone can see the basic team list — used to populate the "Ticket Owner" dropdown
 router.get('/', (req, res) => {
-  // Contractors (ITF Time Card only) aren't staff, so they never appear as job or project owners.
-  const users = db.prepare("SELECT id, name, email FROM users WHERE role IS NOT 'contractor' ORDER BY name").all();
+  // ITF Casuals (role 'contractor') aren't job owners, so they're left out —
+  // except for Projects (?include=casuals), where an entry can be assigned to
+  // anyone: admins, staff, contractors and casuals.
+  const users = req.query.include === 'casuals'
+    ? db.prepare('SELECT id, name, email FROM users ORDER BY name COLLATE NOCASE').all()
+    : db.prepare("SELECT id, name, email FROM users WHERE role IS NOT 'contractor' ORDER BY name").all();
   res.json({ users });
 });
 

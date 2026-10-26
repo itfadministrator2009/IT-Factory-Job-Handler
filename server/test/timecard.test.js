@@ -22,6 +22,7 @@ before(async () => {
   app.use('/api/auth', require('../routes/auth'));
   app.use('/api/users', require('../routes/users'));
   app.use('/api/projects', require('../routes/projects'));
+  app.use('/api/jobs', require('../routes/jobs'));
   app.use('/api/timecard', require('../routes/timecard'));
   client = await startTestServer(app);
   server = client.server;
@@ -47,9 +48,13 @@ const flush = () => new Promise((r) => setTimeout(r, 30));
 test('contractor accounts only reach ITF Time Card', async () => {
   assert.equal(con.user.accessAssets, false);
   assert.equal(con.user.accessStorage, false);
+  const jobs = await client.get('/api/jobs', { token: con.token });
+  assert.equal(jobs.status, 403);
+  assert.equal(jobs.data.code, 'contractor_only');
+  // Projects: allowed in, but only to entries assigned to them (none here).
   const projects = await client.get('/api/projects', { token: con.token });
-  assert.equal(projects.status, 403);
-  assert.equal(projects.data.code, 'contractor_only');
+  assert.equal(projects.status, 200);
+  assert.deepEqual(projects.data.projects, []);
   assert.equal((await client.get('/api/users', { token: con.token })).status, 403);
   assert.equal((await client.get('/api/auth/me', { token: con.token })).status, 200);
   assert.equal((await client.get('/api/timecard/admin', { token: con.token })).status, 403);
