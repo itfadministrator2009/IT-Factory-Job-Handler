@@ -54,15 +54,17 @@ export default function Layout({ children }) {
     window.addEventListener('timecard:changed', load);
     return () => window.removeEventListener('timecard:changed', load);
   }, [isAdmin]);
-  // Casuals: show "My Projects" once a project entry has been assigned to them.
-  const [casualHasProjects, setCasualHasProjects] = useState(false);
+  // Casuals: show "My Jobs" / "My Projects" once work has been assigned to them.
+  const [casualWork, setCasualWork] = useState({ jobs: false, projects: false });
   useEffect(() => {
     if (!isContractor) return;
-    api.get('/projects').then((r) => {
-      const has = (r.data.projects || []).length > 0;
-      setCasualHasProjects(has);
-      if (has) setOpen((o) => ({ ...o, desk: true }));
-    }).catch(() => {});
+    Promise.all([
+      api.get('/jobs').then((r) => (r.data.jobs || []).length > 0).catch(() => false),
+      api.get('/projects').then((r) => (r.data.projects || []).length > 0).catch(() => false),
+    ]).then(([jobs, projects]) => {
+      setCasualWork({ jobs, projects });
+      if (jobs || projects) setOpen((o) => ({ ...o, desk: true }));
+    });
   }, [isContractor]);
   useEffect(() => { if (current) setOpen((o) => (o[current] ? o : { ...o, [current]: true })); }, [current]);
   const toggle = (id, value) => setOpen((o) => ({ ...o, [id]: value }));
@@ -88,10 +90,11 @@ export default function Layout({ children }) {
             <NavLink to="/timecard" end className={linkClass}><Clock size={14} /> My Timesheet</NavLink>
           </Section>
           )}
-          {isContractor && (casualHasProjects || current === 'desk') && (
-          <Section id="desk" title="ITF Work Desk" icon={ClipboardCheck} home="/projects"
+          {isContractor && (casualWork.jobs || casualWork.projects || current === 'desk') && (
+          <Section id="desk" title="ITF Work Desk" icon={ClipboardCheck} home={casualWork.jobs || !casualWork.projects ? '/jobs' : '/projects'}
             open={open.desk} current={current === 'desk'} onToggle={toggle}>
-            <NavLink to="/projects" className={linkClass}><FolderKanban size={14} /> My Projects</NavLink>
+            {(casualWork.jobs || location.pathname.startsWith('/jobs')) && <NavLink to="/jobs" className={linkClass}><Briefcase size={14} /> My Jobs</NavLink>}
+            {(casualWork.projects || location.pathname.startsWith('/projects')) && <NavLink to="/projects" className={linkClass}><FolderKanban size={14} /> My Projects</NavLink>}
           </Section>
           )}
 
