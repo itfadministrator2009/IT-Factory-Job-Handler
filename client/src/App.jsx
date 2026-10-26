@@ -41,12 +41,12 @@ import { hasPortalSession } from './portal/portalApi';
 
 // Keeps the page you asked for (e.g. a scanned pallet label) so login can
 // send you back to it.
-function RequireAuth({ children }) {
+function RequireAuth({ children, casualsToo }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
-  // Contractors only use ITF Time Card.
-  if (user.role === 'contractor') return <Navigate to="/timecard" replace />;
+  // Casuals use ITF Time Card — plus Projects, for entries assigned to them.
+  if (user.role === 'contractor' && !casualsToo) return <Navigate to="/timecard" replace />;
   return children;
 }
 
@@ -118,9 +118,9 @@ function AppRoutes() {
       <Route path="/templates" element={<RequireAdmin><Templates /></RequireAdmin>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
 
-      <Route path="/projects" element={<RequireAuth><Projects /></RequireAuth>} />
-      <Route path="/projects/:id" element={<RequireAuth><ProjectDetail /></RequireAuth>} />
-      <Route path="/projects/:id/entries/:entryId" element={<RequireAuth><ProjectEntryForm /></RequireAuth>} />
+      <Route path="/projects" element={<RequireAuth casualsToo><Projects /></RequireAuth>} />
+      <Route path="/projects/:id" element={<RequireAuth casualsToo><ProjectDetail /></RequireAuth>} />
+      <Route path="/projects/:id/entries/:entryId" element={<RequireAuth casualsToo><ProjectEntryForm /></RequireAuth>} />
 
       <Route path="/assets" element={<RequireModule module="assets"><AssetTracker /></RequireModule>} />
       <Route path="/assets/reports" element={<RequireAdmin><AssetReports /></RequireAdmin>} />
