@@ -14,7 +14,7 @@ const CHANNELS = ['Phone', 'Email', 'Web', 'Walk-in', 'Chat'];
 const VEHICLES = [
   'Hino 2013 NSW Truck CT04CR',
   'HINO 2021 NSW Truck FNZ16E',
-  'Hino 2015 VIC Truck 1SD2PS',
+  'Hino 2015 VIC Truck 2FW4IU',
   'LDV 2023 NSW Van DL71BI',
   'Renault 2017 NSW Van DPH73M',
 ];
