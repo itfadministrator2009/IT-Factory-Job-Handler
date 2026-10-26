@@ -54,6 +54,16 @@ export default function Layout({ children }) {
     window.addEventListener('timecard:changed', load);
     return () => window.removeEventListener('timecard:changed', load);
   }, [isAdmin]);
+  // Casuals: show "My Projects" once a project entry has been assigned to them.
+  const [casualHasProjects, setCasualHasProjects] = useState(false);
+  useEffect(() => {
+    if (!isContractor) return;
+    api.get('/projects').then((r) => {
+      const has = (r.data.projects || []).length > 0;
+      setCasualHasProjects(has);
+      if (has) setOpen((o) => ({ ...o, desk: true }));
+    }).catch(() => {});
+  }, [isContractor]);
   useEffect(() => { if (current) setOpen((o) => (o[current] ? o : { ...o, [current]: true })); }, [current]);
   const toggle = (id, value) => setOpen((o) => ({ ...o, [id]: value }));
 
@@ -76,6 +86,12 @@ export default function Layout({ children }) {
           <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard"
             open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
             <NavLink to="/timecard" end className={linkClass}><Clock size={14} /> My Timesheet</NavLink>
+          </Section>
+          )}
+          {isContractor && (casualHasProjects || current === 'desk') && (
+          <Section id="desk" title="ITF Work Desk" icon={ClipboardCheck} home="/projects"
+            open={open.desk} current={current === 'desk'} onToggle={toggle}>
+            <NavLink to="/projects" className={linkClass}><FolderKanban size={14} /> My Projects</NavLink>
           </Section>
           )}
 
