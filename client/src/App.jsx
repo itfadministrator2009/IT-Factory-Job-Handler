@@ -45,7 +45,7 @@ function RequireAuth({ children, casualsToo }) {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
-  // Casuals use ITF Time Card — plus Projects, for entries assigned to them.
+  // Casuals use ITF Time Card — plus Jobs and Projects assigned to them.
   if (user.role === 'contractor' && !casualsToo) return <Navigate to="/timecard" replace />;
   return children;
 }
@@ -109,10 +109,10 @@ function AppRoutes() {
       <Route path="/portal/*" element={<Navigate to="/portal" replace />} />
 
       <Route path="/dashboard" element={<RequireAdmin><Dashboard /></RequireAdmin>} />
-      <Route path="/jobs" element={<RequireAuth><JobList /></RequireAuth>} />
+      <Route path="/jobs" element={<RequireAuth casualsToo><JobList /></RequireAuth>} />
       <Route path="/jobs/new" element={<RequireAdmin><JobForm /></RequireAdmin>} />
-      <Route path="/jobs/:id/edit" element={<RequireAuth><JobForm /></RequireAuth>} />
-      <Route path="/jobs/:id" element={<RequireAuth><JobDetail /></RequireAuth>} />
+      <Route path="/jobs/:id/edit" element={<RequireAuth casualsToo><JobForm /></RequireAuth>} />
+      <Route path="/jobs/:id" element={<RequireAuth casualsToo><JobDetail /></RequireAuth>} />
 
       <Route path="/reports" element={<RequireAdmin><Reports /></RequireAdmin>} />
       <Route path="/templates" element={<RequireAdmin><Templates /></RequireAdmin>} />

@@ -33,9 +33,9 @@ function countAdmins() {
 
 // Everyone can see the basic team list — used to populate the "Ticket Owner" dropdown
 router.get('/', (req, res) => {
-  // ITF Casuals (role 'contractor') aren't job owners, so they're left out —
-  // except for Projects (?include=casuals), where an entry can be assigned to
-  // anyone: admins, staff, contractors and casuals.
+  // ?include=casuals: everyone — admins, staff, contractors and ITF Casuals —
+  // for the Jobs owner and Projects "Assign to" pickers. Without it, casuals
+  // are left out (lists that are only about staff).
   const users = req.query.include === 'casuals'
     ? db.prepare('SELECT id, name, email FROM users ORDER BY name COLLATE NOCASE').all()
     : db.prepare("SELECT id, name, email FROM users WHERE role IS NOT 'contractor' ORDER BY name").all();

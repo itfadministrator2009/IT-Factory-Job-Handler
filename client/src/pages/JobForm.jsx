@@ -72,7 +72,7 @@ export default function JobForm() {
   }, [isEdit]);
 
   useEffect(() => {
-    api.get('/users').then((res) => setUsers(res.data.users));
+    api.get('/users', { params: { include: 'casuals' } }).then((res) => setUsers(res.data.users));
   }, []);
 
   useEffect(() => {

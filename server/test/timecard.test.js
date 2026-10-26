@@ -23,6 +23,7 @@ before(async () => {
   app.use('/api/users', require('../routes/users'));
   app.use('/api/projects', require('../routes/projects'));
   app.use('/api/jobs', require('../routes/jobs'));
+  app.use('/api/templates', require('../routes/templates'));
   app.use('/api/timecard', require('../routes/timecard'));
   client = await startTestServer(app);
   server = client.server;
@@ -48,20 +49,27 @@ const flush = () => new Promise((r) => setTimeout(r, 30));
 test('contractor accounts only reach ITF Time Card', async () => {
   assert.equal(con.user.accessAssets, false);
   assert.equal(con.user.accessStorage, false);
+  // The rest of Work Desk stays closed.
+  const templates = await client.get('/api/templates', { token: con.token });
+  assert.equal(templates.status, 403);
+  assert.equal(templates.data.code, 'contractor_only');
+  // Jobs and Projects: allowed in, but only to work assigned to them (none here).
   const jobs = await client.get('/api/jobs', { token: con.token });
-  assert.equal(jobs.status, 403);
-  assert.equal(jobs.data.code, 'contractor_only');
-  // Projects: allowed in, but only to entries assigned to them (none here).
+  assert.equal(jobs.status, 200);
+  assert.deepEqual(jobs.data.jobs, []);
   const projects = await client.get('/api/projects', { token: con.token });
   assert.equal(projects.status, 200);
   assert.deepEqual(projects.data.projects, []);
-  assert.equal((await client.get('/api/users', { token: con.token })).status, 403);
+  assert.equal((await client.get('/api/users/admin', { token: con.token })).status, 403);
   assert.equal((await client.get('/api/auth/me', { token: con.token })).status, 200);
   assert.equal((await client.get('/api/timecard/admin', { token: con.token })).status, 403);
-  // Staff and admins can't use the contractor side, and contractors aren't offered as job owners.
+  // Staff and admins can't use the contractor side. Casuals are offered as job
+  // and project owners (?include=casuals), but not in the plain staff list.
   assert.equal((await client.get('/api/timecard/my', { token: staff.token })).status, 403);
-  const owners = await client.get('/api/users', { token: staff.token });
-  assert.ok(!owners.data.users.some((u) => u.id === con.id));
+  const plain = await client.get('/api/users', { token: staff.token });
+  assert.ok(!plain.data.users.some((u) => u.id === con.id));
+  const owners = await client.get('/api/users?include=casuals', { token: staff.token });
+  assert.ok(owners.data.users.some((u) => u.id === con.id));
   assert.equal((await client.get('/api/timecard/admin', { token: staff.token })).status, 403);
 });
 
