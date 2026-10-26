@@ -50,7 +50,7 @@ export default function JobDetail() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get('/users').then((res) => setUsers(res.data.users)); }, []);
+  useEffect(() => { api.get('/users', { params: { include: 'casuals' } }).then((res) => setUsers(res.data.users)); }, []);
 
   async function updateField(field, value) {
     const { data } = await api.patch(`/jobs/${id}`, { [field]: value });

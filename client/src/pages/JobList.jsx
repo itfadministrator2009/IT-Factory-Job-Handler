@@ -69,7 +69,7 @@ export default function JobList() {
   }, [status, priority, q, overdueOnly, viewMode, user, unassignedOnly]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get('/users').then((res) => setUsers(res.data.users)); }, []);
+  useEffect(() => { api.get('/users', { params: { include: 'casuals' } }).then((res) => setUsers(res.data.users)); }, []);
   useEffect(() => { setSelected(new Set()); }, [jobs.length === 0]);
 
   function toggleSelect(jobId) {
