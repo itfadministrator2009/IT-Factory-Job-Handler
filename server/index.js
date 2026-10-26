@@ -45,6 +45,8 @@ app.use(express.json({ limit: '15mb' }));
 
 // Alert admins by email when any request fails with a server error.
 app.use(alertOnServerErrors);
+// Note every successful change, for the refresh button's "New changes".
+app.use(require('./changeTracker').trackChanges);
 
 // Uptime checks (e.g. UptimeRobot) call this. It also proves the database answers,
 // so a broken database shows as "down", not just a stopped server.
