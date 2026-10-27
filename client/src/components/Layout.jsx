@@ -6,6 +6,7 @@ import {
   ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2, Menu, X,
 } from 'lucide-react';
 import api from '../api';
+import RefreshButton from './RefreshButton';
 import { useAuth, canUseModule } from '../context/AuthContext';
 import WhoIsOnline from './WhoIsOnline';
 import InstallApp from './InstallApp';
@@ -75,6 +76,7 @@ export default function Layout({ children }) {
         <div className="sidebar-brand">
           <img src="/logo-sidebar-light.png" alt="IT Factory" className="brand-logo" />
           <span>Work Desk</span>
+          <RefreshButton />
           <button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="main-menu"
             aria-label={menuOpen ? 'Close menu' : 'Open menu'} onClick={() => setMenuOpen((o) => !o)}>
             {menuOpen ? <X size={20} /> : <Menu size={20} />}

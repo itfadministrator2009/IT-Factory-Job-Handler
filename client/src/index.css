@@ -72,6 +72,7 @@ input, select, textarea {
 }
 
 .sidebar-brand {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1607,3 +1608,22 @@ mark.search-hit { background: #fdf0c4; color: inherit; padding: 0 1px; border-ra
 .attention-box li:first-child { border-top: none; }
 .attention-box li.danger { color: var(--danger); }
 .attention-foot { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+/* Refresh button (top of the menu; in the phone top bar next to Menu). */
+.refresh-btn {
+  position: absolute; top: -10px; right: -12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.08); color: #eef4f2; border: 1px solid rgba(255,255,255,0.18);
+  border-radius: var(--radius); padding: 6px 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.refresh-btn:hover { background: rgba(255,255,255,0.16); }
+.refresh-btn.has-changes { background: var(--coral); border-color: var(--coral); color: #fff; position: static; margin-top: 2px; }
+.refresh-btn.has-changes svg { animation: refresh-nudge 2.4s ease-in-out infinite; }
+@keyframes refresh-nudge { 0%, 80%, 100% { transform: rotate(0); } 90% { transform: rotate(180deg); } }
+@media (prefers-reduced-motion: reduce) { .refresh-btn.has-changes svg { animation: none; } }
+@media (max-width: 860px) {
+  .refresh-btn, .refresh-btn.has-changes { position: static; margin: 0 0 0 auto; padding: 7px 10px; font-size: 13px; }
+  .refresh-btn + .menu-toggle { margin-left: 0; }
+}
+.refresh-btn { white-space: nowrap; }
+@media (max-width: 480px) { .refresh-btn.has-changes span { display: none; } }
