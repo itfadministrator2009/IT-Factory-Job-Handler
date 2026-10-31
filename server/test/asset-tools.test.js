@@ -169,3 +169,14 @@ test('month update: every asset from a month gets the new Status and Sent to (ad
   assert.equal(f('m1').status, undefined, 'other months are left alone');
   assert.deepEqual(ids(await client.get('/api/assets?month=2025-04&status=Sold&sent_to=Wholesale', { token: admin.token })), ['m2', 'm3']);
 });
+
+test('Asset Location is a drop-down (ITF Sydney / ITF Melbourne) right after Audit Month', async () => {
+  const { fields } = (await client.get('/api/assets/field-defs', { token: staff.token })).data;
+  const keys = fields.map((f) => f.field_key);
+  assert.equal(keys.indexOf('asset_location'), keys.indexOf('audit_month') + 1);
+  const loc = fields.find((f) => f.field_key === 'asset_location');
+  assert.equal(loc.label, 'Asset Location');
+  assert.equal(loc.type, 'dropdown');
+  assert.deepEqual(loc.options, ['ITF Sydney', 'ITF Melbourne']);
+  assert.equal(new Set(fields.map((f) => f.sort_order)).size, fields.length, 'no two fields share a position');
+});
