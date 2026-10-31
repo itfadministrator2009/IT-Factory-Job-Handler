@@ -137,7 +137,6 @@ export default function Layout({ children }) {
             <NavLink to="/storage/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
             <NavLink to="/storage" end className={linkClass}><Table size={14} /> Manifest</NavLink>
             <NavLink to="/storage/pallets" className={linkClass}><Package size={14} /> Pallets</NavLink>
-            <NavLink to="/storage/clients" className={linkClass}><Users size={14} /> Clients</NavLink>
             <NavLink to="/storage/orders" className={linkClass}><ClipboardList size={14} /> Client Orders</NavLink>
             <NavLink to="/storage/receiving" className={linkClass}><Truck size={14} /> Receiving / Dispatch</NavLink>
             <NavLink to="/storage/locations" className={linkClass}><MapPin size={14} /> Locations</NavLink>
@@ -191,6 +190,12 @@ export default function Layout({ children }) {
           )}
           </>}
 
+          {/* Clients (portal logins) — shared by Storage Centre and Asset Tracker. */}
+          {(isAdmin || canUseModule(user, 'storage') || canUseModule(user, 'assets')) && (
+            <NavLink to="/clients" className={({ isActive }) => 'sidebar-link sidebar-settings' + (isActive ? ' active' : '')}>
+              <Users size={16} /> Clients
+            </NavLink>
+          )}
           {isAdmin && (
             <NavLink to="/settings" className={({ isActive }) => 'sidebar-link sidebar-settings' + (isActive ? ' active' : '')}>
               <Settings size={16} /> Settings
