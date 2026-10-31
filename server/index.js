@@ -74,6 +74,8 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/storage', storageRoutes);
+// Clients (portal logins) — shared by Storage Centre and Asset Tracker.
+app.use('/api/clients', require('./routes/clients'));
 // ITF Sales Manager — sales, inventory and Shopify orders (moved from Google Sheets).
 app.use('/api/sales', require('./routes/sales'));
 app.use('/api/checklist', require('./routes/checklist'));
