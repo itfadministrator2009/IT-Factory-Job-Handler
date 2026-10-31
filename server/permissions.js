@@ -29,12 +29,14 @@ function currentRole(userId) {
 // ITF Asset Tracker ('assets') and ITF Storage Centre ('storage') can be switched
 // on or off per user in Settings. Admins always have both. Read fresh from the
 // database so a change applies on the user's very next request.
-const MODULE_COLUMNS = { assets: 'access_assets', storage: 'access_storage' };
-const MODULE_NAMES = { assets: 'the ITF Asset Tracker', storage: 'the ITF Storage Centre' };
+const MODULE_COLUMNS = { assets: 'access_assets', storage: 'access_storage', sales: 'access_sales' };
+const MODULE_NAMES = { assets: 'the ITF Asset Tracker', storage: 'the ITF Storage Centre', sales: 'ITF Sales Manager' };
 function hasModuleAccess(userId, module) {
-  const row = db.prepare('SELECT role, access_assets, access_storage FROM users WHERE id = ?').get(userId);
+  const row = db.prepare('SELECT role, access_assets, access_storage, access_sales FROM users WHERE id = ?').get(userId);
   if (!row) return false;
   if (isAdminRole(row.role)) return true;
+  // ITF Sales Manager (sales figures): only when switched on, for everyone but admins.
+  if (module === 'sales') return row.access_sales === 1;
   // ITF Casuals: off unless an admin has switched it on for them.
   if (row.role === 'contractor') return row[MODULE_COLUMNS[module]] === 1;
   return row[MODULE_COLUMNS[module]] !== 0;
@@ -66,6 +68,7 @@ function publicUser(row) {
     id: row.id, name: row.name, email: row.email, role: row.role,
     accessAssets: allowed(row.access_assets),
     accessStorage: allowed(row.access_storage),
+    accessSales: admin || row.access_sales === 1,
     accessTimecard: logsTime(row),
     superAdmin: row.super_admin === 1,
   };

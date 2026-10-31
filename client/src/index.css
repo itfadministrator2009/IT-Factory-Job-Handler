@@ -1635,3 +1635,97 @@ mark.search-hit { background: #fdf0c4; color: inherit; padding: 0 1px; border-ra
   background: var(--ink); color: #fff; padding: 12px 16px; border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.25); font-size: 14px; max-width: calc(100vw - 32px);
 }
+
+/* ===== ITF Sales Manager ===== */
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.filters select, .filters input:not([type="checkbox"]) { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font: inherit; font-size: 14px; }
+.search-input { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); min-width: 0; }
+.search-input:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(21, 94, 107, 0.12); }
+.filters .search-input input { border: none; padding: 8px 0; flex: 1; min-width: 0; outline: none; background: transparent; color: var(--ink); }
+.search-input select { border: none !important; border-left: 1px solid var(--line) !important; border-radius: 0 !important; padding: 6px 4px 6px 8px !important; background: transparent !important; }
+.inline-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.date-mini { width: 150px; }
+.period-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+
+.sales-table-wrap { overflow: auto; max-height: calc(100vh - 260px); }
+.sales-table-wrap thead th { position: sticky; top: 0; background: #faf9f6; z-index: 1; }
+.sales-table-wrap .ticket-table th, .sales-table-wrap .ticket-table td { padding: 9px 10px; font-size: 13px; }
+.sales-table-wrap .ticket-table th { font-size: 11px; white-space: nowrap; }
+.sales-table td { white-space: nowrap; }
+.ticket-table th.sortable { cursor: pointer; user-select: none; }
+.ticket-table th.sortable:hover { color: var(--ink); }
+.ticket-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ticket-table .nowrap, .nowrap { white-space: nowrap; }
+.ticket-table td.mono, .mono, .mono-input { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.ticket-table tr.muted-row td { color: var(--muted); }
+.neg { color: var(--danger); }
+.pos { color: var(--green); }
+.ticket-table td.neg, .ticket-table td.pos { font-weight: 600; }
+.muted { color: var(--muted); }
+.danger-text { color: var(--danger) !important; }
+
+.plat-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: #eeede8; color: #4a514d; }
+.plat-badge.ebay { background: #fde9df; color: #a8441c; }
+.plat-badge.shopify { background: #e4f2e6; color: #2f6b3d; }
+
+.status-pill { display: inline-block; border: 1px solid transparent; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; background: #eeede8; color: #4a514d; font-family: inherit; cursor: pointer; }
+select.status-pill { padding-right: 4px; }
+.status-pill.s-sold, .status-pill.s-listed { background: #e4f2e6; color: #2f6b3d; }
+.status-pill.s-pending, .status-pill.s-tested { background: #e5eefb; color: #2f539b; }
+.status-pill.s-refunded { background: #fbe6df; color: #a8350f; }
+.status-pill.s-return-to-inventory-on-hand { background: #fdf1d9; color: #8a5d0c; }
+.status-pill.s-not-tested { background: #eeede8; color: #4a514d; }
+
+.linklike { background: none; border: none; padding: 0; color: var(--teal); cursor: pointer; font: inherit; text-align: left; }
+.linklike:hover { text-decoration: underline; }
+.row-menu-btn { background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; color: var(--muted); cursor: pointer; display: inline-flex; }
+.row-menu-btn:hover { border-color: var(--line); background: #fff; color: var(--ink); }
+.row-menu { position: fixed; z-index: 60; min-width: 190px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(22, 36, 31, 0.16); padding: 5px; display: flex; flex-direction: column; }
+.row-menu button { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 8px 10px; border-radius: 7px; font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; text-align: left; }
+.row-menu button:hover { background: #f3f2ee; }
+.row-menu button.hl { color: var(--teal); font-weight: 600; }
+.row-menu button.danger { color: var(--danger); }
+
+.bulk-edit-grid { display: grid; gap: 6px; max-height: 55vh; overflow: auto; }
+.bulk-edit-row { display: grid; grid-template-columns: 200px 1fr; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 8px; }
+.bulk-edit-row.on { background: #e9f3f4; }
+.bulk-edit-row input, .bulk-edit-row select { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: 14px; width: 100%; }
+@media (max-width: 600px) { .bulk-edit-row { grid-template-columns: 1fr; } }
+
+.sales-form { display: grid; gap: 14px; max-width: 1040px; }
+.sales-form .form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 860px) { .sales-form .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .sales-form .form-grid { grid-template-columns: 1fr; } }
+.sales-form-h { font-family: var(--font-display); font-size: 15px; margin: 0 0 12px; }
+.readonly-input { background: #f3f2ee !important; color: var(--muted); }
+.sales-calc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 22px; margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #eef6ef; color: var(--ink); }
+.sales-calc.neg { background: #fbeee9; }
+.sales-calc b { font-size: 18px; margin-left: 4px; }
+.sales-calc.pos b { color: var(--green); }
+.sales-calc.neg b { color: var(--danger); }
+.sales-calc .muted { font-size: 12.5px; flex-basis: 100%; }
+.sales-form-actions { display: flex; flex-wrap: wrap; gap: 10px; position: sticky; bottom: 0; padding: 12px 0; background: var(--paper); }
+
+.sales-dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+@media (max-width: 960px) { .sales-dash-grid { grid-template-columns: 1fr; } }
+.chart-tip { position: absolute; top: 0; transform: translateX(-50%); background: var(--ink); color: #fff; font-size: 12px; line-height: 1.4; padding: 6px 9px; border-radius: 7px; pointer-events: none; white-space: nowrap; }
+.money-bars { display: grid; gap: 9px; }
+.money-bar { display: grid; grid-template-columns: 110px 1fr 92px 46px; align-items: center; gap: 10px; font-size: 13px; }
+.money-bar .lbl { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.money-bar .track { height: 10px; background: #f0efea; border-radius: 4px; overflow: hidden; }
+.money-bar .fill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.money-bar .val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.money-bar .pc { text-align: right; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sales-recent { display: flex; flex-direction: column; }
+.sales-recent-row { display: grid; grid-template-columns: 70px 1fr auto; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #efede7; color: inherit; text-decoration: none; }
+.sales-recent-row:last-child { border-bottom: none; }
+.sales-recent-row:hover { background: #faf9f6; }
+.sales-recent-row .sku { color: var(--muted); }
+.sales-recent-row .mid { display: flex; flex-direction: column; min-width: 0; }
+.sales-recent-row .item { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales-recent-row .meta { font-size: 12px; color: var(--muted); }
+.sales-recent-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+label.btn.disabled { opacity: 0.6; pointer-events: none; }
+a.btn { text-decoration: none; }
+.stat-grid-7 .stat-card .num { font-size: clamp(17px, 1.55vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-grid-7 .stat-card .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

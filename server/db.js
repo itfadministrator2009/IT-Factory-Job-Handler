@@ -431,6 +431,8 @@ addColumnIfMissing('project_entries', 'assigned_to', 'TEXT');
 // Manage Users). Existing users keep access; admins always have both.
 addColumnIfMissing('users', 'access_assets', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'access_storage', 'INTEGER NOT NULL DEFAULT 1');
+// ITF Sales Manager: off for everyone except admins until switched on in Manage Users.
+addColumnIfMissing('users', 'access_sales', 'INTEGER NOT NULL DEFAULT 0');
 // Currency a Storage Centre client is charged in (AUD unless set to USD).
 addColumnIfMissing('storage_clients', 'currency', "TEXT NOT NULL DEFAULT 'AUD'");
 

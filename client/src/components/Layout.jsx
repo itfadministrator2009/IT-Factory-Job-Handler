@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban,
   Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
   ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2, Menu, X,
+  DollarSign, ShoppingBag, Wrench, PieChart,
 } from 'lucide-react';
 import api from '../api';
 import RefreshButton from './RefreshButton';
@@ -15,7 +16,7 @@ import InstallApp from './InstallApp';
 // Storage Centre — each opening to show its own pages, then Settings.
 const DESK_PATHS = ['/dashboard', '/jobs', '/projects', '/reports', '/templates', '/kb'];
 const inDesk = (p) => DESK_PATHS.some((d) => p === d || p.startsWith(`${d}/`));
-const sectionOf = (p) => (p.startsWith('/storage') ? 'storage' : p.startsWith('/assets') ? 'assets' : p.startsWith('/timecard') ? 'timecard' : inDesk(p) ? 'desk' : null);
+const sectionOf = (p) => (p.startsWith('/sales') ? 'sales' : p.startsWith('/storage') ? 'storage' : p.startsWith('/assets') ? 'assets' : p.startsWith('/timecard') ? 'timecard' : inDesk(p) ? 'desk' : null);
 
 const linkClass = ({ isActive }) => `sidebar-link sidebar-sublink${isActive ? ' active' : ''}`;
 
@@ -44,7 +45,7 @@ export default function Layout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // The section you're in is always open; others open/close when clicked.
-  const [open, setOpen] = useState(() => ({ desk: current === 'desk', assets: current === 'assets', storage: current === 'storage', timecard: current === 'timecard' }));
+  const [open, setOpen] = useState(() => ({ desk: current === 'desk', assets: current === 'assets', storage: current === 'storage', sales: current === 'sales', timecard: current === 'timecard' }));
 
   // Admins: how many timesheets are waiting on approval (shown in the menu).
   const [tcPending, setTcPending] = useState(0);
@@ -55,6 +56,13 @@ export default function Layout({ children }) {
     window.addEventListener('timecard:changed', load);
     return () => window.removeEventListener('timecard:changed', load);
   }, [isAdmin]);
+  // Sales Manager: Shopify order lines waiting for review (shown in the menu).
+  const canSales = canUseModule(user, 'sales');
+  const [salesPending, setSalesPending] = useState(0);
+  useEffect(() => {
+    if (!canSales) return;
+    api.get('/sales/shopify/pending').then((r) => setSalesPending(r.data.orders.length)).catch(() => {});
+  }, [canSales, location.pathname]);
   // Casuals: show "My Jobs" / "My Projects" once work has been assigned to them.
   const [casualWork, setCasualWork] = useState({ jobs: false, projects: false });
   useEffect(() => {
@@ -136,6 +144,21 @@ export default function Layout({ children }) {
             <NavLink to="/storage/labels" className={linkClass}><QrCode size={14} /> Pallet Labels</NavLink>
             <NavLink to="/storage/calculator" className={linkClass}><Calculator size={14} /> Calculator</NavLink>
             {isAdmin && <NavLink to="/storage/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
+          </Section>
+          )}
+
+          {canSales && (
+          <Section id="sales" title="ITF Sales Manager" icon={DollarSign} home="/sales"
+            open={open.sales} current={current === 'sales'} onToggle={toggle}>
+            <NavLink to="/sales" end className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
+            <NavLink to="/sales/add" className={linkClass}><PlusCircle size={14} /> Add a Sale</NavLink>
+            <NavLink to="/sales/all" className={() => linkClass({ isActive: location.pathname === '/sales/all' || location.pathname.startsWith('/sales/edit') })}><Table size={14} /> All Sales</NavLink>
+            <NavLink to="/sales/inventory" className={linkClass}><Package size={14} /> Inventory on Hand</NavLink>
+            <NavLink to="/sales/shopify" className={linkClass}><ShoppingBag size={14} /> Shopify Orders{salesPending > 0 && <span className="tc-navcount">{salesPending}</span>}</NavLink>
+            <NavLink to="/sales/products" className={linkClass}><PieChart size={14} /> Sales by Product</NavLink>
+            <NavLink to="/sales/models" className={linkClass}><Layers size={14} /> Inventory by Model</NavLink>
+            <NavLink to="/sales/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>
+            <NavLink to="/sales/tools" className={linkClass}><Wrench size={14} /> Tools</NavLink>
           </Section>
           )}
 

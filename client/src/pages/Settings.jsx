@@ -85,6 +85,7 @@ function ManageUsersTab({ currentUser }) {
   const [role, setRole] = useState('user');
   const [newAccessAssets, setNewAccessAssets] = useState(true);
   const [newAccessStorage, setNewAccessStorage] = useState(true);
+  const [newAccessSales, setNewAccessSales] = useState(false);
   const [newRate, setNewRate] = useState('');
   const [newAccessTimecard, setNewAccessTimecard] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -120,8 +121,8 @@ function ManageUsersTab({ currentUser }) {
     setError('');
     try {
       const logsTime = role === 'contractor' || (staffLike(role) && newAccessTimecard);
-      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, accessTimecard: staffLike(role) && newAccessTimecard, hourlyRate: logsTime ? newRate : undefined });
-      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewAccessTimecard(false); setNewRate('');
+      await api.post('/users/admin', { name, email, password, role, accessAssets: newAccessAssets, accessStorage: newAccessStorage, accessSales: newAccessSales, accessTimecard: staffLike(role) && newAccessTimecard, hourlyRate: logsTime ? newRate : undefined });
+      setName(''); setEmail(''); setPassword(''); setRole('user'); setNewAccessAssets(true); setNewAccessStorage(true); setNewAccessSales(false); setNewAccessTimecard(false); setNewRate('');
       setShowForm(false);
       setNotice(`${name} has been added.`);
       load();
@@ -270,8 +271,8 @@ function ManageUsersTab({ currentUser }) {
     } else {
       if (admin) return <span className="mu-fixed on" title="Admins always have access">Full</span>;
     }
-    // Casuals: off unless switched on here.
-    const on = field === 'accessTimecard' ? !!u.accessTimecard : contractor ? u[field] === true : u[field] !== false;
+    // Casuals: off unless switched on here. Sales Manager: off for everyone unless switched on.
+    const on = field === 'accessTimecard' || field === 'accessSales' ? !!u[field] : contractor ? u[field] === true : u[field] !== false;
     return (
       <button type="button" role="switch" aria-checked={on} className={'mu-switch' + (on ? ' on' : '')}
         aria-label={`${label} access for ${u.name}`} title={on ? `Turn off ${label}` : `Turn on ${label}`}
@@ -338,6 +339,7 @@ function ManageUsersTab({ currentUser }) {
                 <th>Group</th>
                 <th className="c">Asset Tracker</th>
                 <th className="c">Storage Centre</th>
+                <th className="c">Sales Manager</th>
                 <th className="c">Time Card</th>
                 <th className="r"><span className="sr-only">Actions</span></th>
               </tr>
@@ -370,6 +372,7 @@ function ManageUsersTab({ currentUser }) {
                     </td>
                     <td className="c">{accessCell(u, 'accessAssets', 'ITF Asset Tracker')}</td>
                     <td className="c">{accessCell(u, 'accessStorage', 'ITF Storage Centre')}</td>
+                    <td className="c">{accessCell(u, 'accessSales', 'ITF Sales Manager')}</td>
                     <td className="c">{accessCell(u, 'accessTimecard', 'ITF Time Card')}</td>
                     <td className="r">
                       <div className="mu-actions">
@@ -385,7 +388,7 @@ function ManageUsersTab({ currentUser }) {
                 );
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={7} className="mu-empty">No one matches{query ? ` “${query}”` : ''}{roleFilter !== 'all' ? ` in ${FILTERS.find((f) => f[0] === roleFilter)[1]}` : ''}.</td></tr>
+                <tr><td colSpan={8} className="mu-empty">No one matches{query ? ` “${query}”` : ''}{roleFilter !== 'all' ? ` in ${FILTERS.find((f) => f[0] === roleFilter)[1]}` : ''}.</td></tr>
               )}
             </tbody>
           </table>
@@ -393,7 +396,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p className="mu-foot">
-        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> always log hours in ITF Time Card, and can be given the Asset Tracker and Storage Centre too. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
+        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> always log hours in ITF Time Card, and can be given the Asset Tracker and Storage Centre too. <strong>ITF Sales Manager</strong> is off for everyone except admins until it is switched on here. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
       </p>
 
       {showForm && (
@@ -459,6 +462,9 @@ function ManageUsersTab({ currentUser }) {
                 </label>
                 <label className="mu-check">
                   <input type="checkbox" checked={newAccessStorage} onChange={(e) => setNewAccessStorage(e.target.checked)} /> ITF Storage Centre
+                </label>
+                <label className="mu-check">
+                  <input type="checkbox" checked={newAccessSales} onChange={(e) => setNewAccessSales(e.target.checked)} /> ITF Sales Manager
                 </label>
                 {role === 'contractor' ? (
                   <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Casuals always have ITF Time Card.</p>
