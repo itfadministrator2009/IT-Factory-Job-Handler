@@ -24,7 +24,9 @@ const FILTERS = [
   { param: 'sent_to', label: 'Sent to' },
   { param: 'customer', label: 'Customer' },
 ];
-const FILTER_PARAMS = ['category', 'status', 'sent_to', 'customer', 'dupes', 'batch'];
+const FILTER_PARAMS = ['month', 'category', 'status', 'sent_to', 'customer', 'dupes', 'batch'];
+// month=YYYY-MM: assets created in that month (Sydney time).
+const monthLabel = (v) => { const [y, m] = String(v).split('-').map(Number); return y && m ? new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }) : v; };
 const NONE = '__none__';
 // Fields that can be filled in by scanning a barcode.
 const SCAN_KEYS = ['serial_number', 'asset_tag', 'client_asset_tag'];
@@ -475,6 +477,14 @@ export default function AssetTracker() {
 
       <div className="filter-bar">
         <span className="filter-bar-title"><Filter size={14} /> Filter</span>
+        <label className={`filter-field${filters.month ? ' active' : ''}`}>
+          <span className="filter-field-label">Month</span>
+          <select aria-label="Month" value={filters.month} onChange={(e) => setFilter('month', e.target.value)}>
+            <option value="">All</option>
+            {(filterOptions?.month || []).map((o) => <option key={o.value} value={o.value}>{monthLabel(o.value)} ({o.count})</option>)}
+            {filters.month && !(filterOptions?.month || []).some((o) => o.value === filters.month) && <option value={filters.month}>{monthLabel(filters.month)}</option>}
+          </select>
+        </label>
         {FILTERS.map(({ param, label }) => {
           const opts = param === 'customer'
             ? (filterOptions?.customer || []).map((c) => ({ value: c.value, text: `${c.value} (${c.count})` }))

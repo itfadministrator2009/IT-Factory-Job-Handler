@@ -141,3 +141,19 @@ test('allocation batches: create from assets, add/remove, packing list, and filt
   assert.ok(db.prepare("SELECT 1 FROM assets WHERE id = 'a2'").get(), 'deleting a batch leaves the assets alone');
   assert.equal(db.prepare('SELECT COUNT(*) c FROM asset_batch_items').get().c, 0);
 });
+
+test('month filter: assets created in a Sydney month, with month options and counts', async () => {
+  const addAt = (id, at) => db.prepare('INSERT INTO assets (id, fields_json, created_at) VALUES (?, ?, ?)').run(id, JSON.stringify({ asset_tag: id }), at);
+  addAt('m1', '2025-03-31 12:59:59'); // 31 Mar 11:59pm Sydney (daylight saving, +11)
+  addAt('m2', '2025-03-31 13:00:00'); // 1 Apr 12:00am Sydney
+  addAt('m3', '2025-04-15 02:00:00'); // 15 Apr Sydney
+  addAt('m4', '2025-06-30 14:00:00'); // 1 Jul 12:00am Sydney (standard time, +10)
+  assert.deepEqual(ids(await client.get('/api/assets?month=2025-03', { token: staff.token })), ['m1']);
+  assert.deepEqual(ids(await client.get('/api/assets?month=2025-04', { token: staff.token })), ['m2', 'm3']);
+  assert.deepEqual(ids(await client.get('/api/assets?month=2025-07', { token: staff.token })), ['m4']);
+  assert.deepEqual((await client.get('/api/assets/all-ids?month=2025-04', { token: staff.token })).data.ids.sort(), ['m2', 'm3']);
+  const opts = (await client.get('/api/assets/filter-options', { token: staff.token })).data.month;
+  assert.deepEqual(opts.filter((o) => o.value.startsWith('2025')), [{ value: '2025-07', count: 1 }, { value: '2025-04', count: 2 }, { value: '2025-03', count: 1 }]);
+  assert.ok(opts.every((o, i) => i === 0 || opts[i - 1].value > o.value), 'newest month first');
+  assert.ok((await client.get('/api/assets?month=nonsense', { token: staff.token })).data.assets.length > 4, 'a bad month is ignored');
+});

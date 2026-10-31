@@ -57,6 +57,40 @@ const SERIAL = "upper(trim(COALESCE(json_extract(fields_json, '$.serial_number')
 const FILTER_KEYS = { category: 'category', status: 'status', sent_to: 'asset_sent_to', customer: 'customer' };
 const NONE = '__none__'; // "Unspecified" — the field is blank
 
+// Months are Sydney months. created_at is stored in UTC, so a month becomes the
+// UTC range from Sydney midnight on the 1st to Sydney midnight on the 1st of the
+// next month (daylight saving handled by Intl).
+const SYD_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Australia/Sydney', hour12: false,
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+const pad2 = (n) => String(n).padStart(2, '0');
+function sydneyParts(ms) {
+  const p = SYD_PARTS.formatToParts(new Date(ms));
+  const get = (t) => parseInt(p.find((x) => x.type === t).value, 10);
+  return { y: get('year'), mo: get('month'), d: get('day'), h: get('hour') === 24 ? 0 : get('hour'), mi: get('minute'), s: get('second') };
+}
+function sydneyMidnightUtc(y, mo) {
+  const wanted = Date.UTC(y, mo - 1, 1);
+  const shown = sydneyParts(wanted);
+  const ms = wanted + (wanted - Date.UTC(shown.y, shown.mo - 1, shown.d, shown.h, shown.mi, shown.s));
+  return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+}
+function monthRange(month) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(month || ''));
+  if (!m) return null;
+  const y = +m[1]; const mo = +m[2];
+  if (mo < 1 || mo > 12) return null;
+  return [sydneyMidnightUtc(y, mo), mo === 12 ? sydneyMidnightUtc(y + 1, 1) : sydneyMidnightUtc(y, mo + 1)];
+}
+// UTC "YYYY-MM-DD HH" → Sydney "YYYY-MM".
+function sydneyMonthOfHour(hour) {
+  const ms = Date.parse(`${hour.replace(' ', 'T')}:00:00Z`);
+  if (Number.isNaN(ms)) return null;
+  const p = sydneyParts(ms);
+  return `${p.y}-${pad2(p.mo)}`;
+}
+
 // WHERE clause for the asset list, select-all, export and batches: free-text q,
 // exact field filters, duplicate serials only, and in-batch (admins only —
 // batches are an admin tool, so the batch filter is ignored for everyone else).
@@ -73,6 +107,8 @@ function buildWhere(query = {}, admin = false) {
   if (query.dupes === '1' || query.dupes === 'true') {
     parts.push(`${SERIAL} != '' AND ${SERIAL} IN (SELECT ${SERIAL} FROM assets GROUP BY ${SERIAL} HAVING COUNT(*) > 1)`);
   }
+  const range = monthRange(query.month);
+  if (range) { parts.push('created_at >= ? AND created_at < ?'); params.push(range[0], range[1]); }
   if (query.batch && admin) { parts.push('id IN (SELECT asset_id FROM asset_batch_items WHERE batch_id = ?)'); params.push(String(query.batch)); }
   return { where: parts.length ? `WHERE ${parts.join(' AND ')}` : '', params };
 }
@@ -267,7 +303,14 @@ router.get('/filter-options', (req, res) => {
   const customers = [...canonicalCustomers().values()].filter((g) => g.key)
     .map((g) => ({ value: g.best, count: g.total }))
     .sort((a, b) => a.value.localeCompare(b.value, undefined, { sensitivity: 'base', numeric: true }));
-  res.json({ category: optionList('category'), status: optionList('status'), sent_to: optionList('asset_sent_to'), customer: customers });
+  // Months that have assets (by date created, Sydney time), newest first, with counts.
+  const months = new Map();
+  db.prepare("SELECT substr(created_at, 1, 13) as hour, COUNT(*) as c FROM assets GROUP BY hour").all().forEach((r) => {
+    const m = sydneyMonthOfHour(r.hour);
+    if (m) months.set(m, (months.get(m) || 0) + r.c);
+  });
+  const month = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([value, count]) => ({ value, count }));
+  res.json({ category: optionList('category'), status: optionList('status'), sent_to: optionList('asset_sent_to'), customer: customers, month });
 });
 
 // ---------------------------------------------------------------------------
