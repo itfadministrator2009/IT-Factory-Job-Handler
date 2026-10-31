@@ -58,8 +58,9 @@ const FILTER_KEYS = { category: 'category', status: 'status', sent_to: 'asset_se
 const NONE = '__none__'; // "Unspecified" — the field is blank
 
 // WHERE clause for the asset list, select-all, export and batches: free-text q,
-// exact field filters, duplicate serials only, and in-batch.
-function buildWhere(query = {}) {
+// exact field filters, duplicate serials only, and in-batch (admins only —
+// batches are an admin tool, so the batch filter is ignored for everyone else).
+function buildWhere(query = {}, admin = false) {
   const parts = []; const params = [];
   const q = String(query.q || '').trim();
   if (q) { parts.push('fields_json LIKE ?'); params.push(`%${q}%`); }
@@ -72,7 +73,7 @@ function buildWhere(query = {}) {
   if (query.dupes === '1' || query.dupes === 'true') {
     parts.push(`${SERIAL} != '' AND ${SERIAL} IN (SELECT ${SERIAL} FROM assets GROUP BY ${SERIAL} HAVING COUNT(*) > 1)`);
   }
-  if (query.batch) { parts.push('id IN (SELECT asset_id FROM asset_batch_items WHERE batch_id = ?)'); params.push(String(query.batch)); }
+  if (query.batch && admin) { parts.push('id IN (SELECT asset_id FROM asset_batch_items WHERE batch_id = ?)'); params.push(String(query.batch)); }
   return { where: parts.length ? `WHERE ${parts.join(' AND ')}` : '', params };
 }
 
@@ -170,7 +171,7 @@ router.get('/', (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 50));
   const offset = (page - 1) * limit;
-  const { where, params: whereParams } = buildWhere(req.query);
+  const { where, params: whereParams } = buildWhere(req.query, isAdmin(req.user.id));
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM assets ${where}`).get(...whereParams).c;
   const rows = db.prepare(`SELECT * FROM assets ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...whereParams, limit, offset);
@@ -181,7 +182,7 @@ router.get('/', (req, res) => {
 // every id across every page for bulk actions, without pulling full records for
 // however many hundreds of assets that might be.
 router.get('/all-ids', (req, res) => {
-  const { where, params: whereParams } = buildWhere(req.query);
+  const { where, params: whereParams } = buildWhere(req.query, isAdmin(req.user.id));
   const rows = db.prepare(`SELECT id FROM assets ${where} ORDER BY created_at DESC`).all(...whereParams);
   res.json({ ids: rows.map((r) => r.id) });
 });
@@ -303,9 +304,11 @@ function batchItems(batchId) {
     return { itemId: it.id, assetId: it.asset_id, deleted: !live, addedAt: it.added_at, fields: live ? JSON.parse(live.fields_json || '{}') : JSON.parse(it.snapshot_json || '{}') };
   });
 }
-const adminOnly = (req, res) => { if (isAdmin(req.user.id)) return false; res.status(403).json({ error: 'Only admins can change batches' }); return true; };
+// Batches are admin-only: seeing them as well as changing them.
+const adminOnly = (req, res) => { if (isAdmin(req.user.id)) return false; res.status(403).json({ error: 'Only admins can use batches' }); return true; };
 
 router.get('/batches', (req, res) => {
+  if (adminOnly(req, res)) return;
   res.json({ batches: db.prepare('SELECT * FROM asset_batches ORDER BY created_at DESC').all().map(batchSummary) });
 });
 
@@ -322,6 +325,7 @@ router.post('/batches', (req, res) => {
 });
 
 router.get('/batches/:batchId', (req, res) => {
+  if (adminOnly(req, res)) return;
   const b = db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(req.params.batchId);
   if (!b) return res.status(404).json({ error: 'Batch not found' });
   res.json({ batch: batchSummary(b), items: batchItems(b.id) });
@@ -367,6 +371,7 @@ router.delete('/batches/:batchId', (req, res) => {
 });
 
 router.get('/batches/:batchId/pdf', async (req, res) => {
+  if (adminOnly(req, res)) return;
   const b = db.prepare('SELECT * FROM asset_batches WHERE id = ?').get(req.params.batchId);
   if (!b) return res.status(404).json({ error: 'Batch not found' });
   try {
@@ -457,7 +462,7 @@ router.get('/email-defaults', (req, res) => {
 });
 
 router.get('/export', (req, res) => {
-  const { where, params: whereParams } = buildWhere(req.query);
+  const { where, params: whereParams } = buildWhere(req.query, isAdmin(req.user.id));
   const rows = db.prepare(`SELECT * FROM assets ${where} ORDER BY created_at DESC`).all(...whereParams).map(withParsedFields);
   const defs = getFieldDefs();
   const csv = buildCsv(rows, defs);
