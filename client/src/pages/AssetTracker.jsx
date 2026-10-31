@@ -463,7 +463,7 @@ export default function AssetTracker() {
           <button type="submit" className="btn btn-ghost btn-sm"><Search size={14} /> Search</button>
         </form>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSerialError(''); setShowSerialModal(true); }}><ListChecks size={14} /> Bulk serial search</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={handleExport}><Download size={14} /> Export</button>
+        {isAdmin && <button type="button" className="btn btn-ghost btn-sm" onClick={handleExport}><Download size={14} /> Export</button>}
         {isAdmin && (
           <>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => importInputRef.current?.click()}><Upload size={14} /> Import</button>
