@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Printer } from 'lucide-react';
 import Layout from '../components/Layout';
 import useSalesData from '../sales/useSalesData';
+import useFitHeight from '../sales/useFitHeight';
 import { fmt, fmtInt, pct, num, str, printTable, auDate, toISODate } from '../sales/calc';
 
 // "Sales By Product" (mode 'products') and "Inventory by Model" (mode 'models'):
@@ -14,6 +15,7 @@ export default function SalesGrouped({ mode }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState({ col: 'count', dir: 'desc' });
   const list = isProducts ? sales : inventory;
+  const fitRef = useFitHeight();
 
   const groups = useMemo(() => {
     const g = {};
@@ -61,7 +63,7 @@ export default function SalesGrouped({ mode }) {
         {q && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQ('')}>Clear filter</button>}
       </div>
       {loading ? <div className="panel panel-pad">Loading…</div> : (
-        <div className="panel sales-table-wrap">
+        <div className="panel sales-table-wrap" ref={fitRef}>
           <table className="ticket-table">
             <thead><tr>
               {th('itemtype', 'Item')}{th('product', isProducts ? 'Product' : 'Model')}{th('count', isProducts ? 'Sold' : 'On hand', true)}

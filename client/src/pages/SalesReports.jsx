@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search, Printer, Download } from 'lucide-react';
 import Layout from '../components/Layout';
 import useSalesData from '../sales/useSalesData';
+import useFitHeight from '../sales/useFitHeight';
 import {
   fmt, fmtInt, pct, auDate, periodRange, weeksIn, last52Weeks, matches, sortItems, num, exportSales, downloadCSV, printTable,
 } from '../sales/calc';
@@ -20,6 +21,7 @@ export default function SalesReports() {
   const [custom, setCustom] = useState({ start: '', end: '' });
   const [q, setQ] = useState('');
   const [sort, setSort] = useState({ col: 'selldate', dir: 'desc' });
+  const fitRef = useFitHeight();
 
   const range = useMemo(() => (period === 'weekly52' ? null : periodRange(period, custom)), [period, custom]);
   const list = useMemo(() => (sales || []).filter((e) => inRange(e, range)), [sales, range]);
@@ -104,7 +106,8 @@ export default function SalesReports() {
             </div>
           )}
           {weekly && (
-            <div className="panel sales-table-wrap" style={{ marginBottom: 16 }}>
+            <div className="panel sales-table-wrap" ref={period === 'weekly52' ? fitRef : undefined}
+              style={period === 'weekly52' ? undefined : { marginBottom: 16, maxHeight: 340 }}>
               <table className="ticket-table">
                 <thead><tr>{weekCols.map((c) => <th key={c.label} className={c.num ? 'num' : ''}>{c.label}</th>)}</tr></thead>
                 <tbody>
@@ -125,7 +128,7 @@ export default function SalesReports() {
                 <div className="search-input" style={{ flex: '1 1 260px' }}><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search sales in this period…" /></div>
                 <span className="muted">{fmtInt(shown.length)} sale{shown.length === 1 ? '' : 's'}</span>
               </div>
-              <div className="panel sales-table-wrap">
+              <div className="panel sales-table-wrap" ref={fitRef}>
                 <table className="ticket-table">
                   <thead><tr>
                     {th('selldate', 'Sell date')}{th('sku', 'SKU')}{th('itemtype', 'Item')}{th('model', 'Make / model')}{th('platform', 'Platform')}
