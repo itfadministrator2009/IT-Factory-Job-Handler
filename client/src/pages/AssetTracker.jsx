@@ -95,6 +95,33 @@ export default function AssetTracker() {
   const [batchForm, setBatchForm] = useState({ mode: 'new', name: '', notes: '', batchId: '' });
   const [batchError, setBatchError] = useState('');
   const [batchMsg, setBatchMsg] = useState(null);
+  // Month update (admins): with a Month picked, set Status and/or Sent to on
+  // every asset matching the current filters in one go.
+  const [monthStatus, setMonthStatus] = useState('');
+  const [monthSentTo, setMonthSentTo] = useState('');
+  const [monthBusy, setMonthBusy] = useState(false);
+  const [monthMsg, setMonthMsg] = useState(null);
+  async function applyMonthUpdate() {
+    const updates = {};
+    if (monthStatus) updates.status = monthStatus;
+    if (monthSentTo) updates.asset_sent_to = monthSentTo;
+    if (!Object.keys(updates).length) return;
+    const what = [monthStatus && `Status to "${monthStatus}"`, monthSentTo && `Sent to to "${monthSentTo}"`].filter(Boolean).join(' and ');
+    const others = Object.keys(activeFilters).filter((k) => k !== 'month').length || query.trim();
+    if (!confirm(`Set ${what} on all ${total} ${total === 1 ? 'asset' : 'assets'} from ${monthLabel(filters.month)}${others ? ' that match your other filters' : ''}?`)) return;
+    setMonthBusy(true); setMonthMsg(null);
+    try {
+      const { data: { ids } } = await api.get('/assets/all-ids', { params: { q: query, ...activeFilters } });
+      const { data } = ids.length ? await api.patch('/assets/bulk-edit', { ids, updates }) : { data: { updated: 0 } };
+      setMonthMsg({ ok: true, text: `Updated ${data.updated} ${data.updated === 1 ? 'asset' : 'assets'} from ${monthLabel(filters.month)}: ${what}.` });
+      setMonthStatus(''); setMonthSentTo('');
+      refreshList(); loadFilterOptions();
+    } catch (err) {
+      setMonthMsg({ ok: false, text: err.response?.data?.error || 'Could not update the assets' });
+    } finally {
+      setMonthBusy(false);
+    }
+  }
 
   function loadFieldDefs() {
     api.get('/assets/field-defs').then((res) => setFieldDefs(res.data.fields));
@@ -517,6 +544,33 @@ export default function AssetTracker() {
           <button type="button" className="filter-clear" onClick={clearFilters}><X size={13} /> Clear filters</button>
         )}
       </div>
+
+      {isAdmin && filters.month && !serialResult && (
+        <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+          <strong>Update all {total} {total === 1 ? 'asset' : 'assets'} from {monthLabel(filters.month)}:</strong>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Status
+            <select value={monthStatus} onChange={(e) => setMonthStatus(e.target.value)} disabled={monthBusy}>
+              <option value="">Leave as is</option>
+              {(filterOptions?.status || []).map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Sent to
+            <select value={monthSentTo} onChange={(e) => setMonthSentTo(e.target.value)} disabled={monthBusy}>
+              <option value="">Leave as is</option>
+              {(filterOptions?.sent_to || []).map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <button type="button" className="btn btn-primary btn-sm" onClick={applyMonthUpdate} disabled={monthBusy || !total || (!monthStatus && !monthSentTo)}>
+            {monthBusy ? 'Updating…' : `Apply to all ${total}`}
+          </button>
+        </div>
+      )}
+      {monthMsg && (
+        <div className={monthMsg.ok ? 'success-banner' : 'error-banner'} style={{ marginBottom: 16 }}>
+          <span>{monthMsg.text}</span>
+          <button type="button" onClick={() => setMonthMsg(null)}><X size={15} /></button>
+        </div>
+      )}
 
       {batchMsg && (
         <div className="success-banner" style={{ marginBottom: 16 }}>

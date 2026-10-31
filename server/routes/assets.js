@@ -449,7 +449,8 @@ router.patch('/bulk-edit', (req, res) => {
   }
   const defs = getFieldDefs();
   let updated = 0;
-  ids.forEach((id) => {
+  // One transaction, so a whole month of assets updates quickly and all-or-nothing.
+  db.transaction(() => ids.forEach((id) => {
     const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
     if (!asset) return;
     const oldFields = JSON.parse(asset.fields_json || '{}');
@@ -462,7 +463,7 @@ router.patch('/bulk-edit', (req, res) => {
     const merged = { ...oldFields, ...updates };
     db.prepare("UPDATE assets SET fields_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(merged), id);
     updated++;
-  });
+  }))();
   res.json({ ok: true, updated });
 });
 

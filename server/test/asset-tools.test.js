@@ -157,3 +157,15 @@ test('month filter: assets created in a Sydney month, with month options and cou
   assert.ok(opts.every((o, i) => i === 0 || opts[i - 1].value > o.value), 'newest month first');
   assert.ok((await client.get('/api/assets?month=nonsense', { token: staff.token })).data.assets.length > 4, 'a bad month is ignored');
 });
+
+test('month update: every asset from a month gets the new Status and Sent to (admins only)', async () => {
+  const { ids: monthIds } = (await client.get('/api/assets/all-ids?month=2025-04', { token: admin.token })).data;
+  assert.deepEqual(monthIds.sort(), ['m2', 'm3']);
+  assert.equal((await client.patch('/api/assets/bulk-edit', { token: staff.token, body: { ids: monthIds, updates: { status: 'Sold' } } })).status, 403);
+  const r = await client.patch('/api/assets/bulk-edit', { token: admin.token, body: { ids: monthIds, updates: { status: 'Sold', asset_sent_to: 'Wholesale' } } });
+  assert.equal(r.data.updated, 2);
+  const f = (id) => JSON.parse(db.prepare('SELECT fields_json FROM assets WHERE id = ?').get(id).fields_json);
+  assert.equal(f('m2').status, 'Sold'); assert.equal(f('m3').asset_sent_to, 'Wholesale');
+  assert.equal(f('m1').status, undefined, 'other months are left alone');
+  assert.deepEqual(ids(await client.get('/api/assets?month=2025-04&status=Sold&sent_to=Wholesale', { token: admin.token })), ['m2', 'm3']);
+});
