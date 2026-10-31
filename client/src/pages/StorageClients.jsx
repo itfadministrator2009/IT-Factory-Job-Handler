@@ -30,7 +30,8 @@ function PortalLink() {
       {showQr && <div style={{ marginTop: 12 }}><QrCode text={url} size={180} title="Client portal QR code" /></div>}
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
         The same link for every client — each signs in with their own portal username and password to see their stock, orders and
-        receiving/dispatch history and to submit orders. Prices and fees are not shown to clients.
+        receiving/dispatch history and to submit orders, and their audited assets from the ITF Asset Tracker when Asset Tracker customers
+        are linked to them. Prices, fees, status, buyers and where assets were sent are not shown to clients.
       </p>
     </div>
   );
@@ -48,6 +49,10 @@ export default function StorageClients() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [currency, setCurrency] = useState('AUD');
+  // Asset Tracker customer names whose audited assets this client sees in the portal.
+  const [assetCustomers, setAssetCustomers] = useState([]);
+  const [assetCustomerList, setAssetCustomerList] = useState(null);
+  const [assetSearch, setAssetSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -68,15 +73,21 @@ export default function StorageClients() {
   }
   useEffect(() => { load(); }, []);
 
-  function openAdd() { setEditing(null); setClientName(''); setUsername(''); setPassword(''); setCurrency('AUD'); setError(''); setShowForm(true); }
-  function openEdit(c) { setEditing(c); setClientName(c.clientName); setUsername(c.username || ''); setPassword(''); setCurrency(c.currency || 'AUD'); setError(''); setShowForm(true); }
+  function loadAssetCustomers() {
+    if (assetCustomerList) return;
+    api.get('/storage/clients/asset-customers').then((res) => setAssetCustomerList(res.data.customers)).catch(() => setAssetCustomerList([]));
+  }
+  function openAdd() { setEditing(null); setClientName(''); setUsername(''); setPassword(''); setCurrency('AUD'); setAssetCustomers([]); setAssetSearch(''); setError(''); setShowForm(true); loadAssetCustomers(); }
+  function openEdit(c) { setEditing(c); setClientName(c.clientName); setUsername(c.username || ''); setPassword(''); setCurrency(c.currency || 'AUD'); setAssetCustomers(c.assetCustomers || []); setAssetSearch(''); setError(''); setShowForm(true); loadAssetCustomers(); }
+  const isLinked = (name) => assetCustomers.some((n) => n.toLowerCase() === name.toLowerCase());
+  const toggleLinked = (name) => setAssetCustomers((list) => (isLinked(name) ? list.filter((n) => n.toLowerCase() !== name.toLowerCase()) : [...list, name]));
 
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
     setError('');
     try {
-      const payload = { clientName, username: username || null, currency };
+      const payload = { clientName, username: username || null, currency, assetCustomers };
       if (password) payload.password = password;
       if (editing) await api.patch(`/storage/clients/${editing.id}`, payload);
       else await api.post('/storage/clients', payload);
@@ -118,13 +129,16 @@ export default function StorageClients() {
           <div className="empty-state"><h3>No clients yet</h3></div>
         ) : (
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Currency</th><th style={{ textAlign: 'right' }}>In storage</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
+            <thead><tr><th>Client</th><th>Currency</th><th style={{ textAlign: 'right' }}>In storage</th><th>Audited assets</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
             <tbody>
               {clients.map((c) => (
                 <tr key={c.id} className="clickable" onClick={() => openEdit(c)}>
                   <td>{c.clientName}</td>
                   <td>{c.currency === 'USD' ? <span className="pill" style={{ background: '#e3eefb', color: '#1d5fae' }}>USD</span> : <span style={{ color: 'var(--muted)' }}>AUD</span>}</td>
                   <td style={{ textAlign: 'right', color: c.inStorageCount ? undefined : 'var(--muted)' }} title={`${c.itemCount} item(s) on record`}>{c.inStorageCount}</td>
+                  <td style={{ color: c.assetCustomers?.length ? undefined : 'var(--muted)', fontSize: 13 }} title={(c.assetCustomers || []).join(', ')}>
+                    {c.assetCustomers?.length ? (c.assetCustomers.length === 1 ? c.assetCustomers[0] : `${c.assetCustomers.length} customers`) : '—'}
+                  </td>
                   <td>{c.username || '—'}</td>
                   <td>{c.hasPortalLogin ? 'Enabled' : '—'}</td>
                   <td style={{ color: 'var(--muted)' }}>{c.addedBy || '—'}</td>
@@ -192,6 +206,34 @@ export default function StorageClients() {
                 </div>
                 <div className="field"><label>Portal username (optional)</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
                 <div className="field"><label>Portal password (8+ characters){editing ? ' — leave blank to keep' : ''}</label><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+              </div>
+              <div className="field" style={{ marginTop: 14 }}>
+                <label>Audited assets in the portal</label>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
+                  Tick the ITF Asset Tracker <strong>Customer</strong> names that belong to this client. Their assets show on an
+                  Audited assets tab in the portal (device details, condition, data wiping, job number, audit month and comments only).
+                </div>
+                {assetCustomers.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {assetCustomers.map((n) => (
+                      <span key={n} className="pill" style={{ background: '#e9f3f4', color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {n}<button type="button" onClick={() => toggleLinked(n)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', color: 'inherit' }} title="Remove"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <input value={assetSearch} onChange={(e) => setAssetSearch(e.target.value)} placeholder="Search Asset Tracker customers…" />
+                <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 8, marginTop: 6 }}>
+                  {!assetCustomerList ? <div style={{ padding: 10, fontSize: 13, color: 'var(--muted)' }}>Loading…</div>
+                    : assetCustomerList.filter((c) => !assetSearch.trim() || c.name.toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0, 200).map((c) => (
+                      <label key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid var(--line)' }}>
+                        <input type="checkbox" checked={isLinked(c.name)} onChange={() => toggleLinked(c.name)} style={{ width: 'auto' }} />
+                        <span style={{ flex: 1 }}>{c.name}</span>
+                        <span style={{ color: 'var(--muted)' }}>{c.count.toLocaleString('en-AU')}</span>
+                      </label>
+                    ))}
+                  {assetCustomerList && !assetCustomerList.length && <div style={{ padding: 10, fontSize: 13, color: 'var(--muted)' }}>No customers in the Asset Tracker yet.</div>}
+                </div>
               </div>
               {editing?.hasPortalLogin && (
                 <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 12, color: 'var(--danger)' }} disabled={saving}
