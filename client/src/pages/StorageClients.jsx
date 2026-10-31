@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, Pencil, X, Copy, QrCode as QrIcon } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, canUseModule } from '../context/AuthContext';
 import QrCode from '../storage/QrCode';
 import { resetClientCurrencies } from '../storage/useClientCurrency';
 
@@ -29,9 +29,9 @@ function PortalLink() {
       </div>
       {showQr && <div style={{ marginTop: 12 }}><QrCode text={url} size={180} title="Client portal QR code" /></div>}
       <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-        The same link for every client — each signs in with their own portal username and password to see their stock, orders and
-        receiving/dispatch history and to submit orders, and their audited assets from the ITF Asset Tracker when Asset Tracker customers
-        are linked to them. Prices, fees, status, buyers and where assets were sent are not shown to clients.
+        The same link for every client — each signs in with their own portal username and password. Clients with Storage Centre
+        records see their stock, orders and receiving/dispatch history and can submit orders; clients with Asset Tracker customers
+        linked see their audited assets. Prices, fees, status, buyers and where assets were sent are never shown to clients.
       </p>
     </div>
   );
@@ -40,6 +40,9 @@ function PortalLink() {
 export default function StorageClients() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'agent';
+  // Storage Centre users (and admins) manage logins and see storage details;
+  // Asset Tracker-only users can link Asset Tracker customers to a client.
+  const canManage = isAdmin || canUseModule(user, 'storage');
   const [clients, setClients] = useState(null);
   const [unlisted, setUnlisted] = useState([]);
   const [adding, setAdding] = useState(false);
@@ -57,7 +60,7 @@ export default function StorageClients() {
   const [error, setError] = useState('');
 
   function load() {
-    api.get('/storage/clients').then((res) => { setClients(res.data.clients); setUnlisted(res.data.unlisted || []); });
+    api.get('/clients').then((res) => { setClients(res.data.clients); setUnlisted(res.data.unlisted || []); });
   }
 
   // Adds names found on items/orders/etc. to the client list (no portal login).
@@ -65,7 +68,7 @@ export default function StorageClients() {
     setAdding(true);
     const failed = [];
     for (const name of names) {
-      try { await api.post('/storage/clients', { clientName: name }); } catch (err) { failed.push(`${name}: ${err.response?.data?.error || 'failed'}`); }
+      try { await api.post('/clients', { clientName: name }); } catch (err) { failed.push(`${name}: ${err.response?.data?.error || 'failed'}`); }
     }
     setAdding(false);
     if (failed.length) alert(`Some clients weren't added:\n${failed.join('\n')}`);
@@ -75,7 +78,7 @@ export default function StorageClients() {
 
   function loadAssetCustomers() {
     if (assetCustomerList) return;
-    api.get('/storage/clients/asset-customers').then((res) => setAssetCustomerList(res.data.customers)).catch(() => setAssetCustomerList([]));
+    api.get('/clients/asset-customers').then((res) => setAssetCustomerList(res.data.customers)).catch(() => setAssetCustomerList([]));
   }
   function openAdd() { setEditing(null); setClientName(''); setUsername(''); setPassword(''); setCurrency('AUD'); setAssetCustomers([]); setAssetSearch(''); setError(''); setShowForm(true); loadAssetCustomers(); }
   function openEdit(c) { setEditing(c); setClientName(c.clientName); setUsername(c.username || ''); setPassword(''); setCurrency(c.currency || 'AUD'); setAssetCustomers(c.assetCustomers || []); setAssetSearch(''); setError(''); setShowForm(true); loadAssetCustomers(); }
@@ -87,10 +90,11 @@ export default function StorageClients() {
     setSaving(true);
     setError('');
     try {
-      const payload = { clientName, username: username || null, currency, assetCustomers };
+      // Asset Tracker-only users can only change the linked customers.
+      const payload = canManage ? { clientName, username: username || null, currency, assetCustomers } : { assetCustomers };
       if (password) payload.password = password;
-      if (editing) await api.patch(`/storage/clients/${editing.id}`, payload);
-      else await api.post('/storage/clients', payload);
+      if (editing) await api.patch(`/clients/${editing.id}`, payload);
+      else await api.post('/clients', payload);
       resetClientCurrencies();
       setShowForm(false);
       load();
@@ -104,7 +108,7 @@ export default function StorageClients() {
   async function handleDelete(id, e) {
     e.stopPropagation();
     if (!confirm('Delete this client?')) return;
-    await api.delete(`/storage/clients/${id}`);
+    await api.delete(`/clients/${id}`);
     load();
   }
 
@@ -112,11 +116,11 @@ export default function StorageClients() {
     <Layout>
       <div className="page-header">
         <div>
-          <h1>Storage Centre — Clients</h1>
-          <div className="subtitle">{clients ? `${clients.length} on the client list${unlisted.length ? ` · ${unlisted.length} more found on records` : ''}` : 'Loading…'}</div>
+          <h1>Clients</h1>
+          <div className="subtitle">{clients ? `${clients.length} on the client list${unlisted.length ? ` · ${unlisted.length} more found on records` : ''} · client portal logins for Storage Centre and Asset Tracker` : 'Loading…'}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-accent" onClick={openAdd}><Plus size={16} /> Add client</button>
+          {canManage && <button className="btn btn-accent" onClick={openAdd}><Plus size={16} /> Add client</button>}
         </div>
       </div>
 
@@ -129,13 +133,13 @@ export default function StorageClients() {
           <div className="empty-state"><h3>No clients yet</h3></div>
         ) : (
           <table className="ticket-table">
-            <thead><tr><th>Client</th><th>Currency</th><th style={{ textAlign: 'right' }}>In storage</th><th>Audited assets</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
+            <thead><tr><th>Client</th>{canManage && <th>Currency</th>}{canManage && <th style={{ textAlign: 'right' }}>In storage</th>}<th>Audited assets</th><th>Username</th><th>Portal login</th><th>Added by</th><th></th></tr></thead>
             <tbody>
               {clients.map((c) => (
                 <tr key={c.id} className="clickable" onClick={() => openEdit(c)}>
                   <td>{c.clientName}</td>
-                  <td>{c.currency === 'USD' ? <span className="pill" style={{ background: '#e3eefb', color: '#1d5fae' }}>USD</span> : <span style={{ color: 'var(--muted)' }}>AUD</span>}</td>
-                  <td style={{ textAlign: 'right', color: c.inStorageCount ? undefined : 'var(--muted)' }} title={`${c.itemCount} item(s) on record`}>{c.inStorageCount}</td>
+                  {canManage && <td>{c.currency === 'USD' ? <span className="pill" style={{ background: '#e3eefb', color: '#1d5fae' }}>USD</span> : <span style={{ color: 'var(--muted)' }}>AUD</span>}</td>}
+                  {canManage && <td style={{ textAlign: 'right', color: c.inStorageCount ? undefined : 'var(--muted)' }} title={`${c.itemCount} item(s) on record`}>{c.inStorageCount}</td>}
                   <td style={{ color: c.assetCustomers?.length ? undefined : 'var(--muted)', fontSize: 13 }} title={(c.assetCustomers || []).join(', ')}>
                     {c.assetCustomers?.length ? (c.assetCustomers.length === 1 ? c.assetCustomers[0] : `${c.assetCustomers.length} customers`) : '—'}
                   </td>
@@ -194,6 +198,7 @@ export default function StorageClients() {
             </div>
             {error && <div className="error-banner">{error}</div>}
             <form onSubmit={handleSave}>
+              {canManage ? (
               <div className="form-grid">
                 <div className="field"><label>Client name</label><input value={clientName} onChange={(e) => setClientName(e.target.value)} required /></div>
                 <div className="field">
@@ -207,6 +212,12 @@ export default function StorageClients() {
                 <div className="field"><label>Portal username (optional)</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
                 <div className="field"><label>Portal password (8+ characters){editing ? ' — leave blank to keep' : ''}</label><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
               </div>
+              ) : (
+                <div style={{ fontSize: 14 }}>
+                  <div><strong>{clientName}</strong></div>
+                  <div style={{ color: 'var(--muted)', fontSize: 13 }}>Portal login: {editing?.hasPortalLogin ? `${editing.username} (enabled)` : 'not set up'} — ask an admin or a Storage Centre user to change logins.</div>
+                </div>
+              )}
               <div className="field" style={{ marginTop: 14 }}>
                 <label>Audited assets in the portal</label>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
@@ -235,12 +246,12 @@ export default function StorageClients() {
                   {assetCustomerList && !assetCustomerList.length && <div style={{ padding: 10, fontSize: 13, color: 'var(--muted)' }}>No customers in the Asset Tracker yet.</div>}
                 </div>
               </div>
-              {editing?.hasPortalLogin && (
+              {canManage && editing?.hasPortalLogin && (
                 <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 12, color: 'var(--danger)' }} disabled={saving}
                   onClick={async () => {
                     if (!confirm(`Remove portal access for ${editing.clientName}? They will be signed out straight away.`)) return;
                     setSaving(true);
-                    try { await api.patch(`/storage/clients/${editing.id}`, { removePortalAccess: true }); setShowForm(false); load(); }
+                    try { await api.patch(`/clients/${editing.id}`, { removePortalAccess: true }); setShowForm(false); load(); }
                     catch (err) { setError(err.response?.data?.error || 'Could not remove access'); }
                     finally { setSaving(false); }
                   }}>
