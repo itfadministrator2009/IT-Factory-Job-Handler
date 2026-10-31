@@ -69,6 +69,8 @@ function RequireTimecard({ adminView, children }) {
     if (!user.accessTimecard) return <Navigate to="/jobs" replace />;
     return adminView ? <Navigate to="/timecard" replace /> : children;
   }
+  // Admins: unless the Super Admin has switched ITF Time Card off for them.
+  if (user.approvesTimecard === false) return <Navigate to="/dashboard" replace />;
   return adminView ? children : <Navigate to="/timecard/dashboard" replace />;
 }
 

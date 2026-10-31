@@ -26,15 +26,28 @@ function currentRole(userId) {
   return db.prepare('SELECT role FROM users WHERE id = ?').get(userId)?.role || 'user';
 }
 
+// Apps the Super Admin can switch off for an admin. Admins have every app unless
+// it's listed in their admin_blocked column; the Super Admin always has them all.
+const ADMIN_APPS = ['assets', 'storage', 'sales', 'timecard'];
+function blockedApps(row) {
+  if (!row || !isAdminRole(row.role) || row.super_admin === 1) return [];
+  return String(row.admin_blocked || '').split(',').map((s) => s.trim()).filter((m) => ADMIN_APPS.includes(m));
+}
+// An admin who may approve timesheets in ITF Time Card.
+function adminHasTimecard(userId) {
+  const row = db.prepare('SELECT role, super_admin, admin_blocked FROM users WHERE id = ?').get(userId);
+  return !!row && isAdminRole(row.role) && !blockedApps(row).includes('timecard');
+}
+
 // ITF Asset Tracker ('assets') and ITF Storage Centre ('storage') can be switched
-// on or off per user in Settings. Admins always have both. Read fresh from the
-// database so a change applies on the user's very next request.
+// on or off per user in Settings. Admins have them unless the Super Admin switched
+// them off. Read fresh from the database so a change applies on the next request.
 const MODULE_COLUMNS = { assets: 'access_assets', storage: 'access_storage', sales: 'access_sales' };
 const MODULE_NAMES = { assets: 'the ITF Asset Tracker', storage: 'the ITF Storage Centre', sales: 'ITF Sales Manager' };
 function hasModuleAccess(userId, module) {
-  const row = db.prepare('SELECT role, access_assets, access_storage, access_sales FROM users WHERE id = ?').get(userId);
+  const row = db.prepare('SELECT role, super_admin, admin_blocked, access_assets, access_storage, access_sales FROM users WHERE id = ?').get(userId);
   if (!row) return false;
-  if (isAdminRole(row.role)) return true;
+  if (isAdminRole(row.role)) return !blockedApps(row).includes(module);
   // ITF Sales Manager (sales figures): only when switched on, for everyone but admins.
   if (module === 'sales') return row.access_sales === 1;
   // ITF Casuals: off unless an admin has switched it on for them.
@@ -63,13 +76,16 @@ function publicUser(row) {
   const admin = isAdminRole(row.role);
   // ITF Casuals see ITF Time Card, plus the sections switched on for them.
   const contractor = row.role === 'contractor';
-  const allowed = (v) => (contractor ? v === 1 : admin || v !== 0);
+  const blocked = blockedApps(row);
+  const allowed = (v, app) => (admin ? !blocked.includes(app) : contractor ? v === 1 : v !== 0);
   return {
     id: row.id, name: row.name, email: row.email, role: row.role,
-    accessAssets: allowed(row.access_assets),
-    accessStorage: allowed(row.access_storage),
-    accessSales: admin || row.access_sales === 1,
+    accessAssets: allowed(row.access_assets, 'assets'),
+    accessStorage: allowed(row.access_storage, 'storage'),
+    accessSales: admin ? !blocked.includes('sales') : row.access_sales === 1,
     accessTimecard: logsTime(row),
+    // Admins: whether they approve timesheets in ITF Time Card.
+    approvesTimecard: admin && !blocked.includes('timecard'),
     superAdmin: row.super_admin === 1,
   };
 }
@@ -84,4 +100,4 @@ function superAdminRequired(req, res, next) {
   next();
 }
 
-module.exports = { isSuperAdmin, superAdminRequired, isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser, logsTime, TIMESHEET_USERS_SQL };
+module.exports = { ADMIN_APPS, blockedApps, adminHasTimecard, isSuperAdmin, superAdminRequired, isAdminRole, canAccessJob, currentRole, hasModuleAccess, requireModule, publicUser, logsTime, TIMESHEET_USERS_SQL };

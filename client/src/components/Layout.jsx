@@ -50,12 +50,12 @@ export default function Layout({ children }) {
   // Admins: how many timesheets are waiting on approval (shown in the menu).
   const [tcPending, setTcPending] = useState(0);
   useEffect(() => {
-    if (!isAdmin) return undefined;
+    if (!isAdmin || user?.approvesTimecard === false) return undefined;
     const load = () => api.get('/timecard/admin/pending-count').then((r) => setTcPending(r.data.count)).catch(() => {});
     load();
     window.addEventListener('timecard:changed', load);
     return () => window.removeEventListener('timecard:changed', load);
-  }, [isAdmin]);
+  }, [isAdmin, user?.approvesTimecard]);
   // Sales Manager: Shopify order lines waiting for review (shown in the menu).
   const canSales = canUseModule(user, 'sales');
   const [salesPending, setSalesPending] = useState(0);
@@ -170,7 +170,7 @@ export default function Layout({ children }) {
           </Section>
           )}
 
-          {isAdmin && (
+          {isAdmin && canUseModule(user, 'timecard') && (
           <Section id="timecard" title="ITF Time Card" icon={Clock} home="/timecard/dashboard"
             open={open.timecard} current={current === 'timecard'} onToggle={toggle}>
             <NavLink to="/timecard/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>

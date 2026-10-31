@@ -433,6 +433,8 @@ addColumnIfMissing('users', 'access_assets', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'access_storage', 'INTEGER NOT NULL DEFAULT 1');
 // ITF Sales Manager: off for everyone except admins until switched on in Manage Users.
 addColumnIfMissing('users', 'access_sales', 'INTEGER NOT NULL DEFAULT 0');
+// Apps the Super Admin has switched off for an admin (comma list, e.g. 'sales,timecard').
+addColumnIfMissing('users', 'admin_blocked', "TEXT NOT NULL DEFAULT ''");
 // Currency a Storage Centre client is charged in (AUD unless set to USD).
 addColumnIfMissing('storage_clients', 'currency', "TEXT NOT NULL DEFAULT 'AUD'");
 

@@ -2,7 +2,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole, logsTime, isSuperAdmin } = require('../permissions');
+const { isAdminRole, logsTime, isSuperAdmin, adminHasTimecard } = require('../permissions');
 const tc = require('../timecard');
 const mail = require('../timecardEmail');
 const { sendReminders, contractorsToRemind } = require('../timecardReminders');
@@ -23,6 +23,7 @@ function contractorOnly(req, res, next) {
 function adminOnly(req, res, next) {
   const u = me(req);
   if (!u || !isAdminRole(u.role)) return res.status(403).json({ error: 'Admin access required' });
+  if (!adminHasTimecard(u.id)) return res.status(403).json({ error: "You don't have access to ITF Time Card. Ask the Super Admin to turn it on in Settings.", code: 'no_module_access' });
   req.admin = u;
   next();
 }
