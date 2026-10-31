@@ -4,6 +4,7 @@ const { v4: uuid } = require('uuid');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
 const { logActivity } = require('../activity');
+const { ADMIN_APPS, blockedApps } = require('../permissions');
 
 const router = express.Router();
 router.use(authRequired);
@@ -43,10 +44,12 @@ router.get('/', (req, res) => {
 });
 
 // Admin-only: full user management
-const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, access_sales, hourly_rate, super_admin';
+const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, access_sales, hourly_rate, super_admin, admin_blocked';
 const toAdminUser = (u) => u && ({
   ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0, accessTimecard: u.access_timecard === 1, accessSales: u.access_sales === 1,
   hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null, superAdmin: u.super_admin === 1,
+  // Admins: the apps the Super Admin has switched off for them.
+  blockedApps: blockedApps(u),
 });
 // Groups in Manage Users: 'admin' (ITF Admins), 'staff' (ITF Staff), 'user' (ITF
 // Contractors) and 'contractor' (ITF Casuals — ITF Time Card only). Staff and
@@ -95,7 +98,22 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
-  const { role, name, email, accessAssets, accessStorage, accessTimecard, accessSales, hourlyRate } = req.body;
+  const { role, name, email, accessAssets, accessStorage, accessTimecard, accessSales, hourlyRate, adminApps } = req.body;
+
+  // Turning apps on or off for an admin: the Super Admin only, and never for the
+  // Super Admin's own account (it always has everything).
+  if (adminApps !== undefined) {
+    if (!isSuperAdmin(req.user.id)) return res.status(403).json({ error: 'Only the Super Admin can change which apps an admin can use.' });
+    if (!isAdminRole(target.role)) return res.status(400).json({ error: 'That person is not an admin.' });
+    if (target.super_admin === 1) return res.status(400).json({ error: 'The Super Admin always has every app.' });
+    if (!adminApps || typeof adminApps !== 'object') return res.status(400).json({ error: 'Invalid apps' });
+    const blocked = new Set(blockedApps(target));
+    Object.entries(adminApps).forEach(([app, on]) => {
+      if (!ADMIN_APPS.includes(app)) return;
+      if (on) blocked.delete(app); else blocked.add(app);
+    });
+    db.prepare('UPDATE users SET admin_blocked = ? WHERE id = ?').run(ADMIN_APPS.filter((a) => blocked.has(a)).join(','), req.params.id);
+  }
 
   if (!isSuperAdmin(req.user.id)) {
     if (target.super_admin === 1) return res.status(403).json({ error: "Only the Super Admin can change the Super Admin's account." });
@@ -122,6 +140,8 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
       return res.status(400).json({ error: 'Cannot remove the last admin' });
     }
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(finalRole, req.params.id);
+    // Made an admin: starts with every app.
+    if (finalRole === 'admin' && !isAdminRole(target.role)) db.prepare("UPDATE users SET admin_blocked = '' WHERE id = ?").run(req.params.id);
     // Moved into ITF Casuals: the Asset Tracker and Storage Centre start off.
     if (finalRole === 'contractor' && target.role !== 'contractor') {
       if (accessAssets === undefined) db.prepare('UPDATE users SET access_assets = 0 WHERE id = ?').run(req.params.id);
@@ -149,6 +169,10 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   if (!!after.access_storage !== !!target.access_storage) changes.push(`Storage Centre: ${yn(after.access_storage)}`);
   if (!!after.access_timecard !== !!target.access_timecard) changes.push(`Time Card: ${yn(after.access_timecard)}`);
   if (!!after.access_sales !== !!target.access_sales) changes.push(`Sales Manager: ${yn(after.access_sales)}`);
+  const APP_NAMES = { assets: 'Asset Tracker', storage: 'Storage Centre', sales: 'Sales Manager', timecard: 'Time Card' };
+  const was = blockedApps(target);
+  const now = blockedApps(after);
+  ADMIN_APPS.forEach((a) => { if (was.includes(a) !== now.includes(a)) changes.push(`${APP_NAMES[a]} (admin): ${now.includes(a) ? 'off' : 'on'}`); });
   if ((after.hourly_rate ?? null) !== (target.hourly_rate ?? null)) changes.push(`Hourly rate: ${target.hourly_rate ?? '—'} → ${after.hourly_rate ?? '—'}`);
   if (changes.length) logActivity('user.updated', { req, target: { type: 'user', id: after.id, name: after.name }, details: changes.join('; ') });
 
