@@ -1,6 +1,10 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../api';
+import IdleLogout from '../components/IdleLogout';
 import { resetPresence } from '../components/WhoIsOnline';
+import {
+  getToken, getStoredUser, saveSession, saveUser, clearSession, broadcastLogout, onLogoutElsewhere, setLogoutReason,
+} from '../session';
 
 const AuthContext = createContext(null);
 
@@ -22,24 +26,20 @@ function deviceLabel() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem('helpdesk_user');
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState(() => (getToken() ? getStoredUser() : null));
 
   // Pick up role / section-access changes made in Settings without signing out.
   useEffect(() => {
-    if (!localStorage.getItem('helpdesk_token')) return;
+    if (!getToken()) return;
     api.get('/auth/me').then(({ data }) => {
       if (!data?.user) return;
-      localStorage.setItem('helpdesk_user', JSON.stringify(data.user));
+      saveUser(data.user);
       setUser(data.user);
     }).catch(() => {});
   }, []);
 
   const finishLogin = useCallback((data) => {
-    localStorage.setItem('helpdesk_token', data.token);
-    localStorage.setItem('helpdesk_user', JSON.stringify(data.user));
+    saveSession(data.token, data.user);
     setUser(data.user);
     return data.user;
   }, []);
@@ -60,26 +60,31 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async (name, email, password) => {
     const { data } = await api.post('/auth/register', { name, email, password });
-    localStorage.setItem('helpdesk_token', data.token);
-    localStorage.setItem('helpdesk_user', JSON.stringify(data.user));
+    saveSession(data.token, data.user);
     setUser(data.user);
     return data.user;
   }, []);
 
-  const logout = useCallback(() => {
+  // reason 'idle': 30 minutes with no activity. Logging out in one tab logs
+  // out every open Work Desk tab.
+  const logout = useCallback((reason, fromOtherTab) => {
     // Drop off the "online now" list straight away (the token is read now,
     // before it's removed below).
-    const token = localStorage.getItem('helpdesk_token');
-    if (token) api.delete('/presence', { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    const token = getToken();
+    if (token && !fromOtherTab) api.delete('/presence', { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     resetPresence();
-    localStorage.removeItem('helpdesk_token');
-    localStorage.removeItem('helpdesk_user');
+    clearSession();
+    if (reason === 'idle') setLogoutReason('idle');
+    if (!fromOtherTab) broadcastLogout(reason);
     setUser(null);
   }, []);
+  const logoutIdle = useCallback(() => logout('idle'), [logout]);
+  useEffect(() => onLogoutElsewhere((reason) => logout(reason === 'idle' ? 'idle' : undefined, true)), [logout]);
 
   return (
     <AuthContext.Provider value={{ user, login, verifyCode, register, logout }}>
       {children}
+      {user && <IdleLogout onIdle={logoutIdle} />}
     </AuthContext.Provider>
   );
 }

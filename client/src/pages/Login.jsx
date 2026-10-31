@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { takeLogoutReason } from '../session';
 
 export default function Login() {
   const { login, verifyCode } = useAuth();
@@ -20,6 +21,8 @@ export default function Login() {
   const [remember, setRemember] = useState(true);
   const codeRef = useRef(null);
   const signedOut = new URLSearchParams(location.search).get('signedOut') === '1';
+  // Logged out after 30 minutes with no activity (shown once).
+  const [idleOut] = useState(() => takeLogoutReason() === 'idle');
 
   useEffect(() => { if (challenge) codeRef.current?.focus(); }, [challenge]);
 
@@ -111,6 +114,9 @@ export default function Login() {
           <>
             <h1>Welcome back</h1>
             <p className="subtitle">Log in to your Work Desk account.</p>
+            {idleOut && !signedOut && !error && (
+              <div className="error-banner" style={{ marginBottom: 14 }}>You were logged out after 30 minutes with no activity. Please log in again.</div>
+            )}
             {signedOut && !error && (
               <div className="error-banner" style={{ marginBottom: 14 }}>You were logged out by an admin. Please log in again.</div>
             )}
