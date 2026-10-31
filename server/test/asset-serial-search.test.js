@@ -58,6 +58,13 @@ test('the matches can then be bulk-allocated and exported by id', async () => {
   assert.equal(csv.trim().split(/\r?\n/).length, 3, 'header + the 2 chosen assets');
   assert.match(csv, /OTHER/);
   assert.doesNotMatch(csv, /MON-1/);
+
+  // Non-admins can't export.
+  const user = await registerUser(client, { name: 'Export Staff', email: 'export-staff@example.com' });
+  db.prepare("UPDATE users SET role = 'user', access_assets = 1 WHERE id = ?").run(user.id);
+  const base = `http://127.0.0.1:${server.address().port}/api/assets/export`;
+  assert.equal((await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` }, body: JSON.stringify({ ids }) })).status, 403);
+  assert.equal((await fetch(base, { headers: { Authorization: `Bearer ${user.token}` } })).status, 403);
 });
 
 test('reports include per-class counts by customer, status and where sent', async () => {
