@@ -22,6 +22,11 @@ import AssetReports from './pages/AssetReports';
 import AssetFields from './pages/AssetFields';
 import StorageManifest from './pages/StorageManifest';
 import SalesDashboard from './pages/SalesDashboard';
+import ChecklistHome from './pages/ChecklistHome';
+import ChecklistForm from './pages/ChecklistForm';
+import ChecklistHistory from './pages/ChecklistHistory';
+import ChecklistSummary from './pages/ChecklistSummary';
+import ChecklistTools from './pages/ChecklistTools';
 import SalesList from './pages/SalesList';
 import SalesItemForm from './pages/SalesItemForm';
 import SalesGrouped from './pages/SalesGrouped';
@@ -137,6 +142,12 @@ function AppRoutes() {
       <Route path="/assets/batches" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
       <Route path="/assets/batches/:id" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
 
+      <Route path="/checklist" element={<RequireModule module="checklist"><ChecklistHome /></RequireModule>} />
+      <Route path="/checklist/new/:device" element={<RequireModule module="checklist"><ChecklistForm key="new" /></RequireModule>} />
+      <Route path="/checklist/edit/:id" element={<RequireModule module="checklist"><ChecklistForm key="edit" /></RequireModule>} />
+      <Route path="/checklist/history" element={<RequireModule module="checklist"><ChecklistHistory /></RequireModule>} />
+      <Route path="/checklist/summary" element={<RequireModule module="checklist"><ChecklistSummary /></RequireModule>} />
+      <Route path="/checklist/tools" element={<RequireModule module="checklist"><ChecklistTools /></RequireModule>} />
       <Route path="/sales" element={<RequireModule module="sales"><SalesDashboard /></RequireModule>} />
       <Route path="/sales/all" element={<RequireModule module="sales"><SalesList kind="sale" /></RequireModule>} />
       <Route path="/sales/add" element={<RequireModule module="sales"><SalesItemForm kind="sale" key="sale-add" /></RequireModule>} />
