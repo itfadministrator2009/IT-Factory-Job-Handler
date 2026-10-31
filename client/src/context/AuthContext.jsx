@@ -90,14 +90,16 @@ export function AuthProvider({ children }) {
 }
 
 // Can this user open the ITF Asset Tracker ('assets') / ITF Storage Centre ('storage')?
-// Admins always can; for others it's switched on or off in Settings → Manage Users.
+// Switched on or off in Settings → Manage Users. Admins have every app unless the
+// Super Admin has switched one off for them.
 export function canUseModule(user, module) {
   if (!user) return false;
+  const admin = user.role === 'admin' || user.role === 'agent';
   // ITF Time Card ('timecard'): admins approve; contractors and ticked Users log time.
-  if (module === 'timecard') return user.role === 'admin' || user.role === 'agent' || user.accessTimecard === true;
-  // ITF Sales Manager: admins, plus anyone an admin has ticked.
-  if (module === 'sales') return user.role === 'admin' || user.role === 'agent' || user.accessSales === true;
-  if (user.role === 'admin' || user.role === 'agent') return true;
+  if (module === 'timecard') return admin ? user.approvesTimecard !== false : user.accessTimecard === true;
+  if (admin) return (module === 'assets' ? user.accessAssets : module === 'storage' ? user.accessStorage : user.accessSales) !== false;
+  // ITF Sales Manager: only when ticked.
+  if (module === 'sales') return user.accessSales === true;
   // ITF Casuals: only when an admin has switched it on for them.
   if (user.role === 'contractor') return (module === 'assets' ? user.accessAssets : user.accessStorage) === true;
   return (module === 'assets' ? user.accessAssets : user.accessStorage) !== false;
