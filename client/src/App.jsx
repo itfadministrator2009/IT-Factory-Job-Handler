@@ -88,6 +88,16 @@ function RequireModule({ module, children }) {
   return children;
 }
 
+// Clients: admins, and anyone with Storage Centre or Asset Tracker access.
+function RequireClients({ children }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  const admin = user.role === 'admin' || user.role === 'agent';
+  if (!admin && !canUseModule(user, 'storage') && !canUseModule(user, 'assets')) return <Navigate to={user.role === 'contractor' ? '/timecard' : '/jobs'} replace />;
+  return children;
+}
+
 function RequireAdmin({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -164,7 +174,8 @@ function AppRoutes() {
       <Route path="/sales/tools" element={<RequireModule module="sales"><SalesTools /></RequireModule>} />
       <Route path="/storage" element={<RequireModule module="storage"><StorageManifest /></RequireModule>} />
       <Route path="/storage/pallets" element={<RequireModule module="storage"><StoragePallets /></RequireModule>} />
-      <Route path="/storage/clients" element={<RequireModule module="storage"><StorageClients /></RequireModule>} />
+      <Route path="/clients" element={<RequireClients><StorageClients /></RequireClients>} />
+      <Route path="/storage/clients" element={<Navigate to="/clients" replace />} />
       <Route path="/storage/orders" element={<RequireModule module="storage"><StorageOrders /></RequireModule>} />
       <Route path="/storage/receiving" element={<RequireModule module="storage"><StorageReceiving /></RequireModule>} />
       <Route path="/storage/locations" element={<RequireModule module="storage"><StorageLocations /></RequireModule>} />
