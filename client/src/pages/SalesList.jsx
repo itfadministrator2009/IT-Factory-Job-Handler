@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Download, Upload, Trash2, MoreHorizontal, Printer, Tag, Copy, Pencil, ArrowRight, X, Clock } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
+import TopScrollbar from '../components/TopScrollbar';
 import useSalesData from '../sales/useSalesData';
 import {
   PLATFORMS, SALE_STATUSES, INV_STATUSES, ITEM_TYPES, SEARCH_FIELDS, fmt, fmtInt, pct, auDate, str, num, daysInStock,
@@ -47,6 +48,7 @@ export default function SalesList({ kind }) {
   const [bulkEdit, setBulkEdit] = useState(false);
   const [customer, setCustomer] = useState(null);
   const fileRef = useRef(null);
+  const tableWrapRef = useRef(null);
 
   useEffect(() => { setLimit(PAGE); }, [q, field, plat, slowOnly, modelFilter]);
   useEffect(() => {
@@ -249,8 +251,9 @@ export default function SalesList({ kind }) {
         </div>
       )}
 
-      {loading ? <div className="panel panel-pad">Loading…</div> : (
-        <div className="panel sales-table-wrap">
+      {loading ? <div className="panel panel-pad">Loading…</div> : (<>
+        <TopScrollbar targetRef={tableWrapRef} />
+        <div className="panel sales-table-wrap" ref={tableWrapRef}>
           <table className="ticket-table sales-table">
             <thead>
               <tr>
@@ -315,7 +318,7 @@ export default function SalesList({ kind }) {
             </div>
           )}
         </div>
-      )}
+      </>)}
 
       {menuItem && (
         <div className="row-menu" style={{ top: Math.min(menu.y + 4, window.innerHeight - 260), right: window.innerWidth - menu.x }} onClick={(e) => e.stopPropagation()}>
