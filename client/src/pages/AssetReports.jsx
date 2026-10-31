@@ -131,7 +131,7 @@ export default function AssetReports() {
     <Layout>
       <div className="page-header no-print">
         <div>
-          <h1>Asset Reports</h1>
+          <h1>Asset Tracker dashboard</h1>
           <div className="subtitle">{customer ? <>Showing <strong>{customer}</strong> only.</> : 'Every asset on file.'} Click any chart, bar or number to see those assets.</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' }}>
