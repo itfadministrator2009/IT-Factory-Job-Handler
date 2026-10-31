@@ -489,7 +489,9 @@ router.post('/bulk-email', async (req, res) => {
 });
 
 // Export exactly these assets (e.g. a bulk serial search result) as CSV.
+// Exporting is admin-only.
 router.post('/export', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can export assets' });
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
   if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
   const get = db.prepare('SELECT * FROM assets WHERE id = ?');
@@ -505,6 +507,7 @@ router.get('/email-defaults', (req, res) => {
 });
 
 router.get('/export', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can export assets' });
   const { where, params: whereParams } = buildWhere(req.query, isAdmin(req.user.id));
   const rows = db.prepare(`SELECT * FROM assets ${where} ORDER BY created_at DESC`).all(...whereParams).map(withParsedFields);
   const defs = getFieldDefs();
