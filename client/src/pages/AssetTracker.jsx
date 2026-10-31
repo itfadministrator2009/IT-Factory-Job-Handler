@@ -13,7 +13,7 @@ const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'mo
 // Share of the table width for each column, so all of them fit on screen. Long
 // values are cut short with "…" — hover a cell to see it in full.
 const COL_WIDTHS = { asset_tag: 9, category: 9, manufacturer: 7, model_name: 10, model_number: 7, serial_number: 12, customer: 12, status: 7, asset_sent_to: 9, zoho_ticket_number: 6 };
-const SHORT_HEADINGS = { zoho_ticket_number: 'Zoho #', asset_sent_to: 'Sent to', model_number: 'Model no.', serial_number: 'Serial number', manufacturer: 'Make' };
+const SHORT_HEADINGS = { zoho_ticket_number: 'Job #', asset_sent_to: 'Sent to', model_number: 'Model no.', serial_number: 'Serial number', manufacturer: 'Make' };
 
 // Exact-match filters (URL parameters, so a report can link straight to a list).
 // "__none__" = the field is blank. dupes=1: only assets whose serial is on more
