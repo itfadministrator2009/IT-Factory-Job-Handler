@@ -190,3 +190,8 @@ test('a new asset gets this month as its Audit Month unless one is given', async
   const b = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'AM2', serial_number: 'AM-SER-2', audit_month: 'September 2026' } } });
   assert.equal(b.data.asset.fields.audit_month, 'September 2026');
 });
+
+test('Zoho Ticket Number is now called ITF Workdesk Job Number', async () => {
+  const { fields } = (await client.get('/api/assets/field-defs', { token: staff.token })).data;
+  assert.equal(fields.find((f) => f.field_key === 'zoho_ticket_number').label, 'ITF Workdesk Job Number');
+});
