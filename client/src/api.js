@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getToken, clearSession } from './session';
 
 // On Render, the frontend (Static Site) and backend (Web Service) are on different
 // domains, so VITE_API_URL must be set explicitly — locally in client/.env, and in
@@ -9,7 +10,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 const api = axios.create({ baseURL: API_BASE });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('helpdesk_token');
+  const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -20,8 +21,7 @@ let signingOut = false;
 api.interceptors.response.use((res) => res, (err) => {
   if (err.response?.status === 401 && err.response.data?.code === 'signed_out' && !signingOut) {
     signingOut = true;
-    localStorage.removeItem('helpdesk_token');
-    localStorage.removeItem('helpdesk_user');
+    clearSession();
     window.location.assign('/login?signedOut=1');
   }
   return Promise.reject(err);
