@@ -406,7 +406,7 @@ function seedAssetFieldDefs() {
     ['asset_upgrade', 'Asset Upgrade', 'text', null],
     ['asset_sent_to', 'Asset Sent To', 'dropdown', opts(['E-Waste', 'ITF Australia', 'Return to Client', 'Wholesale'])],
     ['customer', 'Customer', 'text', null],
-    ['zoho_ticket_number', 'Zoho Ticket Number', 'text', null],
+    ['zoho_ticket_number', 'ITF Workdesk Job Number', 'text', null],
     ['audit_month', 'Audit Month', 'text', null],
     ['comments', 'Comments', 'textarea', null],
     ['status', 'Status', 'dropdown', opts(['Available', 'Sold'])],
@@ -431,6 +431,9 @@ function addAssetLocationField() {
   })();
 }
 addAssetLocationField();
+// "Zoho Ticket Number" is now "ITF Workdesk Job Number" (same field, so existing
+// values stay). Only renamed if nobody has already changed the label.
+db.prepare("UPDATE asset_field_defs SET label = 'ITF Workdesk Job Number' WHERE field_key = 'zoho_ticket_number' AND label = 'Zoho Ticket Number'").run();
 
 function addColumnIfMissing(table, column, definition) {
   try {
