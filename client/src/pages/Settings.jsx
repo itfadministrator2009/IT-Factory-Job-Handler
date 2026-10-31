@@ -261,10 +261,39 @@ function ManageUsersTab({ currentUser }) {
     .sort((a, b) => a.name.localeCompare(b.name));
   const FILTERS = [['all', 'All', users.length], ['admin', 'ITF Admins', counts.admin || 0], ['staff', 'ITF Staff', counts.staff || 0], ['user', 'ITF Contractors', counts.user || 0], ['contractor', 'ITF Casuals', counts.contractor || 0]];
 
+  // Super Admin: switch one app on or off for an admin.
+  async function handleAdminApp(u, app, on) {
+    setError('');
+    const blocked = new Set(u.blockedApps || []);
+    if (on) blocked.delete(app); else blocked.add(app);
+    setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, blockedApps: [...blocked] } : x)));
+    try {
+      await api.patch(`/users/admin/${u.id}`, { adminApps: { [app]: on } });
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not update access');
+      load();
+    }
+  }
+
   // One access cell: a switch, or a fixed state for admins (and Casuals' Time Card).
+  // The Super Admin gets switches for other admins too.
   function accessCell(u, field, label) {
     const admin = isAdminRole(u.role);
     const contractor = u.role === 'contractor';
+    if (admin && iAmSuper && !u.superAdmin) {
+      const app = { accessAssets: 'assets', accessStorage: 'storage', accessSales: 'sales', accessTimecard: 'timecard' }[field];
+      const on = !(u.blockedApps || []).includes(app);
+      const what = field === 'accessTimecard' ? `${label} approvals` : label;
+      return (
+        <button type="button" role="switch" aria-checked={on} className={'mu-switch' + (on ? ' on' : '')}
+          aria-label={`${what} for ${u.name}`} title={on ? `Turn off ${what} for this admin` : `Turn on ${what} for this admin`}
+          onClick={() => handleAdminApp(u, app, !on)}>
+          <span className="mu-knob" />
+        </button>
+      );
+    }
+    const appOf = { accessAssets: 'assets', accessStorage: 'storage', accessSales: 'sales', accessTimecard: 'timecard' }[field];
+    if (admin && (u.blockedApps || []).includes(appOf)) return <span className="mu-fixed" title="Switched off by the Super Admin">Off</span>;
     if (field === 'accessTimecard') {
       if (admin) return <span className="mu-fixed" title="Admins approve timesheets">Approves</span>;
       if (contractor) return <span className="mu-fixed on" title="Casuals always log their hours">Always</span>;
@@ -396,7 +425,7 @@ function ManageUsersTab({ currentUser }) {
       </div>
 
       <p className="mu-foot">
-        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> always log hours in ITF Time Card, and can be given the Asset Tracker and Storage Centre too. <strong>ITF Sales Manager</strong> is off for everyone except admins until it is switched on here. Only the <strong>Super Admin</strong> can remove admins or take admin access away.</span>
+        <ShieldCheck size={13} /> <span><strong>ITF Admins</strong> have full access and approve timesheets. <strong>ITF Staff</strong> and <strong>ITF Contractors</strong> get the sections switched on for them — turn on Time Card to let them log their own hours. <strong>ITF Casuals</strong> always log hours in ITF Time Card, and can be given the Asset Tracker and Storage Centre too. <strong>ITF Sales Manager</strong> is off for everyone except admins until it is switched on here. Only the <strong>Super Admin</strong> can remove admins, take admin access away, or switch apps off for an admin.</span>
       </p>
 
       {showForm && (
