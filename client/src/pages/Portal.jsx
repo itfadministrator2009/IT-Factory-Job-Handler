@@ -4,12 +4,14 @@ import { LogOut, KeyRound, Search, FileText, X, Plus, Download, Printer } from '
 import portalApi, { clearPortalSession, getPortalClient } from '../portal/portalApi';
 import { openPdf } from '../utils/pdf';
 import { countByText } from '../storage/common';
+import AuditedAssets from '../portal/AuditedAssets';
 
 const TABS = [
-  { id: 'stock', label: 'Stock on hand' },
-  { id: 'orders', label: 'Orders' },
-  { id: 'new', label: 'New order' },
-  { id: 'movements', label: 'Receiving / dispatch' },
+  { id: 'stock', label: 'Stock on hand', section: 'storage' },
+  { id: 'orders', label: 'Orders', section: 'storage' },
+  { id: 'new', label: 'New order', section: 'storage' },
+  { id: 'movements', label: 'Receiving / dispatch', section: 'storage' },
+  { id: 'assets', label: 'Audited assets', section: 'assets' },
 ];
 
 function dmy(d) {
@@ -460,13 +462,20 @@ function ChangePassword({ onClose }) {
 export default function Portal() {
   const navigate = useNavigate();
   const [client, setClient] = useState(getPortalClient());
-  const [tab, setTab] = useState('stock');
+  const [tab, setTab] = useState(null);
+  // Which parts of the portal this client has (Storage Centre, Audited assets).
+  const [sections, setSections] = useState(null);
   const [ordersKey, setOrdersKey] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [counts, setCounts] = useState(null);
 
   useEffect(() => {
-    portalApi.get('/me').then((res) => setClient(res.data.client)).catch(() => {});
+    portalApi.get('/me').then((res) => {
+      setClient(res.data.client);
+      const s = res.data.sections || { storage: true, assets: false };
+      setSections(s);
+      setTab((t) => t || (s.storage ? 'stock' : 'assets'));
+    }).catch(() => {});
     portalApi.get('/summary').then((res) => setCounts(res.data)).catch(() => {});
   }, [ordersKey]);
 
@@ -480,10 +489,10 @@ export default function Portal() {
       <header style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 24px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--line, #e3e1d9)', flexWrap: 'wrap' }}>
         <img src="/logo.png" alt="IT Factory" style={{ height: 34 }} />
         <div>
-          <div style={{ fontWeight: 700 }}>Storage Centre</div>
+          <div style={{ fontWeight: 700 }}>{sections?.assets ? 'Client portal' : 'Storage Centre'}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>{client?.name}</div>
         </div>
-        {counts && (
+        {counts && sections?.storage && (
           <div style={{ display: 'flex', gap: 20, marginLeft: 16 }}>
             <div><div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{counts.inStorageCount}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>items in storage</div></div>
             <div><div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{counts.palletCount}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>pallets</div></div>
@@ -498,7 +507,7 @@ export default function Portal() {
 
       <main style={{ width: '100%', padding: '20px 24px 48px', boxSizing: 'border-box' }}>
         <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }} aria-label="Portal sections">
-          {TABS.map((t) => (
+          {TABS.filter((t) => sections?.[t.section]).map((t) => (
             <button key={t.id} type="button" className={`btn btn-sm ${tab === t.id ? 'btn-accent' : 'btn-ghost'}`} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>
               {t.label}
             </button>
@@ -509,6 +518,7 @@ export default function Portal() {
         {tab === 'orders' && <OrdersTab refreshKey={ordersKey} />}
         {tab === 'new' && <NewOrderTab onSubmitted={() => setOrdersKey((k) => k + 1)} />}
         {tab === 'movements' && <MovementsTab />}
+        {tab === 'assets' && <AuditedAssets />}
       </main>
 
       {showPassword && <ChangePassword onClose={() => setShowPassword(false)} />}

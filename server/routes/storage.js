@@ -337,8 +337,38 @@ router.delete('/pallets/:id', (req, res) => {
 
 function rowToClient(row) {
   if (!row) return row;
-  return { id: row.id, clientName: row.client_name, username: row.username, hasPortalLogin: !!row.password_hash, addedBy: row.added_by, createdAt: row.created_at, currency: normCurrency(row.currency) || DEFAULT_CURRENCY };
+  return { id: row.id, clientName: row.client_name, username: row.username, hasPortalLogin: !!row.password_hash, addedBy: row.added_by, createdAt: row.created_at, currency: normCurrency(row.currency) || DEFAULT_CURRENCY, assetCustomers: parseAssetCustomers(row.asset_customers) };
 }
+
+// Asset Tracker customer names linked to a portal client (what the client sees
+// on the portal's Audited assets tab). Stored as a JSON list of names.
+function parseAssetCustomers(v) {
+  try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.filter((x) => typeof x === 'string') : []; } catch { return []; }
+}
+function cleanAssetCustomers(v) {
+  if (!Array.isArray(v)) return null;
+  const seen = new Set(); const out = [];
+  v.map((x) => String(x || '').trim().replace(/\s+/g, ' ')).filter(Boolean).slice(0, 200).forEach((x) => {
+    const k = x.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(x); }
+  });
+  return out;
+}
+
+// Every Customer name used in the Asset Tracker (spellings grouped, most-used
+// spelling shown), with how many assets each has — to link to a portal client.
+router.get('/clients/asset-customers', (req, res) => {
+  const groups = new Map();
+  db.prepare("SELECT json_extract(fields_json, '$.customer') AS c, COUNT(*) AS n FROM assets GROUP BY c").all().forEach(({ c, n }) => {
+    const label = String(c ?? '').trim().replace(/\s+/g, ' ');
+    if (!label) return;
+    const k = label.toLowerCase();
+    const g = groups.get(k) || { name: label, count: 0, bestN: -1 };
+    g.count += n;
+    if (n > g.bestN) { g.name = label; g.bestN = n; }
+    groups.set(k, g);
+  });
+  res.json({ customers: [...groups.values()].map(({ name, count }) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) });
+});
 
 // The client list (like the old app's Clients sheet) plus, under `unlisted`,
 // every other client name used on items, pallets, orders or receiving/dispatch
@@ -402,8 +432,9 @@ router.post('/clients', (req, res) => {
   if (req.body.currency !== undefined && !normCurrency(req.body.currency)) return res.status(400).json({ error: 'Currency must be AUD or USD' });
   const id = randomUUID();
   const passwordHash = password ? bcrypt.hashSync(password, 10) : null;
-  db.prepare('INSERT INTO storage_clients (id, client_name, username, password_hash, added_by, currency) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, clientName.trim(), username || null, passwordHash, req.user.name, normCurrency(req.body.currency) || DEFAULT_CURRENCY);
+  db.prepare('INSERT INTO storage_clients (id, client_name, username, password_hash, added_by, currency, asset_customers) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, clientName.trim(), username || null, passwordHash, req.user.name, normCurrency(req.body.currency) || DEFAULT_CURRENCY,
+      JSON.stringify(cleanAssetCustomers(req.body.assetCustomers) || []));
   res.status(201).json({ client: rowToClient(db.prepare('SELECT * FROM storage_clients WHERE id = ?').get(id)) });
 });
 
@@ -429,6 +460,11 @@ router.patch('/clients/:id', (req, res) => {
     const cur = normCurrency(req.body.currency);
     if (!cur) return res.status(400).json({ error: 'Currency must be AUD or USD' });
     sets.push('currency = ?'); vals.push(cur);
+  }
+  if (req.body.assetCustomers !== undefined) {
+    const list = cleanAssetCustomers(req.body.assetCustomers);
+    if (!list) return res.status(400).json({ error: 'assetCustomers must be a list of customer names' });
+    sets.push('asset_customers = ?'); vals.push(JSON.stringify(list));
   }
   if (removePortalAccess) { sets.push('password_hash = NULL'); }
   else if (password) { sets.push('password_hash = ?'); vals.push(bcrypt.hashSync(password, 10)); }
