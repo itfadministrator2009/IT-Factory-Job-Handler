@@ -596,6 +596,8 @@ router.post('/import', upload.single('file'), (req, res) => {
   const headerCells = parseCsvLine(lines[0]).map((h) => h.trim());
   const defs = getFieldDefs();
   const labelToKey = new Map(defs.map((f) => [f.label.toLowerCase(), f.field_key]));
+  // Older spreadsheets still have the field's old name as the column heading.
+  if (defs.some((f) => f.field_key === 'zoho_ticket_number') && !labelToKey.has('zoho ticket number')) labelToKey.set('zoho ticket number', 'zoho_ticket_number');
   const dateCreatedIdx = headerCells.findIndex((h) => h.toLowerCase() === 'date created');
   const userNameIdx = headerCells.findIndex((h) => h.toLowerCase() === 'user name');
   const allUsers = db.prepare('SELECT id, name FROM users').all();
