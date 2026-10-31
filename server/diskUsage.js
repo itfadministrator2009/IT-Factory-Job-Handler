@@ -89,6 +89,11 @@ function uploadsBreakdown() {
       FROM project_entry_photos ph LEFT JOIN project_entries e ON e.id = ph.entry_id LEFT JOIN projects p ON p.id = e.project_id`).all()
       .forEach((r) => known.set(r.stored_name, { area: 'Project photos', name: r.original_name, mime: r.mime_type, createdAt: r.created_at, owner: r.project ? `${r.project}${r.entry_number != null ? ` — entry #${r.entry_number}` : ''}` : 'Project (deleted)', ownerKey: `project:${r.project}` }));
   } catch (e) { /* table missing */ }
+  try {
+    db.prepare(`SELECT ph.stored_name, ph.original_name, ph.mime_type, ph.created_at, e.asset_id
+      FROM checklist_photos ph LEFT JOIN checklist_entries e ON e.id = ph.entry_id`).all()
+      .forEach((r) => known.set(r.stored_name, { area: 'Asset checklist photos', name: r.original_name, mime: r.mime_type, createdAt: r.created_at ? new Date(r.created_at).toISOString() : null, owner: r.asset_id || 'Checklist (deleted)', ownerKey: `checklist:${r.asset_id}` }));
+  } catch (e) { /* table missing */ }
 
   // Every uploaded file, wherever it is: on the Render disk, in Cloudflare R2, or both.
   const all = new Map(); // stored name -> { name, area, kind, owner, ownerKey, createdAt, render, cloud }

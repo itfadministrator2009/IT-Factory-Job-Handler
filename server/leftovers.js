@@ -1,4 +1,4 @@
-// Left-over uploaded files: photos and attachments that no job or project uses
+// Left-over uploaded files: photos and attachments that no job, project or asset checklist uses
 // any more (for example left behind when a job was deleted). Found on the Render
 // disk and in Cloudflare R2, and removed only when the Super Admin asks.
 //
@@ -16,7 +16,7 @@ const UPLOAD_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 function inUse() {
   const names = new Set();
-  for (const table of ['attachments', 'project_entry_photos']) {
+  for (const table of ['attachments', 'project_entry_photos', 'checklist_photos']) {
     try { db.prepare(`SELECT stored_name FROM ${table}`).all().forEach((r) => names.add(r.stored_name)); } catch (e) { /* table missing */ }
   }
   let restorable = '';
