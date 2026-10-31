@@ -180,3 +180,13 @@ test('Asset Location is a drop-down (ITF Sydney / ITF Melbourne) right after Aud
   assert.deepEqual(loc.options, ['ITF Sydney', 'ITF Melbourne']);
   assert.equal(new Set(fields.map((f) => f.sort_order)).size, fields.length, 'no two fields share a position');
 });
+
+test('a new asset gets this month as its Audit Month unless one is given', async () => {
+  const now = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(new Date());
+  const a = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'AM1', serial_number: 'AM-SER-1' } } });
+  assert.equal(a.status, 201);
+  assert.equal(a.data.asset.fields.audit_month, now);
+  assert.match(now, /^[A-Z][a-z]+ \d{4}$/);
+  const b = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'AM2', serial_number: 'AM-SER-2', audit_month: 'September 2026' } } });
+  assert.equal(b.data.asset.fields.audit_month, 'September 2026');
+});
