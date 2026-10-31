@@ -1729,3 +1729,10 @@ label.btn.disabled { opacity: 0.6; pointer-events: none; }
 a.btn { text-decoration: none; }
 .stat-grid-7 .stat-card .num { font-size: clamp(17px, 1.55vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat-grid-7 .stat-card .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Sales lists: a second left-right scrollbar above the table. */
+.top-scrollbar { overflow-x: scroll; overflow-y: hidden; height: 14px; margin-bottom: 6px; border-radius: 7px; background: #f0efea; scrollbar-width: auto; scrollbar-color: #9aa39e #f0efea; }
+.top-scrollbar > div { height: 1px; }
+.top-scrollbar::-webkit-scrollbar, .sales-table-wrap::-webkit-scrollbar { height: 12px; width: 12px; }
+.top-scrollbar::-webkit-scrollbar-track, .sales-table-wrap::-webkit-scrollbar-track { background: #f0efea; border-radius: 7px; }
+.top-scrollbar::-webkit-scrollbar-thumb, .sales-table-wrap::-webkit-scrollbar-thumb { background: #9aa39e; border-radius: 7px; border: 2px solid #f0efea; }
+.top-scrollbar::-webkit-scrollbar-thumb:hover, .sales-table-wrap::-webkit-scrollbar-thumb:hover { background: #6b7570; }
