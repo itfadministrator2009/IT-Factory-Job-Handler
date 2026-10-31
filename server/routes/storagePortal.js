@@ -58,8 +58,19 @@ router.use((req, res, next) => {
   next();
 });
 
+// Which tabs this client gets: Storage Centre tabs when they have any storage
+// records (or no audited assets linked), Audited assets when Asset Tracker
+// customer names are linked to them.
+function hasStorageRecords(name) {
+  const q = (t) => db.prepare(`SELECT 1 FROM ${t} WHERE lower(trim(client)) = lower(trim(?)) LIMIT 1`).get(name);
+  return !!(q('storage_items') || q('storage_orders') || q('storage_receiving_dispatch'));
+}
 router.get('/me', (req, res) => {
-  res.json({ client: { name: req.portalClient.client_name, username: req.portalClient.username } });
+  const assets = assetCustomerKeys(req.portalClient).length > 0;
+  res.json({
+    client: { name: req.portalClient.client_name, username: req.portalClient.username },
+    sections: { storage: !assets || hasStorageRecords(req.portalClient.client_name), assets },
+  });
 });
 
 router.post('/change-password', (req, res) => {
@@ -221,6 +232,135 @@ router.get('/receiving-dispatch', (req, res) => {
       receivingNotes: r.receiving, dispatchNotes: r.dispatch,
     })),
   });
+});
+
+// ---------------------------------------------------------------------------
+// Audited assets (ITF Asset Tracker) — only assets whose Customer is one of the
+// names linked to this client on Storage Centre → Clients. Only the fields in
+// PORTAL_ASSET_FIELDS are ever sent: no Status, Sent to, Buyer, Location or
+// any field added later in Manage Fields.
+// ---------------------------------------------------------------------------
+const PORTAL_ASSET_FIELDS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'model_number', 'serial_number', 'client_asset_tag',
+  'ram', 'cpu_speed', 'cpu_gen', 'hdd', 'battery', 'condition_appearance', 'condition_completeness', 'condition_operability',
+  'condition_services', 'asset_upgrade', 'zoho_ticket_number', 'audit_month', 'comments'];
+const fieldSql = (key) => `trim(COALESCE(json_extract(fields_json, '$.${key}'), ''))`;
+const normSql = (key) => `lower(trim(replace(replace(replace(COALESCE(json_extract(fields_json, '$.${key}'), ''), '  ', ' '), '  ', ' '), '  ', ' ')))`;
+const normText = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function assetCustomerKeys(client) {
+  let list = [];
+  try { list = JSON.parse(client.asset_customers || '[]'); } catch { list = []; }
+  return [...new Set((Array.isArray(list) ? list : []).map(normText).filter(Boolean))];
+}
+
+// WHERE for this client's assets plus the portal filters (search, audit month,
+// category, job number).
+function portalAssetWhere(req) {
+  const keys = assetCustomerKeys(req.portalClient);
+  const parts = [`${normSql('customer')} IN (${keys.map(() => '?').join(',')})`];
+  const params = [...keys];
+  const q = String(req.query.q || '').trim();
+  if (q) {
+    parts.push(`(${PORTAL_ASSET_FIELDS.map((k) => `${fieldSql(k)} LIKE ?`).join(' OR ')})`);
+    PORTAL_ASSET_FIELDS.forEach(() => params.push(`%${q}%`));
+  }
+  [['month', 'audit_month'], ['category', 'category'], ['job', 'zoho_ticket_number']].forEach(([param, key]) => {
+    const v = req.query[param];
+    if (v == null || v === '') return;
+    if (v === '__none__') parts.push(`${normSql(key)} = ''`);
+    else { parts.push(`${normSql(key)} = ?`); params.push(normText(v)); }
+  });
+  return { where: `WHERE ${parts.join(' AND ')}`, params };
+}
+
+function portalAsset(row) {
+  let f = {};
+  try { f = JSON.parse(row.fields_json || '{}'); } catch { f = {}; }
+  const fields = {};
+  PORTAL_ASSET_FIELDS.forEach((k) => { if (f[k] != null && f[k] !== '') fields[k] = f[k]; });
+  return { id: row.id, createdAt: row.created_at, fields };
+}
+
+function portalFieldDefs() {
+  const defs = db.prepare('SELECT field_key, label, type FROM asset_field_defs').all();
+  return PORTAL_ASSET_FIELDS.map((k) => { const d = defs.find((x) => x.field_key === k); return d ? { key: k, label: d.label, type: d.type } : null; }).filter(Boolean);
+}
+
+function requireAssets(req, res, next) {
+  if (!assetCustomerKeys(req.portalClient).length) return res.status(403).json({ error: 'Audited assets are not set up for your account. Please contact IT Factory.' });
+  next();
+}
+
+// Distinct values (with counts) of one field across this client's assets.
+function valueCounts(req, key) {
+  const keys = assetCustomerKeys(req.portalClient);
+  const rows = db.prepare(`SELECT ${fieldSql(key)} AS v, COUNT(*) AS n, MIN(created_at) AS first FROM assets
+    WHERE ${normSql('customer')} IN (${keys.map(() => '?').join(',')}) GROUP BY ${normSql(key)}`).all(...keys);
+  return rows.map((r) => ({ value: r.v, count: r.n, first: r.first }));
+}
+
+router.get('/assets/options', requireAssets, (req, res) => {
+  const byFirst = (a, b) => String(b.first).localeCompare(String(a.first));
+  res.json({
+    fields: portalFieldDefs(),
+    month: valueCounts(req, 'audit_month').sort(byFirst).map(({ value, count }) => ({ value, count })),
+    category: valueCounts(req, 'category').sort((a, b) => a.value.localeCompare(b.value)).map(({ value, count }) => ({ value, count })),
+    job: valueCounts(req, 'zoho_ticket_number').sort(byFirst).map(({ value, count }) => ({ value, count })),
+  });
+});
+
+router.get('/assets', requireAssets, (req, res) => {
+  const { where, params } = portalAssetWhere(req);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM assets ${where}`).get(...params).c;
+  const rows = db.prepare(`SELECT id, fields_json, created_at FROM assets ${where} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?`)
+    .all(...params, limit, (page - 1) * limit);
+  res.json({ assets: rows.map(portalAsset), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
+});
+
+// Counts for the charts, following the current filters.
+router.get('/assets/summary', requireAssets, (req, res) => {
+  const { where, params } = portalAssetWhere(req);
+  const group = (key) => db.prepare(`SELECT ${fieldSql(key)} AS v, COUNT(*) AS n, MIN(created_at) AS first FROM assets ${where} GROUP BY ${normSql(key)} ORDER BY n DESC`)
+    .all(...params).map((r) => ({ label: r.v || '(not set)', count: r.n, first: r.first }));
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM assets ${where}`).get(...params).c;
+  // Data wiping / services: each ticked option counted once per asset.
+  const services = {};
+  let dataWiped = 0; // assets with a wipe or shred recorded (not a failed one)
+  db.prepare(`SELECT json_extract(fields_json, '$.condition_services') AS s FROM assets ${where}`).all(...params).forEach(({ s }) => {
+    let list = [];
+    try { list = Array.isArray(s) ? s : JSON.parse(s || '[]'); } catch { list = s ? [String(s)] : []; }
+    const items = (Array.isArray(list) ? list : [list]).map((x) => String(x).trim()).filter(Boolean);
+    items.forEach((x) => { services[x] = (services[x] || 0) + 1; });
+    if (items.some((x) => /wipe|shred/i.test(x) && !/fail/i.test(x))) dataWiped += 1;
+  });
+  res.json({
+    total,
+    dataWiped,
+    byMonth: group('audit_month').sort((a, b) => String(a.first).localeCompare(String(b.first))).map(({ label, count }) => ({ label, count })),
+    byCategory: group('category').map(({ label, count }) => ({ label, count })),
+    byManufacturer: group('manufacturer').map(({ label, count }) => ({ label, count })),
+    byService: Object.entries(services).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count),
+  });
+});
+
+router.get('/assets/export', requireAssets, (req, res) => {
+  const { where, params } = portalAssetWhere(req);
+  const fields = portalFieldDefs();
+  const rows = db.prepare(`SELECT id, fields_json, created_at FROM assets ${where} ORDER BY created_at DESC, rowid DESC`).all(...params).map(portalAsset);
+  const cell = (v) => {
+    const t = Array.isArray(v) ? v.join('; ') : (v == null ? '' : String(v));
+    const safe = /^[=+\-@\t\r]/.test(t) ? `'${t}` : t; // stop spreadsheet formulas
+    return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
+  const lines = [['Date added', ...fields.map((f) => f.label)].map(cell).join(',')];
+  const sydneyDate = (utc) => { const ms = Date.parse(`${String(utc || '').replace(' ', 'T')}Z`); return Number.isNaN(ms) ? '' : new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney' }).format(new Date(ms)); };
+  rows.forEach((a) => lines.push([sydneyDate(a.createdAt), ...fields.map((f) => a.fields[f.key])].map(cell).join(',')));
+  const name = String(req.portalClient.client_name || 'assets').replace(/[^A-Za-z0-9._-]+/g, '_');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}-audited-assets-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send('﻿' + lines.join('\r\n') + '\r\n');
 });
 
 module.exports = router;
