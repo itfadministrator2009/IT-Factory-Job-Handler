@@ -97,9 +97,12 @@ export function canUseModule(user, module) {
   const admin = user.role === 'admin' || user.role === 'agent';
   // ITF Time Card ('timecard'): admins approve; contractors and ticked Users log time.
   if (module === 'timecard') return admin ? user.approvesTimecard !== false : user.accessTimecard === true;
-  if (admin) return (module === 'assets' ? user.accessAssets : module === 'storage' ? user.accessStorage : user.accessSales) !== false;
+  const flag = { assets: 'accessAssets', storage: 'accessStorage', sales: 'accessSales', checklist: 'accessChecklist' }[module];
+  if (admin) return user[flag] !== false;
   // ITF Sales Manager: only when ticked.
   if (module === 'sales') return user.accessSales === true;
+  // ITF Asset Checklist: only when ticked (casuals included).
+  if (module === 'checklist') return user.accessChecklist === true;
   // ITF Casuals: only when an admin has switched it on for them.
   if (user.role === 'contractor') return (module === 'assets' ? user.accessAssets : user.accessStorage) === true;
   return (module === 'assets' ? user.accessAssets : user.accessStorage) !== false;
