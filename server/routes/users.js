@@ -44,9 +44,9 @@ router.get('/', (req, res) => {
 });
 
 // Admin-only: full user management
-const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, access_sales, hourly_rate, super_admin, admin_blocked';
+const USER_COLS = 'id, name, email, role, created_at, access_assets, access_storage, access_timecard, access_sales, access_checklist, hourly_rate, super_admin, admin_blocked';
 const toAdminUser = (u) => u && ({
-  ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0, accessTimecard: u.access_timecard === 1, accessSales: u.access_sales === 1,
+  ...u, accessAssets: u.access_assets !== 0, accessStorage: u.access_storage !== 0, accessTimecard: u.access_timecard === 1, accessSales: u.access_sales === 1, accessChecklist: u.access_checklist === 1,
   hourlyRate: u.hourly_rate > 0 ? u.hourly_rate : null, superAdmin: u.super_admin === 1,
   // Admins: the apps the Super Admin has switched off for them.
   blockedApps: blockedApps(u),
@@ -70,7 +70,7 @@ router.get('/admin', adminRequired, (req, res) => {
 });
 
 router.post('/admin', adminRequired, (req, res) => {
-  const { name, email, password, role, accessAssets, accessStorage, accessTimecard, accessSales, hourlyRate } = req.body;
+  const { name, email, password, role, accessAssets, accessStorage, accessTimecard, accessSales, accessChecklist, hourlyRate } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'name, email, and password are required' });
   }
@@ -86,8 +86,8 @@ router.post('/admin', adminRequired, (req, res) => {
   // Sections are on by default, except for ITF Casuals (off unless ticked).
   const flag = (v) => (finalRole === 'contractor' ? (v === true ? 1 : 0) : (v === false ? 0 : 1));
   // ITF Sales Manager is off unless ticked (admins always have it).
-  db.prepare('INSERT INTO users (id, name, email, password_hash, role, access_assets, access_storage, access_timecard, access_sales, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, email, password_hash, finalRole, flag(accessAssets), flag(accessStorage), accessTimecard ? 1 : 0, accessSales === true ? 1 : 0, rate ?? null);
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role, access_assets, access_storage, access_timecard, access_sales, access_checklist, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, email, password_hash, finalRole, flag(accessAssets), flag(accessStorage), accessTimecard ? 1 : 0, accessSales === true ? 1 : 0, accessChecklist === true ? 1 : 0, rate ?? null);
 
   const user = toAdminUser(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id));
   logActivity('user.created', { req, target: { type: 'user', id, name }, details: `Role: ${finalRole}` });
@@ -98,7 +98,7 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
 
-  const { role, name, email, accessAssets, accessStorage, accessTimecard, accessSales, hourlyRate, adminApps } = req.body;
+  const { role, name, email, accessAssets, accessStorage, accessTimecard, accessSales, accessChecklist, hourlyRate, adminApps } = req.body;
 
   // Turning apps on or off for an admin: the Super Admin only, and never for the
   // Super Admin's own account (it always has everything).
@@ -132,6 +132,7 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   // ITF Time Card: a User also logs their own hours (contractors always do).
   if (accessTimecard !== undefined) db.prepare('UPDATE users SET access_timecard = ? WHERE id = ?').run(accessTimecard ? 1 : 0, req.params.id);
   if (accessSales !== undefined) db.prepare('UPDATE users SET access_sales = ? WHERE id = ?').run(accessSales ? 1 : 0, req.params.id);
+  if (accessChecklist !== undefined) db.prepare('UPDATE users SET access_checklist = ? WHERE id = ?').run(accessChecklist ? 1 : 0, req.params.id);
 
   if (role !== undefined) {
     const finalRole = roleFrom(role);
@@ -169,7 +170,8 @@ router.patch('/admin/:id', adminRequired, (req, res) => {
   if (!!after.access_storage !== !!target.access_storage) changes.push(`Storage Centre: ${yn(after.access_storage)}`);
   if (!!after.access_timecard !== !!target.access_timecard) changes.push(`Time Card: ${yn(after.access_timecard)}`);
   if (!!after.access_sales !== !!target.access_sales) changes.push(`Sales Manager: ${yn(after.access_sales)}`);
-  const APP_NAMES = { assets: 'Asset Tracker', storage: 'Storage Centre', sales: 'Sales Manager', timecard: 'Time Card' };
+  if (!!after.access_checklist !== !!target.access_checklist) changes.push(`Asset Checklist: ${yn(after.access_checklist)}`);
+  const APP_NAMES = { assets: 'Asset Tracker', storage: 'Storage Centre', sales: 'Sales Manager', checklist: 'Asset Checklist', timecard: 'Time Card' };
   const was = blockedApps(target);
   const now = blockedApps(after);
   ADMIN_APPS.forEach((a) => { if (was.includes(a) !== now.includes(a)) changes.push(`${APP_NAMES[a]} (admin): ${now.includes(a) ? 'off' : 'on'}`); });

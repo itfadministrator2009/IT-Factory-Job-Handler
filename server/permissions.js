@@ -28,7 +28,7 @@ function currentRole(userId) {
 
 // Apps the Super Admin can switch off for an admin. Admins have every app unless
 // it's listed in their admin_blocked column; the Super Admin always has them all.
-const ADMIN_APPS = ['assets', 'storage', 'sales', 'timecard'];
+const ADMIN_APPS = ['assets', 'storage', 'sales', 'checklist', 'timecard'];
 function blockedApps(row) {
   if (!row || !isAdminRole(row.role) || row.super_admin === 1) return [];
   return String(row.admin_blocked || '').split(',').map((s) => s.trim()).filter((m) => ADMIN_APPS.includes(m));
@@ -42,14 +42,16 @@ function adminHasTimecard(userId) {
 // ITF Asset Tracker ('assets') and ITF Storage Centre ('storage') can be switched
 // on or off per user in Settings. Admins have them unless the Super Admin switched
 // them off. Read fresh from the database so a change applies on the next request.
-const MODULE_COLUMNS = { assets: 'access_assets', storage: 'access_storage', sales: 'access_sales' };
-const MODULE_NAMES = { assets: 'the ITF Asset Tracker', storage: 'the ITF Storage Centre', sales: 'ITF Sales Manager' };
+const MODULE_COLUMNS = { assets: 'access_assets', storage: 'access_storage', sales: 'access_sales', checklist: 'access_checklist' };
+const MODULE_NAMES = { assets: 'the ITF Asset Tracker', storage: 'the ITF Storage Centre', sales: 'ITF Sales Manager', checklist: 'ITF Asset Checklist' };
 function hasModuleAccess(userId, module) {
-  const row = db.prepare('SELECT role, super_admin, admin_blocked, access_assets, access_storage, access_sales FROM users WHERE id = ?').get(userId);
+  const row = db.prepare('SELECT role, super_admin, admin_blocked, access_assets, access_storage, access_sales, access_checklist FROM users WHERE id = ?').get(userId);
   if (!row) return false;
   if (isAdminRole(row.role)) return !blockedApps(row).includes(module);
   // ITF Sales Manager (sales figures): only when switched on, for everyone but admins.
   if (module === 'sales') return row.access_sales === 1;
+  // ITF Asset Checklist: only when switched on, casuals included.
+  if (module === 'checklist') return row.access_checklist === 1;
   // ITF Casuals: off unless an admin has switched it on for them.
   if (row.role === 'contractor') return row[MODULE_COLUMNS[module]] === 1;
   return row[MODULE_COLUMNS[module]] !== 0;
@@ -83,6 +85,7 @@ function publicUser(row) {
     accessAssets: allowed(row.access_assets, 'assets'),
     accessStorage: allowed(row.access_storage, 'storage'),
     accessSales: admin ? !blocked.includes('sales') : row.access_sales === 1,
+    accessChecklist: admin ? !blocked.includes('checklist') : row.access_checklist === 1,
     accessTimecard: logsTime(row),
     // Admins: whether they approve timesheets in ITF Time Card.
     approvesTimecard: admin && !blocked.includes('timecard'),

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Briefcase, PlusCircle, BookOpen, LogOut, BarChart3, FileStack, Settings, FolderKanban,
   Boxes, Warehouse, ClipboardCheck, ChevronDown, ChevronRight, List, SlidersHorizontal, Table, Gauge, Package, Users,
   ClipboardList, Truck, MapPin, QrCode, Calculator, Layers, Clock, CheckSquare, FileCheck2, Menu, X,
-  DollarSign, ShoppingBag, Wrench, PieChart,
+  DollarSign, ShoppingBag, Wrench, PieChart, ListChecks, History,
 } from 'lucide-react';
 import api from '../api';
 import RefreshButton from './RefreshButton';
@@ -16,7 +16,7 @@ import InstallApp from './InstallApp';
 // Storage Centre — each opening to show its own pages, then Settings.
 const DESK_PATHS = ['/dashboard', '/jobs', '/projects', '/reports', '/templates', '/kb'];
 const inDesk = (p) => DESK_PATHS.some((d) => p === d || p.startsWith(`${d}/`));
-const sectionOf = (p) => (p.startsWith('/sales') ? 'sales' : p.startsWith('/storage') ? 'storage' : p.startsWith('/assets') ? 'assets' : p.startsWith('/timecard') ? 'timecard' : inDesk(p) ? 'desk' : null);
+const sectionOf = (p) => (p.startsWith('/checklist') ? 'checklist' : p.startsWith('/sales') ? 'sales' : p.startsWith('/storage') ? 'storage' : p.startsWith('/assets') ? 'assets' : p.startsWith('/timecard') ? 'timecard' : inDesk(p) ? 'desk' : null);
 
 const linkClass = ({ isActive }) => `sidebar-link sidebar-sublink${isActive ? ' active' : ''}`;
 
@@ -45,7 +45,7 @@ export default function Layout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // The section you're in is always open; others open/close when clicked.
-  const [open, setOpen] = useState(() => ({ desk: current === 'desk', assets: current === 'assets', storage: current === 'storage', sales: current === 'sales', timecard: current === 'timecard' }));
+  const [open, setOpen] = useState(() => ({ desk: current === 'desk', assets: current === 'assets', storage: current === 'storage', sales: current === 'sales', checklist: current === 'checklist', timecard: current === 'timecard' }));
 
   // Admins: how many timesheets are waiting on approval (shown in the menu).
   const [tcPending, setTcPending] = useState(0);
@@ -159,6 +159,16 @@ export default function Layout({ children }) {
             <NavLink to="/sales/models" className={linkClass}><Layers size={14} /> Inventory by Model</NavLink>
             <NavLink to="/sales/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>
             <NavLink to="/sales/tools" className={linkClass}><Wrench size={14} /> Tools</NavLink>
+          </Section>
+          )}
+
+          {canUseModule(user, 'checklist') && (
+          <Section id="checklist" title="ITF Asset Checklist" icon={ListChecks} home="/checklist"
+            open={open.checklist} current={current === 'checklist'} onToggle={toggle}>
+            <NavLink to="/checklist" end className={() => linkClass({ isActive: location.pathname === '/checklist' || location.pathname.startsWith('/checklist/new') })}><PlusCircle size={14} /> New Checklist</NavLink>
+            <NavLink to="/checklist/history" className={() => linkClass({ isActive: location.pathname.startsWith('/checklist/history') || location.pathname.startsWith('/checklist/edit') })}><History size={14} /> Saved History</NavLink>
+            <NavLink to="/checklist/summary" className={linkClass}><BarChart3 size={14} /> Summary</NavLink>
+            {isAdmin && <NavLink to="/checklist/tools" className={linkClass}><Wrench size={14} /> Tools</NavLink>}
           </Section>
           )}
 

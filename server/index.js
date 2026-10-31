@@ -76,6 +76,7 @@ app.use('/api/assets', assetRoutes);
 app.use('/api/storage', storageRoutes);
 // ITF Sales Manager — sales, inventory and Shopify orders (moved from Google Sheets).
 app.use('/api/sales', require('./routes/sales'));
+app.use('/api/checklist', require('./routes/checklist'));
 // Client-facing Storage Centre portal — its own login, separate from staff accounts.
 app.use('/api/storage-portal', storagePortalRoutes);
 app.use('/api/presence', presenceRoutes);
