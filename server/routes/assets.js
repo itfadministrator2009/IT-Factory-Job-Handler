@@ -223,6 +223,10 @@ router.get('/all-ids', (req, res) => {
   res.json({ ids: rows.map((r) => r.id) });
 });
 
+function currentAuditMonth(now = new Date()) {
+  return new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(now);
+}
+
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
@@ -231,6 +235,9 @@ router.post('/', (req, res) => {
     const matches = serialConflicts(fields.serial_number);
     if (matches.length) return duplicateSerialResponse(res, fields.serial_number, matches);
   }
+  // Audit Month fills itself with the current month (Sydney time), e.g. "October 2026",
+  // unless one was typed in.
+  if (!String(fields.audit_month || '').trim()) fields.audit_month = currentAuditMonth();
   const id = randomUUID();
   db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)').run(id, JSON.stringify(fields), req.user.id);
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
@@ -589,6 +596,8 @@ router.post('/import', upload.single('file'), (req, res) => {
   const headerCells = parseCsvLine(lines[0]).map((h) => h.trim());
   const defs = getFieldDefs();
   const labelToKey = new Map(defs.map((f) => [f.label.toLowerCase(), f.field_key]));
+  // Older spreadsheets still have the field's old name as the column heading.
+  if (defs.some((f) => f.field_key === 'zoho_ticket_number') && !labelToKey.has('zoho ticket number')) labelToKey.set('zoho ticket number', 'zoho_ticket_number');
   const dateCreatedIdx = headerCells.findIndex((h) => h.toLowerCase() === 'date created');
   const userNameIdx = headerCells.findIndex((h) => h.toLowerCase() === 'user name');
   const allUsers = db.prepare('SELECT id, name FROM users').all();

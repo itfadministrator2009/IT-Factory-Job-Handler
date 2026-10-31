@@ -406,7 +406,7 @@ function seedAssetFieldDefs() {
     ['asset_upgrade', 'Asset Upgrade', 'text', null],
     ['asset_sent_to', 'Asset Sent To', 'dropdown', opts(['E-Waste', 'ITF Australia', 'Return to Client', 'Wholesale'])],
     ['customer', 'Customer', 'text', null],
-    ['zoho_ticket_number', 'Zoho Ticket Number', 'text', null],
+    ['zoho_ticket_number', 'ITF Workdesk Job Number', 'text', null],
     ['audit_month', 'Audit Month', 'text', null],
     ['comments', 'Comments', 'textarea', null],
     ['status', 'Status', 'dropdown', opts(['Available', 'Sold'])],
@@ -416,6 +416,24 @@ function seedAssetFieldDefs() {
   fields.forEach(([key, label, type, options], idx) => insert.run(randomUUID(), key, label, type, options, idx));
 }
 seedAssetFieldDefs();
+
+// Asset Location (ITF Sydney / ITF Melbourne), added once, straight after Audit
+// Month so it sits next to it on the asset form. Admins can change the options
+// in Manage Fields.
+function addAssetLocationField() {
+  if (db.prepare("SELECT 1 FROM asset_field_defs WHERE field_key = 'asset_location'").get()) return;
+  const audit = db.prepare("SELECT sort_order FROM asset_field_defs WHERE field_key = 'audit_month'").get();
+  const order = audit ? audit.sort_order + 1 : (db.prepare('SELECT MAX(sort_order) as m FROM asset_field_defs').get().m || 0) + 1;
+  db.transaction(() => {
+    db.prepare('UPDATE asset_field_defs SET sort_order = sort_order + 1 WHERE sort_order >= ?').run(order);
+    db.prepare("INSERT INTO asset_field_defs (id, field_key, label, type, options_json, is_core, sort_order) VALUES (?, 'asset_location', 'Asset Location', 'dropdown', ?, 0, ?)")
+      .run(randomUUID(), JSON.stringify(['ITF Sydney', 'ITF Melbourne']), order);
+  })();
+}
+addAssetLocationField();
+// "Zoho Ticket Number" is now "ITF Workdesk Job Number" (same field, so existing
+// values stay). Only renamed if nobody has already changed the label.
+db.prepare("UPDATE asset_field_defs SET label = 'ITF Workdesk Job Number' WHERE field_key = 'zoho_ticket_number' AND label = 'Zoho Ticket Number'").run();
 
 function addColumnIfMissing(table, column, definition) {
   try {

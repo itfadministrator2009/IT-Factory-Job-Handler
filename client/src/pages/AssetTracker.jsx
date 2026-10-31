@@ -13,7 +13,7 @@ const SUMMARY_KEYS = ['asset_tag', 'category', 'manufacturer', 'model_name', 'mo
 // Share of the table width for each column, so all of them fit on screen. Long
 // values are cut short with "…" — hover a cell to see it in full.
 const COL_WIDTHS = { asset_tag: 9, category: 9, manufacturer: 7, model_name: 10, model_number: 7, serial_number: 12, customer: 12, status: 7, asset_sent_to: 9, zoho_ticket_number: 6 };
-const SHORT_HEADINGS = { zoho_ticket_number: 'Zoho #', asset_sent_to: 'Sent to', model_number: 'Model no.', serial_number: 'Serial number', manufacturer: 'Make' };
+const SHORT_HEADINGS = { zoho_ticket_number: 'Job #', asset_sent_to: 'Sent to', model_number: 'Model no.', serial_number: 'Serial number', manufacturer: 'Make' };
 
 // Exact-match filters (URL parameters, so a report can link straight to a list).
 // "__none__" = the field is blank. dupes=1: only assets whose serial is on more
@@ -189,7 +189,8 @@ export default function AssetTracker() {
 
   function openAddForm() {
     setEditingAsset(null);
-    setFormValues({});
+    // Audit Month starts as this month (Sydney time), e.g. "November 2026" — it can be changed.
+    setFormValues({ audit_month: new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(new Date()) });
     setError('');
     setDupWarning(null);
     setShowForm(true);
@@ -546,23 +547,21 @@ export default function AssetTracker() {
       </div>
 
       {isAdmin && filters.month && !serialResult && (
-        <div className="filter-bar" style={{ alignItems: 'center' }}>
-          <span className="filter-bar-title"><Pencil size={14} /> Update all {total} {total === 1 ? 'asset' : 'assets'} from {monthLabel(filters.month)}</span>
-          <label className={`filter-field${monthStatus ? ' active' : ''}`}>
-            <span className="filter-field-label">Set status</span>
-            <select aria-label="Set status" value={monthStatus} onChange={(e) => setMonthStatus(e.target.value)} disabled={monthBusy}>
+        <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+          <strong>Update all {total} {total === 1 ? 'asset' : 'assets'} from {monthLabel(filters.month)}:</strong>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Status
+            <select value={monthStatus} onChange={(e) => setMonthStatus(e.target.value)} disabled={monthBusy}>
               <option value="">Leave as is</option>
               {(filterOptions?.status || []).map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </label>
-          <label className={`filter-field${monthSentTo ? ' active' : ''}`}>
-            <span className="filter-field-label">Set sent to</span>
-            <select aria-label="Set sent to" value={monthSentTo} onChange={(e) => setMonthSentTo(e.target.value)} disabled={monthBusy}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Sent to
+            <select value={monthSentTo} onChange={(e) => setMonthSentTo(e.target.value)} disabled={monthBusy}>
               <option value="">Leave as is</option>
               {(filterOptions?.sent_to || []).map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </label>
-          <button type="button" className="btn btn-primary btn-sm" style={{ alignSelf: 'center' }} onClick={applyMonthUpdate} disabled={monthBusy || !total || (!monthStatus && !monthSentTo)}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={applyMonthUpdate} disabled={monthBusy || !total || (!monthStatus && !monthSentTo)}>
             {monthBusy ? 'Updating…' : `Apply to all ${total}`}
           </button>
         </div>
