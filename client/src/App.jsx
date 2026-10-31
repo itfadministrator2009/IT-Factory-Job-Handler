@@ -21,6 +21,13 @@ import AssetTracker from './pages/AssetTracker';
 import AssetReports from './pages/AssetReports';
 import AssetFields from './pages/AssetFields';
 import StorageManifest from './pages/StorageManifest';
+import SalesDashboard from './pages/SalesDashboard';
+import SalesList from './pages/SalesList';
+import SalesItemForm from './pages/SalesItemForm';
+import SalesGrouped from './pages/SalesGrouped';
+import SalesReports from './pages/SalesReports';
+import SalesShopify from './pages/SalesShopify';
+import SalesTools from './pages/SalesTools';
 import StoragePallets from './pages/StoragePallets';
 import StorageClients from './pages/StorageClients';
 import StorageOrders from './pages/StorageOrders';
@@ -128,6 +135,18 @@ function AppRoutes() {
       <Route path="/assets/batches" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
       <Route path="/assets/batches/:id" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
 
+      <Route path="/sales" element={<RequireModule module="sales"><SalesDashboard /></RequireModule>} />
+      <Route path="/sales/all" element={<RequireModule module="sales"><SalesList kind="sale" /></RequireModule>} />
+      <Route path="/sales/add" element={<RequireModule module="sales"><SalesItemForm kind="sale" key="sale-add" /></RequireModule>} />
+      <Route path="/sales/edit/:id" element={<RequireModule module="sales"><SalesItemForm kind="sale" /></RequireModule>} />
+      <Route path="/sales/inventory" element={<RequireModule module="sales"><SalesList kind="inventory" /></RequireModule>} />
+      <Route path="/sales/inventory/add" element={<RequireModule module="sales"><SalesItemForm kind="inventory" key="inv-add" /></RequireModule>} />
+      <Route path="/sales/inventory/edit/:id" element={<RequireModule module="sales"><SalesItemForm kind="inventory" /></RequireModule>} />
+      <Route path="/sales/products" element={<RequireModule module="sales"><SalesGrouped mode="products" /></RequireModule>} />
+      <Route path="/sales/models" element={<RequireModule module="sales"><SalesGrouped mode="models" /></RequireModule>} />
+      <Route path="/sales/reports" element={<RequireModule module="sales"><SalesReports /></RequireModule>} />
+      <Route path="/sales/shopify" element={<RequireModule module="sales"><SalesShopify /></RequireModule>} />
+      <Route path="/sales/tools" element={<RequireModule module="sales"><SalesTools /></RequireModule>} />
       <Route path="/storage" element={<RequireModule module="storage"><StorageManifest /></RequireModule>} />
       <Route path="/storage/pallets" element={<RequireModule module="storage"><StoragePallets /></RequireModule>} />
       <Route path="/storage/clients" element={<RequireModule module="storage"><StorageClients /></RequireModule>} />
