@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Download, Upload, Trash2, MoreHorizontal, Printer, Tag, Copy, Pencil, ArrowRight, X, Clock } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import TopScrollbar from '../components/TopScrollbar';
 import useSalesData from '../sales/useSalesData';
+import useFitHeight from '../sales/useFitHeight';
 import {
   PLATFORMS, SALE_STATUSES, INV_STATUSES, ITEM_TYPES, SEARCH_FIELDS, fmt, fmtInt, pct, auDate, str, num, daysInStock,
   formatBatteryHealth, platformClass, matches, sortItems, exportSales, exportInventory, parseCSV, rowsToRecords,
@@ -49,6 +50,8 @@ export default function SalesList({ kind }) {
   const [customer, setCustomer] = useState(null);
   const fileRef = useRef(null);
   const tableWrapRef = useRef(null);
+  const fitRef = useFitHeight();
+  const wrapRef = useCallback((el) => { tableWrapRef.current = el; fitRef(el); }, [fitRef]);
 
   useEffect(() => { setLimit(PAGE); }, [q, field, plat, slowOnly, modelFilter]);
   useEffect(() => {
@@ -253,7 +256,7 @@ export default function SalesList({ kind }) {
 
       {loading ? <div className="panel panel-pad">Loading…</div> : (<>
         <TopScrollbar targetRef={tableWrapRef} />
-        <div className="panel sales-table-wrap" ref={tableWrapRef}>
+        <div className="panel sales-table-wrap" ref={wrapRef}>
           <table className="ticket-table sales-table">
             <thead>
               <tr>

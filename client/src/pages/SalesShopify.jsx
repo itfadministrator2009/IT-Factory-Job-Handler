@@ -4,6 +4,7 @@ import { RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import useSalesData from '../sales/useSalesData';
+import useFitHeight from '../sales/useFitHeight';
 import { fmt, fmtInt, auDate, num, periodRange, toISODate } from '../sales/calc';
 
 const PERIODS = [['all', 'All'], ['week', 'Last week'], ['month', 'Last month'], ['quarter', 'Last quarter'], ['custom', 'Custom']];
@@ -30,6 +31,7 @@ export default function SalesShopify() {
   const [period, setPeriod] = useState('all');
   const [custom, setCustom] = useState({ start: '', end: '' });
   const [coverage, setCoverage] = useState(false);
+  const fitRef = useFitHeight();
 
   const load = useCallback(async () => {
     try {
@@ -109,7 +111,7 @@ export default function SalesShopify() {
         </>}
       </div>
       {!orders ? <div className="panel panel-pad">Loading…</div> : (
-        <div className="panel sales-table-wrap">
+        <div className="panel sales-table-wrap" ref={fitRef}>
           <table className="ticket-table">
             <thead><tr><th>Order #</th><th>Date</th><th>Customer</th><th>Product</th><th>SKU</th><th className="num">Qty</th><th className="num">Price</th><th /></tr></thead>
             <tbody>
