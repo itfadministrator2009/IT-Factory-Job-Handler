@@ -457,6 +457,9 @@ addColumnIfMissing('users', 'access_checklist', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'admin_blocked', "TEXT NOT NULL DEFAULT ''");
 // Currency a Storage Centre client is charged in (AUD unless set to USD).
 addColumnIfMissing('storage_clients', 'currency', "TEXT NOT NULL DEFAULT 'AUD'");
+// Asset Tracker customer names (JSON list) whose audited assets this client can
+// see in the client portal. Empty = no Audited assets tab.
+addColumnIfMissing('storage_clients', 'asset_customers', "TEXT NOT NULL DEFAULT '[]'");
 
 function migrateJobsStatusConstraint() {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").get()?.sql;
