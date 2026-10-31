@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { History, BarChart3, Star } from 'lucide-react';
+import { History, Gauge, Star } from 'lucide-react';
 import Layout from '../components/Layout';
 import GradingReference from '../checklist/GradingReference';
 import { useChecklistConfig, DEVICE_ICONS, DEVICE_ORDER } from '../checklist/common';
@@ -18,7 +18,7 @@ export default function ChecklistHome() {
         </div>
         <div className="ck-head-links">
           <Link to="/checklist/history" className="btn btn-ghost btn-sm"><History size={14} /> Saved History</Link>
-          <Link to="/checklist/summary" className="btn btn-ghost btn-sm"><BarChart3 size={14} /> Summary</Link>
+          <Link to="/checklist/dashboard" className="btn btn-ghost btn-sm"><Gauge size={14} /> Dashboard</Link>
           {config && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setGrading(true)}><Star size={14} /> Grading reference</button>}
         </div>
       </div>
