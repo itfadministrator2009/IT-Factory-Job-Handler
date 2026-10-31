@@ -17,7 +17,7 @@ function signToken(user) {
 // plus the ITF Asset Tracker and/or ITF Storage Centre when an admin has
 // switched those on for them in Settings.
 const CONTRACTOR_PATHS = /^\/api\/(timecard|auth|presence|projects|jobs|attachments|users)(\/|\?|$)/;
-const CASUAL_MODULE_PATHS = { access_assets: /^\/api\/assets(\/|\?|$)/, access_storage: /^\/api\/storage(\/|\?|$)/ };
+const CASUAL_MODULE_PATHS = { access_assets: /^\/api\/assets(\/|\?|$)/, access_storage: /^\/api\/storage(\/|\?|$)/, access_sales: /^\/api\/sales(\/|\?|$)/ };
 function casualMayOpen(row, url) {
   if (CONTRACTOR_PATHS.test(url)) return true;
   return Object.entries(CASUAL_MODULE_PATHS).some(([col, re]) => row[col] === 1 && re.test(url));
@@ -43,7 +43,7 @@ function authRequired(req, res, next) {
   // Logged out by an admin: a sign-in from before that no longer works.
   let row = null;
   try {
-    row = require('./db').db.prepare('SELECT session_version, role, access_assets, access_storage FROM users WHERE id = ?').get(payload.id);
+    row = require('./db').db.prepare('SELECT session_version, role, access_assets, access_storage, access_sales FROM users WHERE id = ?').get(payload.id);
     if (row && (row.session_version || 0) !== (payload.sv || 0)) {
       return res.status(401).json({ error: 'You were logged out by an admin. Please log in again.', code: 'signed_out' });
     }

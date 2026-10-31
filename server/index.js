@@ -25,6 +25,8 @@ const { alertOnServerErrors, errorHandler, sendAlert } = require('./alerts');
 const { pruneActivity, logActivity } = require('./activity');
 const { startBackupScheduler } = require('./backup');
 const { startStorageWeeklyScheduler } = require('./storageWeekly');
+const { startSalesWeeklyScheduler } = require('./salesWeekly');
+const { startShopifySync } = require('./salesShopify');
 const { startTimecardReminderScheduler } = require('./timecardReminders');
 const { startDiskAlertScheduler } = require('./diskAlert');
 const { startFileSync } = require('./fileStore');
@@ -72,6 +74,8 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/storage', storageRoutes);
+// ITF Sales Manager — sales, inventory and Shopify orders (moved from Google Sheets).
+app.use('/api/sales', require('./routes/sales'));
 // Client-facing Storage Centre portal — its own login, separate from staff accounts.
 app.use('/api/storage-portal', storagePortalRoutes);
 app.use('/api/presence', presenceRoutes);
@@ -117,6 +121,9 @@ setInterval(pruneActivity, 24 * 60 * 60 * 1000).unref();
 try { require('./storageTools').cleanTrailingZeroIds(); } catch (err) { console.error('[storage] Could not tidy ".0" values:', err.message); }
 startBackupScheduler();
 startStorageWeeklyScheduler();
+startSalesWeeklyScheduler();
+startShopifySync();
+setInterval(() => { try { require('./sales').pruneSalesActivity(); } catch (e) { /* next time */ } }, 24 * 60 * 60 * 1000).unref();
 startTimecardReminderScheduler();
 startDiskAlertScheduler();
 startFileSync();
