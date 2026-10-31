@@ -223,6 +223,10 @@ router.get('/all-ids', (req, res) => {
   res.json({ ids: rows.map((r) => r.id) });
 });
 
+function currentAuditMonth(now = new Date()) {
+  return new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(now);
+}
+
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
@@ -231,6 +235,9 @@ router.post('/', (req, res) => {
     const matches = serialConflicts(fields.serial_number);
     if (matches.length) return duplicateSerialResponse(res, fields.serial_number, matches);
   }
+  // Audit Month fills itself with the current month (Sydney time), e.g. "October 2026",
+  // unless one was typed in.
+  if (!String(fields.audit_month || '').trim()) fields.audit_month = currentAuditMonth();
   const id = randomUUID();
   db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)').run(id, JSON.stringify(fields), req.user.id);
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
