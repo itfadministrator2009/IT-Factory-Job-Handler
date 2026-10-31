@@ -167,7 +167,7 @@ export default function Layout({ children }) {
         <div className="sidebar-footer">
           {!isContractor && <WhoIsOnline me={user?.name} meId={user?.id} isAdmin={user?.role === 'admin' || user?.role === 'agent'} />}
           <InstallApp />
-          <button onClick={logout}><LogOut size={12} style={{ verticalAlign: -1, marginRight: 4 }} />Log out</button>
+          <button onClick={() => logout()}><LogOut size={12} style={{ verticalAlign: -1, marginRight: 4 }} />Log out</button>
         </div>
       </aside>
       <main className="main">{children}</main>
