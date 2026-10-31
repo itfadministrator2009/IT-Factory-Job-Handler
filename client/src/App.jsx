@@ -137,10 +137,10 @@ function AppRoutes() {
       <Route path="/projects/:id/entries/:entryId" element={<RequireAuth casualsToo><ProjectEntryForm /></RequireAuth>} />
 
       <Route path="/assets" element={<RequireModule module="assets"><AssetTracker /></RequireModule>} />
-      <Route path="/assets/reports" element={<RequireAdmin><AssetReports /></RequireAdmin>} />
-      <Route path="/assets/fields" element={<RequireAdmin><AssetFields /></RequireAdmin>} />
-      <Route path="/assets/batches" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
-      <Route path="/assets/batches/:id" element={<RequireModule module="assets"><AssetBatches /></RequireModule>} />
+      <Route path="/assets/reports" element={<RequireModule module="assets"><RequireAdmin><AssetReports /></RequireAdmin></RequireModule>} />
+      <Route path="/assets/fields" element={<RequireModule module="assets"><RequireAdmin><AssetFields /></RequireAdmin></RequireModule>} />
+      <Route path="/assets/batches" element={<RequireModule module="assets"><RequireAdmin><AssetBatches /></RequireAdmin></RequireModule>} />
+      <Route path="/assets/batches/:id" element={<RequireModule module="assets"><RequireAdmin><AssetBatches /></RequireAdmin></RequireModule>} />
 
       <Route path="/checklist" element={<RequireModule module="checklist"><ChecklistHome /></RequireModule>} />
       <Route path="/checklist/new/:device" element={<RequireModule module="checklist"><ChecklistForm key="new" /></RequireModule>} />
