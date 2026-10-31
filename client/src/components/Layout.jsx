@@ -125,7 +125,7 @@ export default function Layout({ children }) {
           <Section id="assets" title="ITF Asset Tracker" icon={Boxes} home="/assets"
             open={open.assets} current={current === 'assets'} onToggle={toggle}>
             <NavLink to="/assets" end className={linkClass}><List size={14} /> All Assets</NavLink>
-            <NavLink to="/assets/batches" className={linkClass}><Layers size={14} /> Batches</NavLink>
+            {isAdmin && <NavLink to="/assets/batches" className={linkClass}><Layers size={14} /> Batches</NavLink>}
             {isAdmin && <NavLink to="/assets/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
             {isAdmin && <NavLink to="/assets/fields" className={linkClass}><SlidersHorizontal size={14} /> Manage Fields</NavLink>}
           </Section>

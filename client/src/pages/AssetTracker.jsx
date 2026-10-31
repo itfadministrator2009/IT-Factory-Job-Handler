@@ -113,7 +113,7 @@ export default function AssetTracker() {
     setSelected(new Set());
     setSerialResult(null);
     loadAssets(1, query);
-    if (filters.batch) api.get(`/assets/batches/${filters.batch}`).then((r) => setBatchName(r.data.batch.name)).catch(() => setBatchName('this batch'));
+    if (filters.batch && isAdmin) api.get(`/assets/batches/${filters.batch}`).then((r) => setBatchName(r.data.batch.name)).catch(() => setBatchName('this batch'));
     else setBatchName('');
   }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -469,7 +469,7 @@ export default function AssetTracker() {
           </>
         )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={14} /> Print</button>
-        <Link to="/assets/reports" className="btn btn-ghost btn-sm"><BarChart3 size={14} /> Reports</Link>
+        {isAdmin && <Link to="/assets/reports" className="btn btn-ghost btn-sm"><BarChart3 size={14} /> Reports</Link>}
         {isAdmin && <Link to="/assets/fields" className="btn btn-ghost btn-sm"><Sliders size={14} /> Manage fields</Link>}
       </div>
 
@@ -497,7 +497,7 @@ export default function AssetTracker() {
         <label className={`filter-toggle${filters.dupes === '1' ? ' active' : ''}`}>
           <input type="checkbox" checked={filters.dupes === '1'} onChange={(e) => setFilter('dupes', e.target.checked ? '1' : '')} /> Duplicate serials only
         </label>
-        {filters.batch && (
+        {filters.batch && isAdmin && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, background: 'var(--accent-soft, #fdf0e8)', borderRadius: 14, padding: '3px 10px' }}>
             <Layers size={13} /> Batch: <Link to={`/assets/batches/${filters.batch}`}>{batchName || '…'}</Link>
             <button type="button" onClick={() => setFilter('batch', '')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }} title="Show all assets"><X size={13} /></button>
