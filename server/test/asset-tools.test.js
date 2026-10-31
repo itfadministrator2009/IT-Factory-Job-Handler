@@ -111,19 +111,25 @@ test('allocation batches: create from assets, add/remove, packing list, and filt
 
   const more = await client.post(`/api/assets/batches/${bid}/items`, { token: admin.token, body: { assetIds: ['a2', 'a3'] } });
   assert.equal(more.data.added, 1, 'an asset already in the batch is not added twice');
-  assert.deepEqual(ids(await client.get(`/api/assets?batch=${bid}`, { token: staff.token })), ['a1', 'a2', 'a3']);
+  assert.deepEqual(ids(await client.get(`/api/assets?batch=${bid}`, { token: admin.token })), ['a1', 'a2', 'a3']);
 
   await client.post(`/api/assets/batches/${bid}/remove`, { token: admin.token, body: { assetIds: ['a3'] } });
   // A deleted asset stays on the batch from its snapshot.
   db.prepare("DELETE FROM assets WHERE id = 'a1'").run();
-  const detail = await client.get(`/api/assets/batches/${bid}`, { token: staff.token });
+  const detail = await client.get(`/api/assets/batches/${bid}`, { token: admin.token });
   assert.equal(detail.data.batch.count, 2);
   const gone = detail.data.items.find((i) => i.assetId === 'a1');
   assert.equal(gone.deleted, true);
   assert.equal(gone.fields.serial_number, 'SER-1');
 
-  const list = await client.get('/api/assets/batches', { token: staff.token });
+  const list = await client.get('/api/assets/batches', { token: admin.token });
   assert.equal(list.data.batches[0].name, 'Wholesale – Buyer X – Oct');
+
+  // Non-admins can't see batches, their packing lists, or filter the list by batch.
+  assert.equal((await client.get('/api/assets/batches', { token: staff.token })).status, 403);
+  assert.equal((await client.get(`/api/assets/batches/${bid}`, { token: staff.token })).status, 403);
+  assert.equal((await fetch(`${base}/api/assets/batches/${bid}/pdf`, { headers: { Authorization: `Bearer ${staff.token}` } })).status, 403);
+  assert.deepEqual(ids(await client.get(`/api/assets?batch=${bid}`, { token: staff.token })), ids(await client.get('/api/assets', { token: staff.token })), 'the batch filter is ignored for non-admins');
 
   const pdf = await fetch(`${base}/api/assets/batches/${bid}/pdf`, { headers: { Authorization: `Bearer ${admin.token}` } });
   assert.equal(pdf.status, 200);
