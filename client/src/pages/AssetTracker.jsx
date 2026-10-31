@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil, BarChart3, Sliders, ListChecks, Copy, Camera, Layers, AlertTriangle, Filter } from 'lucide-react';
+import { Gauge, Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil, Sliders, ListChecks, Copy, Camera, Layers, AlertTriangle, Filter } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -499,7 +499,7 @@ export default function AssetTracker() {
           </>
         )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={14} /> Print</button>
-        {isAdmin && <Link to="/assets/reports" className="btn btn-ghost btn-sm"><BarChart3 size={14} /> Reports</Link>}
+        {isAdmin && <Link to="/assets/dashboard" className="btn btn-ghost btn-sm"><Gauge size={14} /> Dashboard</Link>}
         {isAdmin && <Link to="/assets/fields" className="btn btn-ghost btn-sm"><Sliders size={14} /> Manage fields</Link>}
       </div>
 
