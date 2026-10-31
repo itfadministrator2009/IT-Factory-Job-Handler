@@ -118,6 +118,13 @@ test('summary counts by device, model and technician', async () => {
   assert.equal(lap.synced, 2);
   assert.equal(s.technicians[0].username, 'Tom Tech');
   assert.ok(s.technicians[0].today >= 1);
+  // Dashboard chart data.
+  assert.equal(s.daily.length, 30);
+  assert.equal(s.monthly.length, 12);
+  assert.equal(s.daily.reduce((t, d) => t + d.count, 0), s.grandTotal, 'everything here was made today');
+  assert.equal(s.monthly[11].count, s.grandTotal);
+  assert.equal(s.grades.reduce((t, g) => t + g.count, 0), s.grandTotal);
+  assert.equal(s.platforms.reduce((t, p) => t + p.count, 0), s.grandTotal);
 });
 
 test('Google Sheet import keeps Asset IDs, links and Drive photos; safe to repeat', async () => {

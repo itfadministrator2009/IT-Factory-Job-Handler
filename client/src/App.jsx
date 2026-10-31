@@ -25,7 +25,7 @@ import SalesDashboard from './pages/SalesDashboard';
 import ChecklistHome from './pages/ChecklistHome';
 import ChecklistForm from './pages/ChecklistForm';
 import ChecklistHistory from './pages/ChecklistHistory';
-import ChecklistSummary from './pages/ChecklistSummary';
+import ChecklistDashboard from './pages/ChecklistSummary';
 import ChecklistTools from './pages/ChecklistTools';
 import SalesList from './pages/SalesList';
 import SalesItemForm from './pages/SalesItemForm';
@@ -146,7 +146,8 @@ function AppRoutes() {
       <Route path="/checklist/new/:device" element={<RequireModule module="checklist"><ChecklistForm key="new" /></RequireModule>} />
       <Route path="/checklist/edit/:id" element={<RequireModule module="checklist"><ChecklistForm key="edit" /></RequireModule>} />
       <Route path="/checklist/history" element={<RequireModule module="checklist"><ChecklistHistory /></RequireModule>} />
-      <Route path="/checklist/summary" element={<RequireModule module="checklist"><ChecklistSummary /></RequireModule>} />
+      <Route path="/checklist/dashboard" element={<RequireModule module="checklist"><ChecklistDashboard /></RequireModule>} />
+      <Route path="/checklist/summary" element={<Navigate to="/checklist/dashboard" replace />} />
       <Route path="/checklist/tools" element={<RequireModule module="checklist"><ChecklistTools /></RequireModule>} />
       <Route path="/sales" element={<RequireModule module="sales"><SalesDashboard /></RequireModule>} />
       <Route path="/sales/all" element={<RequireModule module="sales"><SalesList kind="sale" /></RequireModule>} />

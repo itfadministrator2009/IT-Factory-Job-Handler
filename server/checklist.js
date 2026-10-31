@@ -187,11 +187,22 @@ function summary() {
   const today = dayOf(Date.now());
   const weekAgo = Date.now() - 6 * 86400000;
   const techs = {};
+  // For the dashboard charts: per day (last 30 days), per month (last 12),
+  // by grade and by platform. Days and months are Sydney time.
+  const [ty, tm, td] = today.split('-').map(Number);
+  const dayKeys = [];
+  for (let i = 29; i >= 0; i -= 1) dayKeys.push(new Date(Date.UTC(ty, tm - 1, td - i)).toISOString().slice(0, 10));
+  const perDay = Object.fromEntries(dayKeys.map((k) => [k, 0]));
+  const monthKeys = [];
+  for (let i = 11; i >= 0; i -= 1) { const d = new Date(Date.UTC(ty, tm - 1 - i, 1)); monthKeys.push(d.toISOString().slice(0, 7)); }
+  const perMonth = Object.fromEntries(monthKeys.map((k) => [k, 0]));
+  const grades = {};
+  const platforms = {};
   let grandTotal = 0;
   let totalSynced = 0;
   let totalPending = 0;
   const deviceTypes = Object.keys(DEVICES).map((key) => {
-    const rows = db.prepare('SELECT technician, created_at, info_json, platform, sales_item_id FROM checklist_entries WHERE device_key = ?').all(key);
+    const rows = db.prepare('SELECT technician, created_at, info_json, platform, grade, sales_item_id FROM checklist_entries WHERE device_key = ?').all(key);
     const out = { key, label: DEVICES[key].label, total: rows.length, synced: 0, pending: 0, models: [] };
     const models = {};
     rows.forEach((r) => {
@@ -200,6 +211,15 @@ function summary() {
       try { info = JSON.parse(r.info_json || '{}'); } catch { info = {}; }
       const m = [info.Make, info.Model].filter(Boolean).join(' ') || '(unspecified)';
       models[m] = (models[m] || 0) + 1;
+      const g = clean(r.grade) || '(not graded)';
+      grades[g] = (grades[g] || 0) + 1;
+      const p = clean(r.platform) || '(not set)';
+      platforms[p] = (platforms[p] || 0) + 1;
+      if (r.created_at) {
+        const day = dayOf(r.created_at);
+        if (day in perDay) perDay[day] += 1;
+        if (day.slice(0, 7) in perMonth) perMonth[day.slice(0, 7)] += 1;
+      }
       if (r.platform === 'ITF Australia') {
         if (r.sales_item_id) { out.synced += 1; totalSynced += 1; } else { out.pending += 1; totalPending += 1; }
       }
@@ -214,7 +234,14 @@ function summary() {
     out.models = Object.entries(models).map(([model, count]) => ({ model, count })).sort((a, b) => b.count - a.count);
     return out;
   });
-  return { deviceTypes, technicians: Object.values(techs).sort((a, b) => b.total - a.total), grandTotal, totalSynced, totalPending };
+  const counted = (o) => Object.entries(o).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
+  return {
+    deviceTypes, technicians: Object.values(techs).sort((a, b) => b.total - a.total), grandTotal, totalSynced, totalPending,
+    daily: dayKeys.map((day) => ({ day, count: perDay[day] })),
+    monthly: monthKeys.map((month) => ({ month, count: perMonth[month] })),
+    grades: counted(grades),
+    platforms: counted(platforms),
+  };
 }
 
 // Sydney wall-clock time → milliseconds (for the old sheet's Timestamp column).

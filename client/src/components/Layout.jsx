@@ -165,9 +165,9 @@ export default function Layout({ children }) {
           {canUseModule(user, 'checklist') && (
           <Section id="checklist" title="ITF Asset Checklist" icon={ListChecks} home="/checklist"
             open={open.checklist} current={current === 'checklist'} onToggle={toggle}>
+            <NavLink to="/checklist/dashboard" className={linkClass}><Gauge size={14} /> Dashboard</NavLink>
             <NavLink to="/checklist" end className={() => linkClass({ isActive: location.pathname === '/checklist' || location.pathname.startsWith('/checklist/new') })}><PlusCircle size={14} /> New Checklist</NavLink>
             <NavLink to="/checklist/history" className={() => linkClass({ isActive: location.pathname.startsWith('/checklist/history') || location.pathname.startsWith('/checklist/edit') })}><History size={14} /> Saved History</NavLink>
-            <NavLink to="/checklist/summary" className={linkClass}><BarChart3 size={14} /> Summary</NavLink>
             {isAdmin && <NavLink to="/checklist/tools" className={linkClass}><Wrench size={14} /> Tools</NavLink>}
           </Section>
           )}
