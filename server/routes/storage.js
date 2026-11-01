@@ -338,6 +338,13 @@ router.delete('/pallets/:id', (req, res) => {
 // ---------------------------------------------------------------------------
 router.use('/clients', require('./clients'));
 
+// Each client's currency (AUD/USD), for Storage Centre pages that show amounts.
+// Names and currencies only — no logins — so any Storage Centre user may read it.
+router.get('/client-currencies', (req, res) => {
+  res.json({ clients: db.prepare('SELECT client_name, currency FROM storage_clients ORDER BY client_name COLLATE NOCASE').all()
+    .map((r) => ({ clientName: r.client_name, currency: normCurrency(r.currency) || DEFAULT_CURRENCY })) });
+});
+
 // ---------------------------------------------------------------------------
 // Client Orders — including the Delivered-status tracking email step
 // ---------------------------------------------------------------------------
