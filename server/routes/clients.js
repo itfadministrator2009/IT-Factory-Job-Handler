@@ -1,20 +1,17 @@
 // Clients — the client-portal accounts (one login per client), shared by the
 // ITF Storage Centre and the ITF Asset Tracker. Kept in the storage_clients
 // table (unchanged). Mounted at /api/clients, and also at /api/storage/clients
-// so existing Storage Centre pages keep working.
+// (older links).
 //
-// Who can do what:
-//   - open the page: admins, and anyone with Storage Centre or Asset Tracker access
-//   - add clients, change names, logins, passwords, currency: admins and Storage Centre users
-//   - link Asset Tracker customers: any of the above
-//   - delete a client: admins only
-//   - currency, stock counts and unlisted names: Storage Centre users and admins only
+// Admins only: these are the logins outsiders use, so only admins can see or
+// change them. Storage Centre pages that just need each client's currency use
+// GET /api/storage/client-currencies instead.
 const express = require('express');
 const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const { db } = require('../db');
 const { authRequired } = require('../auth');
-const { isAdminRole, hasModuleAccess } = require('../permissions');
+const { isAdminRole } = require('../permissions');
 const { normCurrency, DEFAULT_CURRENCY } = require('../storageCurrency');
 
 const router = express.Router();
@@ -25,11 +22,8 @@ function isAdmin(userId) {
 }
 
 router.use((req, res, next) => {
-  const admin = isAdmin(req.user.id);
-  const storage = hasModuleAccess(req.user.id, 'storage');
-  const assets = hasModuleAccess(req.user.id, 'assets');
-  if (!admin && !storage && !assets) return res.status(403).json({ error: "You don't have access to Clients. Ask an admin to turn on Storage Centre or Asset Tracker for you." });
-  req.clientsAccess = { admin, storage: admin || storage, assets: admin || assets, manage: admin || storage };
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can manage clients.' });
+  req.clientsAccess = { admin: true, storage: true, assets: true, manage: true };
   next();
 });
 
