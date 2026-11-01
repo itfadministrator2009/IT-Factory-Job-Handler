@@ -243,6 +243,70 @@ function assetTagTaken(tag) {
 // The tag the Add asset form fills in.
 router.get('/next-tag', (req, res) => res.json({ tag: nextAssetTag() }));
 
+// Drop-down lists for Model Name, Model Number and Customer: every value already on
+// an asset, plus any added with "+ Add". Spellings differing only in capitals or
+// spaces are one entry (the most used spelling wins). Model names that go with the
+// chosen Manufacturer — and model numbers that go with the chosen Manufacturer and
+// Model Name — are marked match: true so the form can list them first.
+const LIST_FIELDS = { model_name: ['manufacturer'], model_number: ['manufacturer', 'model_name'], customer: [] };
+const listScope = (field, src) => Object.fromEntries(LIST_FIELDS[field].map((k) => [k, normText(src[k] ?? src[k === 'model_name' ? 'modelName' : k])]));
+router.get('/value-options', (req, res) => {
+  const field = String(req.query.field || '');
+  if (!LIST_FIELDS[field]) return res.status(400).json({ error: 'Unknown list' });
+  const scope = listScope(field, req.query);
+  const scoped = Object.values(scope).some(Boolean);
+  const groups = new Map(); // normalised value -> { spellings: Map, count, match }
+  const take = (value, n, matches) => {
+    const v = String(value ?? '').trim().replace(/\s+/g, ' ');
+    if (!v) return;
+    const k = v.toLowerCase();
+    if (!groups.has(k)) groups.set(k, { spellings: new Map(), count: 0, match: false });
+    const g = groups.get(k);
+    g.spellings.set(v, (g.spellings.get(v) || 0) + n);
+    g.count += n;
+    if (matches) g.match = true;
+  };
+  const parents = LIST_FIELDS[field];
+  const cols = [field, ...parents].map((k) => `trim(COALESCE(json_extract(fields_json, '$.${k}'), '')) AS ${k}`).join(', ');
+  const rows = db.prepare(`SELECT ${[field, ...parents].join(', ')}, COUNT(*) AS n FROM (SELECT ${cols} FROM assets) WHERE ${field} <> '' GROUP BY ${[field, ...parents].join(', ')}`).all();
+  const inScope = (r) => scoped && parents.every((k) => !scope[k] || normText(r[k]) === scope[k]);
+  rows.forEach((r) => take(r[field], r.n, inScope(r)));
+  db.prepare('SELECT value, manufacturer, model_name FROM asset_list_values WHERE field_key = ?').all(field)
+    .forEach((r) => take(r.value, 0, inScope(r)));
+  const values = [...groups.values()].map((g) => ({
+    value: [...g.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0],
+    count: g.count,
+    match: g.match,
+  })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  res.json({ values });
+});
+
+// "+ Add" a new value to one of those lists. If it's already there (ignoring
+// capitals and spaces), the existing spelling comes back instead.
+router.post('/value-options', (req, res) => {
+  const field = String(req.body.field || '');
+  if (!LIST_FIELDS[field]) return res.status(400).json({ error: 'Unknown list' });
+  const value = String(req.body.value ?? '').trim().replace(/\s+/g, ' ');
+  if (!value) return res.status(400).json({ error: 'Type a value to add' });
+  if (value.length > 200) return res.status(400).json({ error: 'That is too long' });
+  const k = value.toLowerCase();
+  // The most used spelling already on an asset, if any.
+  const onAsset = db.prepare(`SELECT trim(json_extract(fields_json, '$.${field}')) AS v, COUNT(*) AS n FROM assets WHERE ${norm(field)} = ? GROUP BY v ORDER BY n DESC LIMIT 1`).get(k);
+  const anyAdded = db.prepare('SELECT value FROM asset_list_values WHERE field_key = ? AND lower(value) = ? LIMIT 1').get(field, k);
+  const existing = onAsset?.v || anyAdded?.value;
+  // Remember which make / model it was added under, so it's listed first for them.
+  const clean = (v) => String(v ?? '').trim().replace(/\s+/g, ' ');
+  const make = LIST_FIELDS[field].includes('manufacturer') ? clean(req.body.manufacturer) : '';
+  const model = LIST_FIELDS[field].includes('model_name') ? clean(req.body.modelName ?? req.body.model_name) : '';
+  const sameScope = db.prepare('SELECT 1 FROM asset_list_values WHERE field_key = ? AND lower(value) = ? AND lower(manufacturer) = ? AND lower(model_name) = ?')
+    .get(field, k, make.toLowerCase(), model.toLowerCase());
+  if (!sameScope) {
+    db.prepare('INSERT INTO asset_list_values (id, field_key, value, manufacturer, model_name, added_by) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(randomUUID(), field, existing || value, make, model, req.user.id);
+  }
+  res.status(existing ? 200 : 201).json({ value: existing || value, existed: !!existing });
+});
+
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
