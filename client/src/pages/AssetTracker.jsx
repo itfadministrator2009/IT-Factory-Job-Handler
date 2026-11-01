@@ -196,7 +196,13 @@ export default function AssetTracker() {
   function openAddForm() {
     setEditingAsset(null);
     // Audit Month starts as this month (Sydney time), e.g. "November 2026" — it can be changed.
-    setFormValues({ audit_month: new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(new Date()) });
+    // Status starts as "Available" (when that's one of its options) — it can be changed.
+    const statusOptions = fieldDefs?.find((f) => f.field_key === 'status')?.options || [];
+    const available = statusOptions.find((o) => o.toLowerCase() === 'available');
+    setFormValues({
+      audit_month: new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(new Date()),
+      ...(available ? { status: available } : {}),
+    });
     setSuggestedTag('');
     setMissingKeys([]);
     setError('');

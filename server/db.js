@@ -638,6 +638,22 @@ addColumnIfMissing('asset_field_defs', 'required', 'INTEGER NOT NULL DEFAULT 1')
     })();
   }
 }
+// Asset Tracker: the Status option "Store" is now called "In Storage" — on the
+// drop-down and on every asset that had it. Runs each start; does nothing once done.
+{
+  const def = db.prepare("SELECT id, options_json FROM asset_field_defs WHERE field_key = 'status'").get();
+  const opts = def?.options_json ? JSON.parse(def.options_json) : null;
+  if (Array.isArray(opts) && opts.some((o) => String(o).trim().toLowerCase() === 'store')) {
+    const renamed = [];
+    opts.forEach((o) => {
+      const v = String(o).trim().toLowerCase() === 'store' ? 'In Storage' : o;
+      if (!renamed.some((x) => String(x).toLowerCase() === String(v).toLowerCase())) renamed.push(v);
+    });
+    db.prepare('UPDATE asset_field_defs SET options_json = ? WHERE id = ?').run(JSON.stringify(renamed), def.id);
+  }
+  db.prepare(`UPDATE assets SET fields_json = json_set(fields_json, '$.status', 'In Storage'), updated_at = datetime('now')
+    WHERE lower(trim(COALESCE(json_extract(fields_json, '$.status'), ''))) = 'store'`).run();
+}
 function ensureSuperAdmin() {
   if (db.prepare('SELECT 1 FROM users WHERE super_admin = 1').get()) return 0;
   const n = db.prepare(`UPDATE users SET super_admin = 1, role = 'admin'

@@ -348,3 +348,21 @@ test('N/A or NA as the serial (any capitals) is never a duplicate', async () => 
   const found = (await client.post('/api/assets/serial-search', { token: staff.token, body: { serials: 'N/A' } })).data;
   assert.deepEqual(found.duplicates, []);
 });
+
+test('the Status option "Store" becomes "In Storage", on the list and on assets', () => {
+  const def = db.prepare("SELECT id, options_json FROM asset_field_defs WHERE field_key = 'status'").get();
+  const before = def.options_json;
+  db.prepare('UPDATE asset_field_defs SET options_json = ? WHERE id = ?').run(JSON.stringify(['Available', 'Store', 'Sold']), def.id);
+  add('st1', { asset_tag: 'ST1', status: 'Store' });
+  add('st2', { asset_tag: 'ST2', status: ' store ' });
+  add('st3', { asset_tag: 'ST3', status: 'Sold' });
+  // Re-run the start-up step.
+  delete require.cache[require.resolve('../db')];
+  const fresh = require('../db').db;
+  assert.deepEqual(JSON.parse(fresh.prepare("SELECT options_json FROM asset_field_defs WHERE field_key = 'status'").get().options_json), ['Available', 'In Storage', 'Sold']);
+  const status = (id) => JSON.parse(fresh.prepare('SELECT fields_json FROM assets WHERE id = ?').get(id).fields_json).status;
+  assert.equal(status('st1'), 'In Storage');
+  assert.equal(status('st2'), 'In Storage');
+  assert.equal(status('st3'), 'Sold');
+  db.prepare('UPDATE asset_field_defs SET options_json = ? WHERE id = ?').run(before, def.id);
+});
