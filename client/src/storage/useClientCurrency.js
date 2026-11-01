@@ -9,7 +9,7 @@ const key = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 function load() {
   if (!loading) {
-    loading = api.get('/storage/clients')
+    loading = api.get('/storage/client-currencies')
       .then((res) => { cache = Object.fromEntries((res.data.clients || []).map((c) => [key(c.clientName), c.currency || 'AUD'])); return cache; })
       .catch(() => { loading = null; return cache || {}; });
   }
