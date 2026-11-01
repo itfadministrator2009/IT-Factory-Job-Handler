@@ -26,6 +26,8 @@ before(async () => {
   add('a2', { asset_tag: 'T2', serial_number: 'SER-2', category: 'Laptop', customer: 'ACME ', status: 'Sold', asset_sent_to: 'Wholesale' });
   add('a3', { asset_tag: 'T3', serial_number: 'ser-2', category: 'Monitor', customer: 'Beta', status: 'Available' });
   add('a4', { asset_tag: 'T4', serial_number: 'SER-4', category: 'Monitor', status: 'Available' });
+  // Most tests here add bare-bones assets; the required-fields test turns requirements back on.
+  db.prepare('UPDATE asset_field_defs SET required = 0').run();
 });
 
 after(() => server.close());
@@ -260,4 +262,41 @@ test('Model Name / Model Number / Customer drop-down lists, with + Add', async (
   assert.equal(again.data.existed, true);
   assert.equal((await list('field=customer')).filter((v) => v.value.toLowerCase() === 'zeta corp').length, 1);
   assert.equal((await client.post('/api/assets/value-options', { token: staff.token, body: { field: 'customer', value: '  ' } })).status, 400);
+});
+
+test('a new asset cannot be saved until every required field is filled in', async () => {
+  db.prepare('UPDATE asset_field_defs SET required = 1').run();
+  try {
+    const defs = (await client.get('/api/assets/field-defs', { token: staff.token })).data.fields;
+    assert.ok(defs.every((f) => f.required === true), 'every field starts required');
+
+    const bare = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'RQ1', serial_number: 'RQ-SER-1' } } });
+    assert.equal(bare.status, 400);
+    assert.equal(bare.data.code, 'missing_fields');
+    assert.ok(bare.data.missing.includes('category'));
+    assert.ok(!bare.data.missing.includes('asset_tag'));
+    assert.ok(!bare.data.missing.includes('audit_month'), 'Audit Month fills itself');
+    assert.match(bare.data.error, /^Please fill in: /);
+
+    // Fill everything (a pick-several field needs at least one ticked; blank spaces don't count).
+    const full = {};
+    defs.forEach((f) => { full[f.field_key] = f.type === 'multiselect' ? [f.options?.[0] || 'Ok'] : f.type === 'dropdown' ? (f.options?.[0] || 'x') : 'x'; });
+    full.serial_number = 'RQ-SER-2';
+    const k = defs.find((f) => f.type === 'multiselect').field_key;
+    const noTick = await client.post('/api/assets', { token: staff.token, body: { fields: { ...full, [k]: [] } } });
+    assert.deepEqual(noTick.data.missing, [k]);
+    const spaces = await client.post('/api/assets', { token: staff.token, body: { fields: { ...full, comments: '   ' } } });
+    assert.deepEqual(spaces.data.missing, ['comments']);
+    assert.equal((await client.post('/api/assets', { token: staff.token, body: { fields: full } })).status, 201);
+
+    // An admin can make a field optional on Manage Fields; staff can't.
+    const buyer = defs.find((f) => f.field_key === 'buyer');
+    assert.equal((await client.patch(`/api/assets/field-defs/${buyer.id}`, { token: staff.token, body: { required: false } })).status, 403);
+    const off = await client.patch(`/api/assets/field-defs/${buyer.id}`, { token: admin.token, body: { required: false } });
+    assert.equal(off.data.field.required, false);
+    const noBuyer = await client.post('/api/assets', { token: staff.token, body: { fields: { ...full, serial_number: 'RQ-SER-3', buyer: '' } } });
+    assert.equal(noBuyer.status, 201);
+  } finally {
+    db.prepare('UPDATE asset_field_defs SET required = 0').run();
+  }
 });
