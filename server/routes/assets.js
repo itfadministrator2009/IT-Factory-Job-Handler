@@ -258,35 +258,60 @@ router.get('/next-tag', (req, res) => res.json({ tag: nextAssetTag() }));
 // chosen Manufacturer — and model numbers that go with the chosen Manufacturer and
 // Model Name — are marked match: true so the form can list them first.
 const LIST_FIELDS = { model_name: ['manufacturer'], model_number: ['manufacturer', 'model_name'], customer: [] };
+// Picking a model number fills in these from the assets already saved with it.
+const FILL_FIELDS = { model_number: ['category', 'manufacturer', 'model_name'] };
 const listScope = (field, src) => Object.fromEntries(LIST_FIELDS[field].map((k) => [k, normText(src[k] ?? src[k === 'model_name' ? 'modelName' : k])]));
 router.get('/value-options', (req, res) => {
   const field = String(req.query.field || '');
   if (!LIST_FIELDS[field]) return res.status(400).json({ error: 'Unknown list' });
   const scope = listScope(field, req.query);
   const scoped = Object.values(scope).some(Boolean);
-  const groups = new Map(); // normalised value -> { spellings: Map, count, match }
-  const take = (value, n, matches) => {
+  const groups = new Map(); // normalised value -> { spellings: Map, count, match, combos }
+  // For a model number, also note the Category / Manufacturer / Model Name it's been
+  // saved with, so picking it can fill those in.
+  const fillKeys = FILL_FIELDS[field] || [];
+  const take = (value, n, matches, r) => {
     const v = String(value ?? '').trim().replace(/\s+/g, ' ');
     if (!v) return;
     const k = v.toLowerCase();
-    if (!groups.has(k)) groups.set(k, { spellings: new Map(), count: 0, match: false });
+    if (!groups.has(k)) groups.set(k, { spellings: new Map(), count: 0, match: false, combos: new Map() });
     const g = groups.get(k);
     g.spellings.set(v, (g.spellings.get(v) || 0) + n);
     g.count += n;
     if (matches) g.match = true;
+    if (fillKeys.length) {
+      const combo = Object.fromEntries(fillKeys.map((f) => [f, String(r[f] ?? '').trim().replace(/\s+/g, ' ')]));
+      const ck = JSON.stringify(combo);
+      const c = g.combos.get(ck) || { combo, n: 0, matches: false };
+      // Added by hand (n = 0) still counts once, so a brand-new number fills in too.
+      c.n += n || 0.5;
+      if (matches) c.matches = true;
+      g.combos.set(ck, c);
+    }
   };
   const parents = LIST_FIELDS[field];
-  const cols = [field, ...parents].map((k) => `trim(COALESCE(json_extract(fields_json, '$.${k}'), '')) AS ${k}`).join(', ');
-  const rows = db.prepare(`SELECT ${[field, ...parents].join(', ')}, COUNT(*) AS n FROM (SELECT ${cols} FROM assets) WHERE ${field} <> '' GROUP BY ${[field, ...parents].join(', ')}`).all();
+  const keys = [field, ...new Set([...parents, ...fillKeys])];
+  const cols = keys.map((k) => `trim(COALESCE(json_extract(fields_json, '$.${k}'), '')) AS ${k}`).join(', ');
+  const rows = db.prepare(`SELECT ${keys.join(', ')}, COUNT(*) AS n FROM (SELECT ${cols} FROM assets) WHERE ${field} <> '' GROUP BY ${keys.join(', ')}`).all();
   const inScope = (r) => scoped && parents.every((k) => !scope[k] || normText(r[k]) === scope[k]);
-  rows.forEach((r) => take(r[field], r.n, inScope(r)));
+  rows.forEach((r) => take(r[field], r.n, inScope(r), r));
   db.prepare('SELECT value, manufacturer, model_name FROM asset_list_values WHERE field_key = ?').all(field)
-    .forEach((r) => take(r.value, 0, inScope(r)));
-  const values = [...groups.values()].map((g) => ({
-    value: [...g.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0],
-    count: g.count,
-    match: g.match,
-  })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+    .forEach((r) => take(r.value, 0, inScope(r), r));
+  const values = [...groups.values()].map((g) => {
+    const out = {
+      value: [...g.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      count: g.count,
+      match: g.match,
+    };
+    if (fillKeys.length) {
+      // The most used combination — among the ones for the chosen make/model, if any.
+      const all = [...g.combos.values()];
+      const pool = all.some((c) => c.matches) ? all.filter((c) => c.matches) : all;
+      const best = pool.sort((a, b) => b.n - a.n)[0]?.combo || {};
+      out.fill = Object.fromEntries(Object.entries(best).filter(([, v]) => v));
+    }
+    return out;
+  }).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
   res.json({ values });
 });
 

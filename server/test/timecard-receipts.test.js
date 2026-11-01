@@ -13,6 +13,11 @@ let client, server, db, admin, con, other, base, weekId;
 // A tiny valid PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
+// Files are deleted in the background, so give it a moment.
+async function gone(file) {
+  for (let i = 0; i < 50 && fs.existsSync(file); i++) await new Promise((r) => setTimeout(r, 20));
+  return !fs.existsSync(file);
+}
 async function login(email) {
   const { data } = await client.post('/api/auth/login', { body: { email, password: 'password123' } });
   return { token: data.token, id: data.user.id };
@@ -89,9 +94,9 @@ test('deleting an expense, or clearing the week, removes the receipt file', asyn
   const stored = db.prepare('SELECT receipt_name FROM timecard_expenses WHERE id = ?').get(fuel.id).receipt_name;
   const del = await client.delete(`/api/timecard/my/weeks/${weekId}/expenses/${fuel.id}`, { token: con.token });
   assert.equal(del.status, 200);
-  assert.ok(!fs.existsSync(path.join(UPLOADS, stored)));
+  assert.ok(await gone(path.join(UPLOADS, stored)));
 
   const pdfName = db.prepare("SELECT receipt_name FROM timecard_expenses WHERE type = 'Materials'").get().receipt_name;
   await client.post(`/api/timecard/my/weeks/${weekId}/clear`, { token: con.token });
-  assert.ok(!fs.existsSync(path.join(UPLOADS, pdfName)));
+  assert.ok(await gone(path.join(UPLOADS, pdfName)));
 });

@@ -624,6 +624,20 @@ addColumnIfMissing('users', 'super_admin', 'INTEGER NOT NULL DEFAULT 0');
 // Asset Tracker: a field marked required must be filled in before a new asset can
 // be saved. Every field starts required; admins can untick one on Manage Fields.
 addColumnIfMissing('asset_field_defs', 'required', 'INTEGER NOT NULL DEFAULT 1');
+// Asset Tracker: Model Number and Category swap places on the form, so Model Number
+// comes straight after Asset Tag (picking it fills Category, Manufacturer and Model
+// Name). Runs once: after the swap Model Number is already first.
+{
+  const pos = (k) => db.prepare('SELECT sort_order FROM asset_field_defs WHERE field_key = ?').get(k)?.sort_order;
+  const cat = pos('category');
+  const num = pos('model_number');
+  if (cat != null && num != null && cat < num) {
+    db.transaction(() => {
+      db.prepare("UPDATE asset_field_defs SET sort_order = ? WHERE field_key = 'model_number'").run(cat);
+      db.prepare("UPDATE asset_field_defs SET sort_order = ? WHERE field_key = 'category'").run(num);
+    })();
+  }
+}
 function ensureSuperAdmin() {
   if (db.prepare('SELECT 1 FROM users WHERE super_admin = 1').get()) return 0;
   const n = db.prepare(`UPDATE users SET super_admin = 1, role = 'admin'

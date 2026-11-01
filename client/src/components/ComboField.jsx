@@ -3,12 +3,15 @@ import { ChevronDown, Plus, X } from 'lucide-react';
 import api from '../api';
 
 const SHOW = 150; // rows drawn at once — type to narrow down the rest
+// "Dell Optiplex · Desktop" — what a model number is usually saved with.
+const detailText = (fill) => (fill ? [[fill.manufacturer, fill.model_name].filter(Boolean).join(' '), fill.category].filter(Boolean).join(' · ') : '');
 
 // A drop-down you can type in to search, for Model Name, Model Number and Customer
 // on an asset. Lists every value already used (most used first) — the ones that go
 // with the chosen Manufacturer / Model Name come first — and "+ Add" puts a new
-// value on the list.
-export default function ComboField({ field, label, value, onChange, manufacturer = '', modelName = '' }) {
+// value on the list. For a model number, each entry shows the make / model /
+// category it's usually saved with, and picking it hands those to onFill.
+export default function ComboField({ field, label, value, onChange, manufacturer = '', modelName = '', onFill }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [values, setValues] = useState(null);
@@ -39,7 +42,13 @@ export default function ComboField({ field, label, value, onChange, manufacturer
 
   const q = text.trim().toLowerCase();
   const { first, rest, exact } = useMemo(() => {
-    const hit = (values || []).filter((v) => !q || v.value.toLowerCase().includes(q));
+    // Every word typed must appear in the value or its make/model, so "optiplex 7050" finds 7050 SFF.
+    const words = q.split(/\s+/).filter(Boolean);
+    const hit = (values || []).filter((v) => {
+      if (!words.length) return true;
+      const hay = `${v.value} ${detailText(v.fill)}`.toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
     // Values starting with what's typed come before ones that only contain it.
     const order = (a, b) => (q ? (b.value.toLowerCase().startsWith(q) - a.value.toLowerCase().startsWith(q)) : 0);
     return {
@@ -60,8 +69,9 @@ export default function ComboField({ field, label, value, onChange, manufacturer
     setOpen(true);
     load();
   }
-  function pick(v) {
+  function pick(v, fill) {
     onChange(v);
+    if (onFill && fill && Object.keys(fill).length) onFill(fill);
     setOpen(false);
     setText('');
   }
@@ -85,7 +95,7 @@ export default function ComboField({ field, label, value, onChange, manufacturer
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter') {
       e.preventDefault();
-      if (active < shown.length) pick(shown[active].value);
+      if (active < shown.length) pick(shown[active].value, shown[active].fill);
       else if (canAdd) add();
     } else if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); }
   }
@@ -117,8 +127,8 @@ export default function ComboField({ field, label, value, onChange, manufacturer
                   {i === 0 && firstShown > 0 && scopeName && <div className="combo-group">{scopeName}</div>}
                   {i === firstShown && firstShown > 0 && <div className="combo-group">Others</div>}
                   <div className={`combo-opt${i === active ? ' active' : ''}${v.value === value ? ' chosen' : ''}`}
-                    onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(v.value); }}>
-                    <span>{v.value}</span>
+                    onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(v.value, v.fill); }}>
+                    <span>{v.value}{detailText(v.fill) && <span className="combo-detail">{detailText(v.fill)}</span>}</span>
                     {v.count > 0 && <span className="combo-count">{v.count.toLocaleString('en-AU')}</span>}
                   </div>
                 </div>
