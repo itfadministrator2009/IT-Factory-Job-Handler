@@ -54,6 +54,12 @@ export default function AssetFields() {
     load();
   }
 
+  // Required fields must be filled in before a new asset can be saved.
+  async function handleRequired(field, required) {
+    setFields((fs) => fs.map((f) => (f.id === field.id ? { ...f, required } : f)));
+    try { await api.patch(`/assets/field-defs/${field.id}`, { required }); } catch { load(); }
+  }
+
   function openEditOptions(field) {
     setEditingOptionsFor(field);
     setOptionsDraft((field.options || []).join(', '));
@@ -72,7 +78,7 @@ export default function AssetFields() {
       <div className="page-header">
         <div>
           <h1>Manage Fields</h1>
-          <div className="subtitle">Add fields, and edit dropdown options — changes apply everywhere immediately.</div>
+          <div className="subtitle">Add fields, edit dropdown options, and choose which fields must be filled in to save a new asset — changes apply everywhere immediately.</div>
         </div>
         <button className="btn btn-accent" onClick={() => setShowAdd((s) => !s)}>
           <Plus size={16} /> {showAdd ? 'Cancel' : 'Add field'}
@@ -110,7 +116,7 @@ export default function AssetFields() {
         ) : (
           <table className="ticket-table">
             <thead>
-              <tr><th>Field</th><th>Type</th><th>Options</th><th></th></tr>
+              <tr><th>Field</th><th>Type</th><th>Options</th><th title="Must be filled in before a new asset can be saved">Required</th><th></th></tr>
             </thead>
             <tbody>
               {fields.map((f) => (
@@ -119,6 +125,11 @@ export default function AssetFields() {
                   <td>{TYPES.find((t) => t.value === f.type)?.label || f.type}</td>
                   <td style={{ maxWidth: 300, fontSize: 12, color: 'var(--muted)' }}>
                     {f.options ? f.options.join(', ') : '—'}
+                  </td>
+                  <td>
+                    <label className="checkbox-label" style={{ fontSize: 13 }}>
+                      <input type="checkbox" checked={f.required} onChange={(e) => handleRequired(f, e.target.checked)} /> Required
+                    </label>
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>

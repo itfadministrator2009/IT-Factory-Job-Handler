@@ -621,6 +621,9 @@ addColumnIfMissing('users', 'legacy_pw_salt', 'TEXT');
 // Super Admin: the only account that can remove admins (or take admin access away).
 // Robert Nahas is the Super Admin; set on start-up if no one has it yet.
 addColumnIfMissing('users', 'super_admin', 'INTEGER NOT NULL DEFAULT 0');
+// Asset Tracker: a field marked required must be filled in before a new asset can
+// be saved. Every field starts required; admins can untick one on Manage Fields.
+addColumnIfMissing('asset_field_defs', 'required', 'INTEGER NOT NULL DEFAULT 1');
 function ensureSuperAdmin() {
   if (db.prepare('SELECT 1 FROM users WHERE super_admin = 1').get()) return 0;
   const n = db.prepare(`UPDATE users SET super_admin = 1, role = 'admin'

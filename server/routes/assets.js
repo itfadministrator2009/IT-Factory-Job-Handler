@@ -19,7 +19,15 @@ function isAdmin(userId) {
 
 function getFieldDefs() {
   return db.prepare('SELECT * FROM asset_field_defs ORDER BY sort_order, created_at').all()
-    .map((f) => ({ ...f, options: f.options_json ? JSON.parse(f.options_json) : null, is_core: !!f.is_core }));
+    .map((f) => ({ ...f, options: f.options_json ? JSON.parse(f.options_json) : null, is_core: !!f.is_core, required: f.required !== 0 }));
+}
+
+// Required fields still blank on a new asset (a pick-several field needs at least one ticked).
+function missingRequired(fields) {
+  return getFieldDefs().filter((f) => f.required).filter((f) => {
+    const v = fields[f.field_key];
+    return Array.isArray(v) ? !v.length : !String(v ?? '').trim();
+  });
 }
 
 function withParsedFields(asset) {
@@ -179,10 +187,11 @@ router.patch('/field-defs/:id', (req, res) => {
   const field = db.prepare('SELECT * FROM asset_field_defs WHERE id = ?').get(req.params.id);
   if (!field) return res.status(404).json({ error: 'Field not found' });
 
-  const { label, options } = req.body;
+  const { label, options, required } = req.body;
   const updates = [];
   const params = [];
   if (label !== undefined) { updates.push('label = ?'); params.push(label); }
+  if (required !== undefined) { updates.push('required = ?'); params.push(required ? 1 : 0); }
   if (options !== undefined) { updates.push('options_json = ?'); params.push(JSON.stringify(options)); }
   if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
   params.push(req.params.id);
@@ -313,14 +322,19 @@ router.post('/', (req, res) => {
   // The form's filled-in tag (autoTag) was taken meanwhile, e.g. two people adding at
   // once: give this asset the next free number instead.
   if (req.body.autoTag && fields.asset_tag && assetTagTaken(fields.asset_tag)) fields.asset_tag = nextAssetTag();
+  // Audit Month fills itself with the current month (Sydney time), e.g. "October 2026",
+  // unless one was typed in.
+  if (!String(fields.audit_month || '').trim()) fields.audit_month = currentAuditMonth();
+  // Every required field must be filled in.
+  const missing = missingRequired(fields);
+  if (missing.length) {
+    return res.status(400).json({ error: `Please fill in: ${missing.map((f) => f.label).join(', ')}`, code: 'missing_fields', missing: missing.map((f) => f.field_key) });
+  }
   // Warn before a second asset gets the same serial (the page can then save anyway).
   if (!req.body.allowDuplicateSerial) {
     const matches = serialConflicts(fields.serial_number);
     if (matches.length) return duplicateSerialResponse(res, fields.serial_number, matches);
   }
-  // Audit Month fills itself with the current month (Sydney time), e.g. "October 2026",
-  // unless one was typed in.
-  if (!String(fields.audit_month || '').trim()) fields.audit_month = currentAuditMonth();
   const id = randomUUID();
   db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)').run(id, JSON.stringify(fields), req.user.id);
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
