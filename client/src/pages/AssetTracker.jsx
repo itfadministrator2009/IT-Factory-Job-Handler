@@ -4,6 +4,7 @@ import { Gauge, Plus, Search, Download, Upload, Printer, X, Mail, Trash2, Pencil
 import api from '../api';
 import Layout from '../components/Layout';
 import BarcodeScanner from '../components/BarcodeScanner';
+import ComboField from '../components/ComboField';
 import { useAuth } from '../context/AuthContext';
 
 // Columns shown in the main table — a curated subset of the (potentially many)
@@ -31,6 +32,8 @@ const monthLabel = (v) => { const [y, m] = String(v).split('-').map(Number); ret
 const NONE = '__none__';
 // Fields that can be filled in by scanning a barcode.
 const SCAN_KEYS = ['serial_number', 'asset_tag', 'client_asset_tag'];
+// Searchable drop-downs of every value used so far, with "+ Add" for new ones.
+const COMBO_KEYS = ['model_name', 'model_number', 'customer'];
 
 export default function AssetTracker() {
   const navigate = useNavigate();
@@ -428,7 +431,13 @@ export default function AssetTracker() {
     runImport(lastImportFile.current, { onlyRows: importDupes.map((d) => d.row) });
   }
 
-  function renderFieldInput(field, value, onChange) {
+  // values: the rest of the form, so Model Name / Model Number list the ones for
+  // the chosen Manufacturer (and Model Name) first.
+  function renderFieldInput(field, value, onChange, values = {}) {
+    if (COMBO_KEYS.includes(field.field_key) && field.type === 'text') {
+      return <ComboField field={field.field_key} label={field.label} value={value || ''} onChange={onChange}
+        manufacturer={values.manufacturer || ''} modelName={field.field_key === 'model_number' ? values.model_name || '' : ''} />;
+    }
     if (field.type === 'dropdown') {
       return (
         <select value={value || ''} onChange={(e) => onChange(e.target.value)}>
@@ -808,7 +817,7 @@ export default function AssetTracker() {
                         <div style={{ flex: 1 }}>{renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}</div>
                         <button type="button" className="btn btn-ghost btn-sm icon-btn" title={`Scan ${f.label}`} onClick={() => setScanTarget({ mode: 'field', key: f.field_key, label: f.label })}><Camera size={14} /></button>
                       </div>
-                    ) : renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}
+                    ) : renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v), formValues)}
                   </div>
                 ))}
               </div>
@@ -852,7 +861,7 @@ export default function AssetTracker() {
                       <label className="checkbox-label" style={{ fontSize: 13, fontWeight: on ? 600 : 400, paddingTop: 6 }}>
                         <input type="checkbox" checked={on} onChange={(e) => toggleBulkField(f.field_key, e.target.checked)} /> {f.label}
                       </label>
-                      <div>{on ? renderFieldInput(f, bulkEdits[f.field_key], (v) => setBulkEdits((p) => ({ ...p, [f.field_key]: v }))) : <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: '32px' }}>unchanged</span>}</div>
+                      <div>{on ? renderFieldInput(f, bulkEdits[f.field_key], (v) => setBulkEdits((p) => ({ ...p, [f.field_key]: v })), bulkEdits) : <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: '32px' }}>unchanged</span>}</div>
                     </div>
                   );
                 })}
