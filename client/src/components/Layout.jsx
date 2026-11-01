@@ -190,8 +190,8 @@ export default function Layout({ children }) {
           )}
           </>}
 
-          {/* Clients (portal logins) — shared by Storage Centre and Asset Tracker. */}
-          {(isAdmin || canUseModule(user, 'storage') || canUseModule(user, 'assets')) && (
+          {/* Clients (portal logins) — admins only. */}
+          {isAdmin && (
             <NavLink to="/clients" className={({ isActive }) => 'sidebar-link sidebar-settings' + (isActive ? ' active' : '')}>
               <Users size={16} /> Clients
             </NavLink>
