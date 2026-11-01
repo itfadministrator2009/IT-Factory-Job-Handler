@@ -21,10 +21,11 @@ const SHORT_HEADINGS = { zoho_ticket_number: 'Job #', asset_sent_to: 'Sent to', 
 const FILTERS = [
   { param: 'category', label: 'Category' },
   { param: 'status', label: 'Status' },
+  { param: 'location', label: 'Location' },
   { param: 'sent_to', label: 'Sent to' },
   { param: 'customer', label: 'Customer' },
 ];
-const FILTER_PARAMS = ['month', 'category', 'status', 'sent_to', 'customer', 'dupes', 'batch'];
+const FILTER_PARAMS = ['month', 'category', 'status', 'location', 'sent_to', 'customer', 'dupes', 'batch'];
 // month=YYYY-MM: assets created in that month (Sydney time).
 const monthLabel = (v) => { const [y, m] = String(v).split('-').map(Number); return y && m ? new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }) : v; };
 const NONE = '__none__';
@@ -547,21 +548,23 @@ export default function AssetTracker() {
       </div>
 
       {isAdmin && filters.month && !serialResult && (
-        <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
-          <strong>Update all {total} {total === 1 ? 'asset' : 'assets'} from {monthLabel(filters.month)}:</strong>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Status
-            <select value={monthStatus} onChange={(e) => setMonthStatus(e.target.value)} disabled={monthBusy}>
+        <div className="filter-bar" style={{ alignItems: 'center' }}>
+          <span className="filter-bar-title"><Pencil size={14} /> Update all {total} {total === 1 ? 'asset' : 'assets'} from {monthLabel(filters.month)}</span>
+          <label className={`filter-field${monthStatus ? ' active' : ''}`}>
+            <span className="filter-field-label">Set status</span>
+            <select aria-label="Set status" value={monthStatus} onChange={(e) => setMonthStatus(e.target.value)} disabled={monthBusy}>
               <option value="">Leave as is</option>
               {(filterOptions?.status || []).map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Sent to
-            <select value={monthSentTo} onChange={(e) => setMonthSentTo(e.target.value)} disabled={monthBusy}>
+          <label className={`filter-field${monthSentTo ? ' active' : ''}`}>
+            <span className="filter-field-label">Set sent to</span>
+            <select aria-label="Set sent to" value={monthSentTo} onChange={(e) => setMonthSentTo(e.target.value)} disabled={monthBusy}>
               <option value="">Leave as is</option>
               {(filterOptions?.sent_to || []).map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </label>
-          <button type="button" className="btn btn-primary btn-sm" onClick={applyMonthUpdate} disabled={monthBusy || !total || (!monthStatus && !monthSentTo)}>
+          <button type="button" className="btn btn-primary btn-sm" style={{ alignSelf: 'center' }} onClick={applyMonthUpdate} disabled={monthBusy || !total || (!monthStatus && !monthSentTo)}>
             {monthBusy ? 'Updating…' : `Apply to all ${total}`}
           </button>
         </div>

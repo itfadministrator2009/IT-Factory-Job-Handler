@@ -195,3 +195,13 @@ test('Zoho Ticket Number is now called ITF Workdesk Job Number', async () => {
   const { fields } = (await client.get('/api/assets/field-defs', { token: staff.token })).data;
   assert.equal(fields.find((f) => f.field_key === 'zoho_ticket_number').label, 'ITF Workdesk Job Number');
 });
+
+test('Location filter: ITF Sydney / ITF Melbourne, with the options listed', async () => {
+  add('loc1', { asset_tag: 'L1', asset_location: 'ITF Sydney' });
+  add('loc2', { asset_tag: 'L2', asset_location: 'ITF Melbourne' });
+  add('loc3', { asset_tag: 'L3', asset_location: 'itf sydney ' });
+  assert.deepEqual(ids(await client.get('/api/assets?location=ITF Sydney', { token: staff.token })), ['loc1', 'loc3']);
+  assert.deepEqual(ids(await client.get('/api/assets?location=ITF Melbourne', { token: staff.token })), ['loc2']);
+  const opts = (await client.get('/api/assets/filter-options', { token: staff.token })).data.location;
+  assert.ok(opts.includes('ITF Sydney') && opts.includes('ITF Melbourne'));
+});

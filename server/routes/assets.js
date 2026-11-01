@@ -54,7 +54,7 @@ function buildCsv(assets, defs) {
 const norm = (key) => `lower(trim(replace(replace(replace(COALESCE(json_extract(fields_json, '$.${key}'), ''), '  ', ' '), '  ', ' '), '  ', ' ')))`;
 const normText = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const SERIAL = "upper(trim(COALESCE(json_extract(fields_json, '$.serial_number'), '')))";
-const FILTER_KEYS = { category: 'category', status: 'status', sent_to: 'asset_sent_to', customer: 'customer' };
+const FILTER_KEYS = { category: 'category', status: 'status', location: 'asset_location', sent_to: 'asset_sent_to', customer: 'customer' };
 const NONE = '__none__'; // "Unspecified" — the field is blank
 
 // Months are Sydney months. created_at is stored in UTC, so a month becomes the
@@ -317,7 +317,7 @@ router.get('/filter-options', (req, res) => {
     if (m) months.set(m, (months.get(m) || 0) + r.c);
   });
   const month = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([value, count]) => ({ value, count }));
-  res.json({ category: optionList('category'), status: optionList('status'), sent_to: optionList('asset_sent_to'), customer: customers, month });
+  res.json({ category: optionList('category'), status: optionList('status'), location: optionList('asset_location'), sent_to: optionList('asset_sent_to'), customer: customers, month });
 });
 
 // ---------------------------------------------------------------------------
