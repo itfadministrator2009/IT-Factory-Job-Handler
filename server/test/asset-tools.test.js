@@ -323,3 +323,8 @@ test('picking a model number brings the Category, Manufacturer and Model Name it
   const names = (await client.get('/api/assets/value-options?field=model_name', { token: staff.token })).data.values;
   assert.equal(names[0].fill, undefined);
 });
+
+test('Model Number sits where Category was (straight after Asset Tag), and Category where Model Number was', async () => {
+  const keys = (await client.get('/api/assets/field-defs', { token: staff.token })).data.fields.map((f) => f.field_key);
+  assert.deepEqual(keys.slice(0, 5), ['asset_tag', 'model_number', 'manufacturer', 'model_name', 'category']);
+});
