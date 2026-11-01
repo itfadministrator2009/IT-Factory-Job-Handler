@@ -1829,3 +1829,30 @@ a.btn { text-decoration: none; }
 .ck-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
 .ck-models { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
 .ck-models summary { cursor: pointer; font-weight: 600; color: var(--teal); }
+
+/* Searchable drop-down with "+ Add" (Asset Tracker: Model Name, Model Number, Customer) */
+.combo { position: relative; width: 100%; }
+.combo-display {
+  width: 100%; display: flex; align-items: center; gap: 6px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 11px;
+  background: white; font: inherit; color: inherit; cursor: pointer; min-height: 40px;
+}
+.combo-display > span:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-display:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.combo-placeholder { color: var(--ink, #16241f); }
+.combo-clear { display: inline-flex; color: var(--muted); border-radius: 4px; padding: 2px; }
+.combo-clear:hover { background: #f1efe9; color: var(--ink, #16241f); }
+.field .combo-input { border-color: var(--teal); }
+.combo-menu {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 300px; overflow-y: auto; background: white;
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(22, 36, 31, 0.16); padding: 4px;
+}
+.combo-group { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 4px; }
+.combo-opt { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.combo-opt > span:first-child { flex: 1; }
+.combo-opt.active { background: #f4f1ea; }
+.combo-opt.chosen { font-weight: 600; }
+.combo-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.combo-add { color: var(--coral); font-weight: 600; border-top: 1px solid var(--line); margin-top: 4px; border-radius: 0 0 6px 6px; }
+.combo-note { font-size: 12px; color: var(--muted); padding: 8px 10px; }
