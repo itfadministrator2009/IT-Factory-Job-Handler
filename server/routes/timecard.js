@@ -1,6 +1,12 @@
 // ITF Time Card API. Contractors use /my/*; Work Desk admins use /admin/*.
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const { randomUUID } = require('crypto');
 const { db } = require('../db');
+const fileStore = require('../fileStore');
+const { shrinkUpload } = require('../photoShrink');
 const { authRequired } = require('../auth');
 const { isAdminRole, logsTime, isSuperAdmin, adminHasTimecard } = require('../permissions');
 const tc = require('../timecard');
@@ -59,7 +65,43 @@ const contractorAction = (fn) => [contractorOnly, handle((req, res) => {
 
 router.post('/my/weeks/:id/entries', ...contractorAction((req) => tc.addEntry(req.contractor, req.params.id, req.body)));
 router.delete('/my/weeks/:id/entries/:entryId', ...contractorAction((req) => tc.deleteEntry(req.contractor, req.params.id, req.params.entryId)));
-router.post('/my/weeks/:id/expenses', ...contractorAction((req) => tc.addExpense(req.contractor, req.params.id, req.body)));
+// Receipt/invoice for an expense: a photo (taken on the phone or picked) or a PDF, up to 20 MB.
+if (!fs.existsSync(tc.UPLOAD_DIR)) fs.mkdirSync(tc.UPLOAD_DIR, { recursive: true });
+const receiptUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, tc.UPLOAD_DIR),
+    filename: (req, file, cb) => cb(null, `${randomUUID()}${(path.extname(file.originalname || '') || (file.mimetype === 'application/pdf' ? '.pdf' : '.jpg')).toLowerCase()}`),
+  }),
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype) || file.mimetype === 'application/pdf'),
+});
+const receiptField = (req, res, next) => receiptUpload.single('receipt')(req, res, (err) => {
+  if (!err) return next();
+  res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That receipt file is too big (20 MB max).' : 'Could not read the receipt file.' });
+});
+
+router.post('/my/weeks/:id/expenses', contractorOnly, receiptField, handle(async (req, res) => {
+  let receipt = null;
+  try {
+    if (req.file) receipt = await shrinkUpload(req.file); // big phone photos are made smaller
+    const week = tc.addExpense(req.contractor, req.params.id, req.body, receipt);
+    if (receipt) fileStore.offloadSoon(receipt.filename, { dir: tc.UPLOAD_DIR, contentType: receipt.mimetype }); // to Cloudflare R2, when set up
+    res.json(tc.contractorState(req.contractor, week));
+  } catch (err) {
+    const name = receipt?.filename || req.file?.filename;
+    if (name) { try { fs.unlinkSync(path.join(tc.UPLOAD_DIR, name)); } catch (e) { /* already gone */ } }
+    throw err;
+  }
+}));
+
+// View a receipt: the person who claimed it, or a Time Card admin.
+router.get('/expenses/:expenseId/receipt', handle(async (req, res) => {
+  const u = me(req);
+  const canSeeAll = !!u && isAdminRole(u.role) && adminHasTimecard(u.id);
+  const r = tc.expenseReceipt(u, req.params.expenseId, canSeeAll);
+  // Shown in the browser (not downloaded) so a photo or PDF opens straight away.
+  await fileStore.send(res, r.storedName, { dir: r.dir, contentType: r.mime });
+}));
 router.delete('/my/weeks/:id/expenses/:expenseId', ...contractorAction((req) => tc.deleteExpense(req.contractor, req.params.id, req.params.expenseId)));
 router.post('/my/weeks/:id/clear', ...contractorAction((req) => tc.clearWeek(req.contractor, req.params.id)));
 
