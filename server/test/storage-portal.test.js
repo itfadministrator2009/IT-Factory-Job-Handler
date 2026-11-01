@@ -27,6 +27,7 @@ before(async () => {
   // portal login with "Missing or invalid Authorization header").
   app.use('/api', require('../routes/attachments'));
   app.use('/api/storage-portal', require('../routes/storagePortal'));
+  app.use('/api/clients', require('../routes/clients'));
   client = await startTestServer(app);
   server = client.server;
   admin = await registerUser(client, { name: 'Admin Person', email: 'admin@example.com' });
@@ -135,14 +136,18 @@ test('backup snapshot is a complete, readable copy of the live database (WAL-saf
 let acmeToken;
 
 test('staff set up portal logins with validation', async () => {
-  const short = await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'Acme', username: 'acme.ops', password: 'short' } });
+  // Only admins manage client logins; Storage Centre staff can still read currencies.
+  assert.equal((await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'Nope' } })).status, 403);
+  assert.equal((await client.get('/api/clients', { token: staff.token })).status, 403);
+  assert.equal((await client.get('/api/storage/client-currencies', { token: staff.token })).status, 200);
+  const short = await client.post('/api/storage/clients', { token: admin.token, body: { clientName: 'Acme', username: 'acme.ops', password: 'short' } });
   assert.equal(short.status, 400);
-  const created = await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'Acme', username: 'acme.ops', password: 'acme-password-1' } });
+  const created = await client.post('/api/storage/clients', { token: admin.token, body: { clientName: 'Acme', username: 'acme.ops', password: 'acme-password-1' } });
   assert.equal(created.status, 201);
   assert.equal(created.data.client.hasPortalLogin, true);
-  const dupe = await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'Beta', username: 'ACME.OPS', password: 'beta-password-1' } });
+  const dupe = await client.post('/api/storage/clients', { token: admin.token, body: { clientName: 'Beta', username: 'ACME.OPS', password: 'beta-password-1' } });
   assert.equal(dupe.status, 400, 'usernames are unique ignoring case');
-  const beta = await client.post('/api/storage/clients', { token: staff.token, body: { clientName: 'Beta', username: 'beta', password: 'beta-password-1' } });
+  const beta = await client.post('/api/storage/clients', { token: admin.token, body: { clientName: 'Beta', username: 'beta', password: 'beta-password-1' } });
   assert.equal(beta.status, 201);
 });
 
@@ -234,7 +239,7 @@ test('change password, then removed access takes effect immediately', async () =
   assert.equal((await client.post('/api/storage-portal/login', { body: { username: 'acme.ops', password: 'new-password-22' } })).status, 200);
 
   const acmeId = db.prepare("SELECT id FROM storage_clients WHERE client_name = 'Acme'").get().id;
-  await client.patch(`/api/storage/clients/${acmeId}`, { token: staff.token, body: { removePortalAccess: true } });
+  await client.patch(`/api/storage/clients/${acmeId}`, { token: admin.token, body: { removePortalAccess: true } });
   assert.equal((await client.get('/api/storage-portal/items', { token: acmeToken })).status, 401, 'existing session cut off');
   assert.equal((await client.post('/api/storage-portal/login', { body: { username: 'acme.ops', password: 'new-password-22' } })).status, 401);
 });
