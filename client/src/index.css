@@ -1862,3 +1862,4 @@ a.btn { text-decoration: none; }
 .field.field-missing > label { color: var(--danger); }
 .field.field-missing input:not([type=checkbox]), .field.field-missing select, .field.field-missing textarea,
 .field.field-missing .combo-display, .field.field-missing > div[style*="grid"] { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.combo-detail { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
