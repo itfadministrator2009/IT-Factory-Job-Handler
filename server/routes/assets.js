@@ -227,9 +227,28 @@ function currentAuditMonth(now = new Date()) {
   return new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(now);
 }
 
+// Asset tags run ITF52816, ITF52817, … The next one is one more than the highest
+// ITF<number> tag already used, and never lower than ITF52816.
+const TAG_START = 52816;
+function nextAssetTag() {
+  const row = db.prepare(`SELECT MAX(CAST(substr(t, 4) AS INTEGER)) AS n FROM (
+      SELECT upper(trim(json_extract(fields_json, '$.asset_tag'))) AS t FROM assets
+    ) WHERE t GLOB 'ITF[0-9]*' AND substr(t, 4) NOT GLOB '*[^0-9]*'`).get();
+  return `ITF${Math.max(TAG_START, (row.n || 0) + 1)}`;
+}
+function assetTagTaken(tag) {
+  return !!db.prepare("SELECT 1 FROM assets WHERE upper(trim(json_extract(fields_json, '$.asset_tag'))) = ? LIMIT 1").get(String(tag || '').trim().toUpperCase());
+}
+
+// The tag the Add asset form fills in.
+router.get('/next-tag', (req, res) => res.json({ tag: nextAssetTag() }));
+
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
+  // The form's filled-in tag (autoTag) was taken meanwhile, e.g. two people adding at
+  // once: give this asset the next free number instead.
+  if (req.body.autoTag && fields.asset_tag && assetTagTaken(fields.asset_tag)) fields.asset_tag = nextAssetTag();
   // Warn before a second asset gets the same serial (the page can then save anyway).
   if (!req.body.allowDuplicateSerial) {
     const matches = serialConflicts(fields.serial_number);
