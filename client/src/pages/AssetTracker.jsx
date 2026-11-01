@@ -772,8 +772,9 @@ export default function AssetTracker() {
       )}
 
       {showForm && fieldDefs && (
-        <div className="modal-overlay" onClick={() => !saving && setShowForm(false)}>
-          <div className="modal-card sign-off-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1100, width: '95vw', height: '92vh' }}>
+        <div className="modal-overlay" onClick={() => !saving && setShowForm(false)} style={{ padding: 0 }}>
+          {/* Full screen, so the whole form fits with less scrolling. */}
+          <div className="modal-card sign-off-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 'none', width: '100%', height: '100%', maxHeight: 'none', borderRadius: 0, padding: '20px 28px' }}>
             <div className="modal-header">
               <h3>{editingAsset ? 'Edit asset' : 'Add asset'}</h3>
               {!saving && <button type="button" onClick={() => setShowForm(false)}><X size={18} /></button>}
@@ -803,9 +804,13 @@ export default function AssetTracker() {
                   </div>
                 ))}
               </div>
-              <button className="btn btn-accent" type="submit" disabled={saving} style={{ marginTop: 16 }}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+              {/* Save stays in view at the bottom while scrolling. */}
+              <div style={{ position: 'sticky', bottom: 0, background: 'white', padding: '12px 0 4px', marginTop: 16, borderTop: '1px solid var(--line, #e5e9e7)', display: 'flex', gap: 8 }}>
+                <button className="btn btn-accent" type="submit" disabled={saving}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button className="btn btn-ghost" type="button" disabled={saving} onClick={() => setShowForm(false)}>Cancel</button>
+              </div>
             </form>
           </div>
         </div>
