@@ -58,6 +58,7 @@ export default function AssetTracker() {
   const [editingAsset, setEditingAsset] = useState(null); // null = adding new
   const [formValues, setFormValues] = useState({});
   const [suggestedTag, setSuggestedTag] = useState('');
+  const [missingKeys, setMissingKeys] = useState([]); // required fields left blank on Save
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -197,6 +198,7 @@ export default function AssetTracker() {
     // Audit Month starts as this month (Sydney time), e.g. "November 2026" — it can be changed.
     setFormValues({ audit_month: new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(new Date()) });
     setSuggestedTag('');
+    setMissingKeys([]);
     setError('');
     setDupWarning(null);
     setShowForm(true);
@@ -216,10 +218,26 @@ export default function AssetTracker() {
 
   function updateFormField(key, value) {
     setFormValues((prev) => ({ ...prev, [key]: value }));
+    setMissingKeys((m) => (m.includes(key) ? m.filter((k) => k !== key) : m));
+  }
+
+  // A new asset can't be saved until every required field is filled in (a
+  // pick-several field needs at least one ticked). Audit Month fills itself.
+  const isBlank = (v) => (Array.isArray(v) ? !v.length : !String(v ?? '').trim());
+  function showMissing(keys) {
+    setMissingKeys(keys);
+    const labels = fieldDefs.filter((f) => keys.includes(f.field_key)).map((f) => f.label);
+    setError(`Please fill in all fields before saving. Still to fill in: ${labels.join(', ')}`);
+    setTimeout(() => document.querySelector('.field.field-missing')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   }
 
   async function handleSaveAsset(e, { allowDuplicateSerial = false } = {}) {
     e?.preventDefault();
+    if (!editingAsset) {
+      const missing = fieldDefs.filter((f) => f.required && f.field_key !== 'audit_month' && isBlank(formValues[f.field_key])).map((f) => f.field_key);
+      if (missing.length) { setDupWarning(null); showMissing(missing); return; }
+    }
+    setMissingKeys([]);
     setSaving(true);
     setError('');
     setDupWarning(null);
@@ -236,6 +254,7 @@ export default function AssetTracker() {
       loadFilterOptions();
     } catch (err) {
       if (err.response?.data?.code === 'duplicate_serial') setDupWarning(err.response.data);
+      else if (err.response?.data?.code === 'missing_fields') showMissing(err.response.data.missing);
       else setError(err.response?.data?.error || 'Could not save');
     } finally {
       setSaving(false);
@@ -810,8 +829,8 @@ export default function AssetTracker() {
             <form onSubmit={handleSaveAsset} className="sign-off-scroll">
               <div className="form-grid">
                 {fieldDefs.map((f) => (
-                  <div className={'field' + ((f.type === 'multiselect' || f.type === 'textarea') ? ' span-2' : '')} key={f.field_key}>
-                    <label>{f.label}</label>
+                  <div className={'field' + ((f.type === 'multiselect' || f.type === 'textarea') ? ' span-2' : '') + (missingKeys.includes(f.field_key) ? ' field-missing' : '')} key={f.field_key}>
+                    <label>{f.label}{!editingAsset && f.required && <span className="required-mark" title="Required"> *</span>}</label>
                     {SCAN_KEYS.includes(f.field_key) && f.type === 'text' ? (
                       <div style={{ display: 'flex', gap: 6 }}>
                         <div style={{ flex: 1 }}>{renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}</div>
