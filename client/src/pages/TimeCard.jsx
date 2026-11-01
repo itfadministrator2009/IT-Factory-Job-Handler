@@ -1,7 +1,7 @@
 // ITF Time Card — a contractor's own timesheet: log the week's hours and
 // expenses, then send it to Work Desk admins for approval.
-import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Send, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Send, Plus, Trash2, ChevronDown, Camera, Paperclip, X } from 'lucide-react';
 import api from '../api';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,41 @@ import {
 } from '../components/TimeCardShared';
 
 const blankEntry = { day: 'Monday', date: '', start: '', finish: '', breakMins: '0', clientProject: '', task: '' };
-const blankExpense = { date: '', type: 'Fuel', amount: '', description: '' };
+const blankExpense = { date: '', type: 'Fuel', amount: '', description: '', receipt: null };
+
+// Receipt / invoice for an expense: take a photo with the phone's camera, or pick
+// a photo or PDF that's already saved. Optional.
+function ReceiptPicker({ file, onChange, disabled }) {
+  const cameraRef = useRef(null);
+  const fileRef = useRef(null);
+  const [preview, setPreview] = useState('');
+  useEffect(() => {
+    if (!file || !/^image\//.test(file.type)) { setPreview(''); return undefined; }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  const pick = (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onChange(f); };
+  return (
+    <div className="tc-receipt">
+      <span className="tc-receipt-label">Receipt / invoice <small>(optional)</small></span>
+      {file ? (
+        <div className="tc-receipt-chosen">
+          {preview ? <img src={preview} alt="Receipt" /> : <Paperclip size={18} />}
+          <span className="tc-receipt-name">{file.name}</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(null)} disabled={disabled}><X size={14} /> Remove</button>
+        </div>
+      ) : (
+        <div className="tc-receipt-buttons">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => cameraRef.current?.click()} disabled={disabled}><Camera size={15} /> Take photo</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={disabled}><Paperclip size={15} /> Choose file</button>
+        </div>
+      )}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={pick} />
+      <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={pick} />
+    </div>
+  );
+}
 
 function HistoryList({ title, weeks, empty, describe }) {
   const [open, setOpen] = useState(null);
@@ -82,7 +116,14 @@ export default function TimeCard() {
   function addExpense(ev) {
     ev.preventDefault();
     if (!expense.date || !(Number(expense.amount) > 0)) { setExpenseError('Enter a date and an amount.'); return; }
-    run(() => api.post(`/timecard/my/weeks/${week.id}/expenses`, expense), { onError: setExpenseError, after: () => setExpense(blankExpense) });
+    const { receipt, ...fields } = expense;
+    let body = fields;
+    if (receipt) {
+      body = new FormData();
+      Object.entries(fields).forEach(([k, v]) => body.append(k, v));
+      body.append('receipt', receipt, receipt.name);
+    }
+    run(() => api.post(`/timecard/my/weeks/${week.id}/expenses`, body), { onError: setExpenseError, after: () => setExpense(blankExpense) });
   }
 
   function clearWeek() {
@@ -187,6 +228,9 @@ export default function TimeCard() {
                   <input id="tc-xamt" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0.00" value={expense.amount} onChange={(e) => setExpense({ ...expense, amount: e.target.value })} /></div>
                 <div className="field tc-span2"><label htmlFor="tc-xdesc">Description</label>
                   <input id="tc-xdesc" maxLength={200} placeholder="e.g. Fuel to client site" value={expense.description} onChange={(e) => setExpense({ ...expense, description: e.target.value })} /></div>
+                <div className="tc-span-all">
+                  <ReceiptPicker file={expense.receipt} disabled={busy} onChange={(f) => setExpense({ ...expense, receipt: f })} />
+                </div>
                 <div className="tc-formfoot tc-span-all">
                   {expenseError && <div className="tc-err">{expenseError}</div>}
                   <button className="btn btn-ghost" type="submit" disabled={busy}><Plus size={15} /> Add expense</button>

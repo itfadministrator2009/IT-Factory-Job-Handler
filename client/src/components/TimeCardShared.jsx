@@ -1,5 +1,19 @@
 // ITF Time Card — pieces shared by the contractor and admin pages.
 import { formatDMY } from '../utils/date';
+import api from '../api';
+
+// Opens an expense's receipt photo / PDF in a new tab (it needs the sign-in token).
+export async function openReceipt(expense) {
+  const tab = window.open('', '_blank');
+  try {
+    const res = await api.get(`/timecard/expenses/${expense.id}/receipt`, { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([res.data], { type: expense.receipt?.mime || res.data.type }));
+    if (tab) tab.location = url; else window.open(url, '_blank');
+  } catch (err) {
+    if (tab) tab.close();
+    alert('Could not open the receipt.');
+  }
+}
 
 export const EXPENSE_TYPES = ['Fuel', 'Parking', 'Tolls', 'Travel', 'Materials', 'Meals', 'Other'];
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -71,12 +85,14 @@ export function ExpensesTable({ expenses, onDelete, busy }) {
     <div className="tc-table-wrap">
       <table className="tc-table">
         <thead>
-          <tr><th>Date</th><th>Type</th><th>Description</th><th className="num">Amount</th>{onDelete && <th aria-label="Delete" />}</tr>
+          <tr><th>Date</th><th>Type</th><th>Description</th><th>Receipt</th><th className="num">Amount</th>{onDelete && <th aria-label="Delete" />}</tr>
         </thead>
         <tbody>
           {expenses.map((x) => (
             <tr key={x.id}>
-              <td className="nowrap">{dmy(x.date)}</td><td>{x.type}</td><td>{x.description || '—'}</td><td className="num strong">{money(x.amount)}</td>
+              <td className="nowrap">{dmy(x.date)}</td><td>{x.type}</td><td>{x.description || '—'}</td>
+              <td>{x.receipt ? <button type="button" className="tc-receipt-link" onClick={() => openReceipt(x)} title={x.receipt.name}>View</button> : <span className="tc-muted">—</span>}</td>
+              <td className="num strong">{money(x.amount)}</td>
               {onDelete && (
                 <td className="num">
                   <button type="button" className="tc-del" disabled={busy} onClick={() => onDelete(x)} title="Delete expense" aria-label="Delete expense">×</button>
@@ -117,8 +133,8 @@ export function printApprovedWeeks(weeks, title) {
         ${w.expenses.length ? ` · expenses <b>${money(w.expenseTotal)}</b>` : ''}</p>
       <table><thead><tr><th>Day</th><th>Date</th><th>Client / project</th><th>Start</th><th>Finish</th><th class="n">Break</th><th class="n">Hours</th><th>Task</th></tr></thead>
       <tbody>${w.entries.map((x) => `<tr><td>${e(x.day)}</td><td>${e(formatDMY(x.date))}</td><td>${e(x.clientProject)}</td><td>${e(x.start)}</td><td>${e(x.finish)}</td><td class="n">${x.breakMins}m</td><td class="n">${hrs(x.hours)}</td><td>${e(x.task)}</td></tr>`).join('')}</tbody></table>
-      ${w.expenses.length ? `<table class="ex"><thead><tr><th>Expense date</th><th>Type</th><th>Description</th><th class="n">Amount</th></tr></thead>
-      <tbody>${w.expenses.map((x) => `<tr><td>${e(formatDMY(x.date))}</td><td>${e(x.type)}</td><td>${e(x.description)}</td><td class="n">${money(x.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${w.expenses.length ? `<table class="ex"><thead><tr><th>Expense date</th><th>Type</th><th>Description</th><th>Receipt</th><th class="n">Amount</th></tr></thead>
+      <tbody>${w.expenses.map((x) => `<tr><td>${e(formatDMY(x.date))}</td><td>${e(x.type)}</td><td>${e(x.description)}</td><td>${x.receipt ? 'Attached' : '—'}</td><td class="n">${money(x.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
     </section>`).join('');
   const totalHours = weeks.reduce((s, w) => s + w.total, 0);
   const totalPay = weeks.reduce((s, w) => s + (w.estPay || 0), 0);
