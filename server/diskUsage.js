@@ -95,6 +95,12 @@ function uploadsBreakdown() {
       .forEach((r) => known.set(r.stored_name, { area: 'Asset checklist photos', name: r.original_name, mime: r.mime_type, createdAt: r.created_at ? new Date(r.created_at).toISOString() : null, owner: r.asset_id || 'Checklist (deleted)', ownerKey: `checklist:${r.asset_id}` }));
   } catch (e) { /* table missing */ }
 
+  try {
+    db.prepare(`SELECT x.receipt_name, x.receipt_original, x.receipt_mime, x.created_at, w.full_name, w.week_ending
+      FROM timecard_expenses x LEFT JOIN timecard_weeks w ON w.id = x.week_id WHERE x.receipt_name IS NOT NULL`).all()
+      .forEach((r) => known.set(r.receipt_name, { area: 'Time Card receipts', name: r.receipt_original, mime: r.receipt_mime, createdAt: r.created_at, owner: r.full_name ? `${r.full_name} — week ending ${r.week_ending}` : 'Timesheet (deleted)', ownerKey: `timecard:${r.full_name}` }));
+  } catch (e) { /* table missing */ }
+
   // Every uploaded file, wherever it is: on the Render disk, in Cloudflare R2, or both.
   const all = new Map(); // stored name -> { name, area, kind, owner, ownerKey, createdAt, render, cloud }
   const entryFor = (stored) => {

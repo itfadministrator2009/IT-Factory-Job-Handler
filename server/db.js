@@ -568,6 +568,11 @@ CREATE TABLE IF NOT EXISTS timecard_expenses (
 CREATE INDEX IF NOT EXISTS idx_timecard_expenses_week ON timecard_expenses(week_id);
 CREATE TABLE IF NOT EXISTS timecard_meta (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
 `);
+// ITF Time Card: a photo (or PDF) of the receipt/invoice for an expense claim.
+addColumnIfMissing('timecard_expenses', 'receipt_name', 'TEXT');
+addColumnIfMissing('timecard_expenses', 'receipt_original', 'TEXT');
+addColumnIfMissing('timecard_expenses', 'receipt_mime', 'TEXT');
+addColumnIfMissing('timecard_expenses', 'receipt_size', 'INTEGER');
 
 // Weeks brought across from the old Time Card sheet: the old app sometimes gave a
 // contractor two timesheets with the same "week ending" (it changed it to the date

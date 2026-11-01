@@ -19,6 +19,8 @@ function inUse() {
   for (const table of ['attachments', 'project_entry_photos', 'checklist_photos']) {
     try { db.prepare(`SELECT stored_name FROM ${table}`).all().forEach((r) => names.add(r.stored_name)); } catch (e) { /* table missing */ }
   }
+  // ITF Time Card receipt photos.
+  try { db.prepare('SELECT receipt_name FROM timecard_expenses WHERE receipt_name IS NOT NULL').all().forEach((r) => names.add(r.receipt_name)); } catch (e) { /* table missing */ }
   let restorable = '';
   try {
     restorable = db.prepare("SELECT COALESCE(before_json, '') || ' ' || COALESCE(after_json, '') AS t FROM record_restore_log").all().map((r) => r.t).join('\n');

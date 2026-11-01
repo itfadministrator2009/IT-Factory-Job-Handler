@@ -2,7 +2,13 @@
 // Work Desk. Contractors log hours and expenses for a week (ending Sunday) and
 // send it for approval; Work Desk admins approve or decline it.
 const { v4: uuid } = require('uuid');
+const path = require('path');
 const { db } = require('./db');
+const fileStore = require('./fileStore');
+
+// Where receipt photos are kept (the same folder as every other upload).
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const removeReceiptFile = (name) => { if (name) { try { fileStore.remove(name, UPLOAD_DIR); } catch (e) { /* best effort */ } } };
 
 const TZ = process.env.BACKUP_TIMEZONE || 'Australia/Sydney';
 const EDITABLE = ['Not sent', 'Declined'];
@@ -57,6 +63,8 @@ const entryOut = (e) => ({
 });
 const expenseOut = (x) => ({
   id: x.id, date: x.date || '', type: x.type || '', description: x.description || '', amount: round2(x.amount),
+  // A photo or PDF of the receipt/invoice, when one was added.
+  receipt: x.receipt_name ? { name: x.receipt_original || 'receipt', mime: x.receipt_mime || '', size: x.receipt_size || 0 } : null,
 });
 
 function weekEntries(weekId) {
@@ -160,7 +168,8 @@ function deleteEntry(user, weekId, entryId) {
   return week;
 }
 
-function addExpense(user, weekId, body = {}) {
+// receipt: an uploaded file already saved in the uploads folder ({ filename, originalname, mimetype, size }).
+function addExpense(user, weekId, body = {}, receipt = null) {
   const week = myEditableWeek(user, weekId);
   const amount = round2(body.amount);
   if (!(amount > 0)) throw new TimecardError('Enter an expense amount greater than zero.');
@@ -168,25 +177,42 @@ function addExpense(user, weekId, body = {}) {
   const date = String(body.date || '').trim();
   if (!YMD.test(date)) throw new TimecardError('Choose the date of the expense.');
   const type = EXPENSE_TYPES.includes(String(body.type || '').trim()) ? String(body.type).trim() : 'Other';
-  db.prepare(`INSERT INTO timecard_expenses (id, week_id, user_id, date, type, description, amount) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(uuid(), week.id, user.id, date, type, String(body.description || '').trim().slice(0, 200), amount);
+  db.prepare(`INSERT INTO timecard_expenses (id, week_id, user_id, date, type, description, amount, receipt_name, receipt_original, receipt_mime, receipt_size)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(uuid(), week.id, user.id, date, type, String(body.description || '').trim().slice(0, 200), amount,
+      receipt?.filename || null, receipt ? String(receipt.originalname || 'receipt').slice(0, 200) : null, receipt?.mimetype || null, receipt?.size || null);
   return week;
 }
 
 function deleteExpense(user, weekId, expenseId) {
   const week = myEditableWeek(user, weekId);
-  const gone = db.prepare('DELETE FROM timecard_expenses WHERE id = ? AND week_id = ?').run(expenseId, week.id).changes;
-  if (!gone) throw new TimecardError('Expense not found.', 404);
+  const row = db.prepare('SELECT receipt_name FROM timecard_expenses WHERE id = ? AND week_id = ?').get(expenseId, week.id);
+  if (!row) throw new TimecardError('Expense not found.', 404);
+  db.prepare('DELETE FROM timecard_expenses WHERE id = ?').run(expenseId);
+  removeReceiptFile(row.receipt_name);
   return week;
 }
 
-const clearWeek = db.transaction((user, weekId) => {
+const clearWeekRows = db.transaction((user, weekId) => {
   const week = myEditableWeek(user, weekId);
+  const receipts = db.prepare('SELECT receipt_name FROM timecard_expenses WHERE week_id = ? AND receipt_name IS NOT NULL').all(week.id).map((r) => r.receipt_name);
   db.prepare('DELETE FROM timecard_entries WHERE week_id = ?').run(week.id);
   db.prepare('DELETE FROM timecard_expenses WHERE week_id = ?').run(week.id);
   db.prepare("UPDATE timecard_weeks SET status = 'Not sent', decline_reason = NULL WHERE id = ?").run(week.id);
-  return getWeek(week.id);
+  return { week: getWeek(week.id), receipts };
 });
+function clearWeek(user, weekId) {
+  const { week, receipts } = clearWeekRows(user, weekId);
+  receipts.forEach(removeReceiptFile);
+  return week;
+}
+
+// The receipt for an expense: its owner, or a Time Card admin (canSeeAll).
+function expenseReceipt(user, expenseId, canSeeAll) {
+  const row = db.prepare('SELECT * FROM timecard_expenses WHERE id = ?').get(expenseId);
+  if (!row || !row.receipt_name || (!canSeeAll && row.user_id !== user.id)) throw new TimecardError('Receipt not found.', 404);
+  return { storedName: row.receipt_name, name: row.receipt_original || 'receipt', mime: row.receipt_mime || 'application/octet-stream', dir: UPLOAD_DIR };
+}
 
 function submitWeek(user, weekId) {
   const week = myEditableWeek(user, weekId);
@@ -417,7 +443,7 @@ function approvedCsv(opts) {
 
 module.exports = {
   TimecardError, EXPENSE_TYPES, DAYS, todayYmd, addDays, sundayOnOrAfter, computeHours, weekSummary, getWeek,
-  findOrCreateWeek, currentWeek, contractorState, addEntry, deleteEntry, addExpense, deleteExpense, clearWeek, submitWeek,
+  findOrCreateWeek, currentWeek, contractorState, addEntry, deleteEntry, addExpense, deleteExpense, clearWeek, submitWeek, expenseReceipt, UPLOAD_DIR,
   pendingWeeks, recentDecisions, contractors, approvedHoursInRange, hoursSummary, projectBreakdown, projectWeeklyHours,
   approvedProjects, peopleSummary, payPeriods, payInRange, paySummary, approveWeek, declineWeek, approvedWeeksDetailed, approvedCsv, dmy, YMD,
 };
