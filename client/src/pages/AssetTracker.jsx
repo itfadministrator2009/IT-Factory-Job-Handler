@@ -221,6 +221,13 @@ export default function AssetTracker() {
     setMissingKeys((m) => (m.includes(key) ? m.filter((k) => k !== key) : m));
   }
 
+  // Picking a model number fills in the Category, Manufacturer and Model Name it's
+  // usually saved with (they can still be changed).
+  function fillFromModelNumber(fill) {
+    setFormValues((prev) => ({ ...prev, ...fill }));
+    setMissingKeys((m) => m.filter((k) => !(k in fill)));
+  }
+
   // A new asset can't be saved until every required field is filled in (a
   // pick-several field needs at least one ticked). Audit Month fills itself.
   const isBlank = (v) => (Array.isArray(v) ? !v.length : !String(v ?? '').trim());
@@ -452,16 +459,20 @@ export default function AssetTracker() {
 
   // values: the rest of the form, so Model Name / Model Number list the ones for
   // the chosen Manufacturer (and Model Name) first.
-  function renderFieldInput(field, value, onChange, values = {}) {
+  // onFill: picking a model number fills in its Category / Manufacturer / Model Name.
+  function renderFieldInput(field, value, onChange, values = {}, onFill) {
     if (COMBO_KEYS.includes(field.field_key) && field.type === 'text') {
       return <ComboField field={field.field_key} label={field.label} value={value || ''} onChange={onChange}
-        manufacturer={values.manufacturer || ''} modelName={field.field_key === 'model_number' ? values.model_name || '' : ''} />;
+        manufacturer={values.manufacturer || ''} modelName={field.field_key === 'model_number' ? values.model_name || '' : ''}
+        onFill={field.field_key === 'model_number' ? onFill : undefined} />;
     }
     if (field.type === 'dropdown') {
+      // A value that isn't one of the options (e.g. filled in from an older asset) still shows.
+      const opts = value && !field.options?.includes(value) ? [...(field.options || []), value] : (field.options || []);
       return (
         <select value={value || ''} onChange={(e) => onChange(e.target.value)}>
           <option value="">-Select-</option>
-          {field.options?.map((o) => <option key={o} value={o}>{o}</option>)}
+          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       );
     }
@@ -836,7 +847,7 @@ export default function AssetTracker() {
                         <div style={{ flex: 1 }}>{renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v))}</div>
                         <button type="button" className="btn btn-ghost btn-sm icon-btn" title={`Scan ${f.label}`} onClick={() => setScanTarget({ mode: 'field', key: f.field_key, label: f.label })}><Camera size={14} /></button>
                       </div>
-                    ) : renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v), formValues)}
+                    ) : renderFieldInput(f, formValues[f.field_key], (v) => updateFormField(f.field_key, v), formValues, fillFromModelNumber)}
                   </div>
                 ))}
               </div>
