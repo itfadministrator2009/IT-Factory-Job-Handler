@@ -224,3 +224,40 @@ test('Asset Tag fills in with the next number, starting at ITF52816', async () =
   add('tag3', { asset_tag: 'ITF5299X' });
   assert.equal(await next(), 'ITF52901');
 });
+
+test('Model Name / Model Number / Customer drop-down lists, with + Add', async () => {
+  add('vl1', { manufacturer: 'Dell', model_name: 'Latitude', model_number: '5490' });
+  add('vl2', { manufacturer: 'dell ', model_name: 'Latitude', model_number: '5490' });
+  add('vl3', { manufacturer: 'Dell', model_name: 'latitude', model_number: '7400' });
+  add('vl4', { manufacturer: 'HP', model_name: 'EliteBook', model_number: '840 G5', customer: 'Zeta Corp' });
+  add('vl5', { customer: 'Zeta Corp' });
+  add('vl6', { customer: 'zeta  corp ' });
+  const list = async (qs) => (await client.get(`/api/assets/value-options?${qs}`, { token: staff.token })).data.values;
+
+  const names = await list('field=model_name&manufacturer=DELL');
+  const lat = names.find((v) => v.value.toLowerCase() === 'latitude');
+  assert.equal(lat.value, 'Latitude', 'most used spelling');
+  assert.equal(lat.count, 3);
+  assert.equal(lat.match, true);
+  assert.equal(names.find((v) => v.value === 'EliteBook').match, false, 'other makes still listed, just not first');
+
+  const nums = await list('field=model_number&manufacturer=Dell&model_name=Latitude');
+  assert.deepEqual(nums.filter((v) => v.match).map((v) => v.value), ['5490', '7400']);
+  const zeta = (await list('field=customer')).find((v) => v.value.toLowerCase() === 'zeta corp');
+  assert.deepEqual([zeta.value, zeta.count], ['Zeta Corp', 3], 'spellings differing in capitals/spaces are one customer');
+  assert.equal((await client.get('/api/assets/value-options?field=serial_number', { token: staff.token })).status, 400);
+
+  // + Add a new model number for Dell Latitude: listed (first for Dell Latitude) before any asset uses it.
+  const made = await client.post('/api/assets/value-options', { token: staff.token, body: { field: 'model_number', value: ' 5420 ', manufacturer: 'Dell', modelName: 'Latitude' } });
+  assert.equal(made.status, 201);
+  assert.equal(made.data.value, '5420');
+  const after = await list('field=model_number&manufacturer=Dell&model_name=Latitude');
+  assert.equal(after.find((v) => v.value === '5420').match, true);
+  assert.equal((await list('field=model_number&manufacturer=HP')).find((v) => v.value === '5420').match, false);
+  // Adding one that's already there gives back the existing spelling, once.
+  const again = await client.post('/api/assets/value-options', { token: staff.token, body: { field: 'customer', value: 'ZETA corp' } });
+  assert.equal(again.data.value, 'Zeta Corp', 'the most used spelling already on file, not the one typed');
+  assert.equal(again.data.existed, true);
+  assert.equal((await list('field=customer')).filter((v) => v.value.toLowerCase() === 'zeta corp').length, 1);
+  assert.equal((await client.post('/api/assets/value-options', { token: staff.token, body: { field: 'customer', value: '  ' } })).status, 400);
+});

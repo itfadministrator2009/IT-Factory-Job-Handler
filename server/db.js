@@ -251,6 +251,20 @@ CREATE TABLE IF NOT EXISTS asset_batch_items (
   FOREIGN KEY (batch_id) REFERENCES asset_batches(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_asset_batch_items_asset ON asset_batch_items(asset_id);
+-- Values added with "+ Add" on the Model Name / Model Number / Customer drop-downs,
+-- so they're listed before any asset uses them. (The rest of each list comes from
+-- the values already on assets.) manufacturer / model_name say which make (and
+-- model) a model name or number belongs to.
+CREATE TABLE IF NOT EXISTS asset_list_values (
+  id TEXT PRIMARY KEY,
+  field_key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  manufacturer TEXT NOT NULL DEFAULT '',
+  model_name TEXT NOT NULL DEFAULT '',
+  added_by TEXT,
+  added_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_asset_list_values_field ON asset_list_values(field_key);
 -- ================= end Asset Tracker feature =================
 
 -- ================= Storage Centre feature =================
