@@ -54,6 +54,7 @@ export default function AssetTracker() {
   const [showForm, setShowForm] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null); // null = adding new
   const [formValues, setFormValues] = useState({});
+  const [suggestedTag, setSuggestedTag] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -192,9 +193,15 @@ export default function AssetTracker() {
     setEditingAsset(null);
     // Audit Month starts as this month (Sydney time), e.g. "November 2026" — it can be changed.
     setFormValues({ audit_month: new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', month: 'long', year: 'numeric' }).format(new Date()) });
+    setSuggestedTag('');
     setError('');
     setDupWarning(null);
     setShowForm(true);
+    // Asset Tag fills in with the next number (ITF52816, ITF52817, …) — it can be changed.
+    api.get('/assets/next-tag').then((r) => {
+      setSuggestedTag(r.data.tag);
+      setFormValues((v) => (v.asset_tag ? v : { ...v, asset_tag: r.data.tag }));
+    }).catch(() => {});
   }
   function openEditForm(asset) {
     setEditingAsset(asset);
@@ -215,6 +222,7 @@ export default function AssetTracker() {
     setDupWarning(null);
     try {
       const body = { fields: formValues, ...(allowDuplicateSerial ? { allowDuplicateSerial: true } : {}) };
+      if (!editingAsset && suggestedTag && formValues.asset_tag === suggestedTag) body.autoTag = true;
       if (editingAsset) {
         await api.patch(`/assets/${editingAsset.id}`, body);
       } else {
