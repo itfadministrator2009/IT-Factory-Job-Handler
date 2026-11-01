@@ -300,3 +300,26 @@ test('a new asset cannot be saved until every required field is filled in', asyn
     db.prepare('UPDATE asset_field_defs SET required = 0').run();
   }
 });
+
+test('picking a model number brings the Category, Manufacturer and Model Name it is usually saved with', async () => {
+  add('mf1', { category: 'Desktop', manufacturer: 'Dell', model_name: 'Optiplex', model_number: '7050 SFF' });
+  add('mf2', { category: 'Desktop', manufacturer: 'Dell', model_name: 'Optiplex', model_number: '7050 sff ' });
+  add('mf3', { category: 'Laptop', manufacturer: 'Dell', model_name: 'Optiplx', model_number: '7050 SFF' });
+  add('mf4', { category: 'Laptop', manufacturer: 'HP', model_name: 'EliteBook', model_number: 'G9' });
+  add('mf5', { category: 'Desktop', manufacturer: 'Lenovo', model_name: 'ThinkCentre', model_number: 'G9' });
+  add('mf6', { category: 'Laptop', manufacturer: 'HP', model_name: 'EliteBook', model_number: 'G9' });
+  const list = async (qs) => (await client.get(`/api/assets/value-options?field=model_number${qs}`, { token: staff.token })).data.values;
+  const find = (vs, v) => vs.find((x) => x.value.toLowerCase() === v.toLowerCase());
+
+  assert.deepEqual(find(await list(''), '7050 SFF').fill, { category: 'Desktop', manufacturer: 'Dell', model_name: 'Optiplex' }, 'most used combination');
+  assert.deepEqual(find(await list(''), 'G9').fill, { category: 'Laptop', manufacturer: 'HP', model_name: 'EliteBook' });
+  // A Manufacturer already chosen wins: the same number under Lenovo fills Lenovo's details.
+  assert.deepEqual(find(await list('&manufacturer=lenovo'), 'G9').fill, { category: 'Desktop', manufacturer: 'Lenovo', model_name: 'ThinkCentre' });
+
+  // A number added by hand fills the make/model it was added under.
+  await client.post('/api/assets/value-options', { token: staff.token, body: { field: 'model_number', value: 'NEW-1', manufacturer: 'Dell', modelName: 'Latitude' } });
+  assert.deepEqual(find(await list(''), 'NEW-1').fill, { manufacturer: 'Dell', model_name: 'Latitude' });
+  // Other lists don't carry fill-ins.
+  const names = (await client.get('/api/assets/value-options?field=model_name', { token: staff.token })).data.values;
+  assert.equal(names[0].fill, undefined);
+});
