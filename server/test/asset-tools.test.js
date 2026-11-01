@@ -205,3 +205,22 @@ test('Location filter: ITF Sydney / ITF Melbourne, with the options listed', asy
   const opts = (await client.get('/api/assets/filter-options', { token: staff.token })).data.location;
   assert.ok(opts.includes('ITF Sydney') && opts.includes('ITF Melbourne'));
 });
+
+test('Asset Tag fills in with the next number, starting at ITF52816', async () => {
+  const next = async () => (await client.get('/api/assets/next-tag', { token: staff.token })).data.tag;
+  assert.equal(await next(), 'ITF52816', 'starts at ITF52816 (older ITF5280x tags and other tags are below it)');
+  add('tag1', { asset_tag: 'ITF52806' });
+  assert.equal(await next(), 'ITF52816');
+  const first = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'ITF52816', serial_number: 'TAG-1' }, autoTag: true } });
+  assert.equal(first.data.asset.fields.asset_tag, 'ITF52816');
+  assert.equal(await next(), 'ITF52817');
+  // Two people opened the form at once: the second save gets the next free number.
+  const second = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'itf52816 ', serial_number: 'TAG-2' }, autoTag: true } });
+  assert.equal(second.data.asset.fields.asset_tag, 'ITF52817');
+  // A tag typed by hand is kept as typed.
+  const typed = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: 'ITF52816', serial_number: 'TAG-3' } } });
+  assert.equal(typed.data.asset.fields.asset_tag, 'ITF52816');
+  add('tag2', { asset_tag: 'ITF52900' });
+  add('tag3', { asset_tag: 'ITF5299X' });
+  assert.equal(await next(), 'ITF52901');
+});
