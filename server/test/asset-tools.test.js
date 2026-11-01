@@ -328,3 +328,23 @@ test('Model Number sits where Category was (straight after Asset Tag), and Categ
   const keys = (await client.get('/api/assets/field-defs', { token: staff.token })).data.fields.map((f) => f.field_key);
   assert.deepEqual(keys.slice(0, 5), ['asset_tag', 'model_number', 'manufacturer', 'model_name', 'category']);
 });
+
+test('N/A or NA as the serial (any capitals) is never a duplicate', async () => {
+  add('na1', { asset_tag: 'NA1', serial_number: 'N/A' });
+  add('na2', { asset_tag: 'NA2', serial_number: 'n/a' });
+  add('na3', { asset_tag: 'NA3', serial_number: 'NA' });
+  add('na4', { asset_tag: 'NA4', serial_number: ' na ' });
+  for (const serial of ['N/A', 'n/a', 'NA', 'na', 'Na ']) {
+    const r = await client.post('/api/assets', { token: staff.token, body: { fields: { asset_tag: `NA-${serial.trim()}`, serial_number: serial } } });
+    assert.equal(r.status, 201, `${serial} saves without a duplicate warning`);
+  }
+  const dupes = (await client.get('/api/assets?dupes=1&limit=500', { token: staff.token })).data.assets;
+  assert.ok(!dupes.some((a) => ['N/A', 'NA'].includes(String(a.fields.serial_number).trim().toUpperCase())), 'not in "Duplicate serials only"');
+  // Editing one of them doesn't warn either.
+  assert.equal((await client.patch('/api/assets/na1', { token: staff.token, body: { fields: { asset_tag: 'NA1', serial_number: 'NA' } } })).status, 200);
+  // A real serial still warns.
+  assert.equal((await client.post('/api/assets', { token: staff.token, body: { fields: { serial_number: 'SER-1' } } })).data.code, 'duplicate_serial');
+  // Bulk serial search doesn't list it as a duplicate.
+  const found = (await client.post('/api/assets/serial-search', { token: staff.token, body: { serials: 'N/A' } })).data;
+  assert.deepEqual(found.duplicates, []);
+});

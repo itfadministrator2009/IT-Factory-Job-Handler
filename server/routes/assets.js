@@ -62,6 +62,11 @@ function buildCsv(assets, defs) {
 const norm = (key) => `lower(trim(replace(replace(replace(COALESCE(json_extract(fields_json, '$.${key}'), ''), '  ', ' '), '  ', ' '), '  ', ' ')))`;
 const normText = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const SERIAL = "upper(trim(COALESCE(json_extract(fields_json, '$.serial_number'), '')))";
+// "N/A" / "NA" (any capitals) means the item has no serial, so many assets can
+// have it: it's never treated as a duplicate.
+const NO_SERIAL = ['N/A', 'NA'];
+const isNoSerial = (v) => NO_SERIAL.includes(String(v ?? '').trim().toUpperCase());
+const REAL_SERIAL = `${SERIAL} NOT IN (${NO_SERIAL.map((s) => `'${s}'`).join(', ')})`;
 const FILTER_KEYS = { category: 'category', status: 'status', location: 'asset_location', sent_to: 'asset_sent_to', customer: 'customer' };
 const NONE = '__none__'; // "Unspecified" — the field is blank
 
@@ -113,7 +118,7 @@ function buildWhere(query = {}, admin = false) {
     else { parts.push(`${norm(key)} = ?`); params.push(normText(v)); }
   });
   if (query.dupes === '1' || query.dupes === 'true') {
-    parts.push(`${SERIAL} != '' AND ${SERIAL} IN (SELECT ${SERIAL} FROM assets GROUP BY ${SERIAL} HAVING COUNT(*) > 1)`);
+    parts.push(`${SERIAL} != '' AND ${REAL_SERIAL} AND ${SERIAL} IN (SELECT ${SERIAL} FROM assets GROUP BY ${SERIAL} HAVING COUNT(*) > 1)`);
   }
   const range = monthRange(query.month);
   if (range) { parts.push('created_at >= ? AND created_at < ?'); params.push(range[0], range[1]); }
@@ -142,7 +147,7 @@ const customerLabel = (groups, value) => (normText(value) ? (groups.get(normText
 // Other assets already using this serial (ignoring capitals/spaces).
 function serialConflicts(serial, excludeId = null) {
   const k = String(serial ?? '').trim().toUpperCase();
-  if (!k) return [];
+  if (!k || isNoSerial(k)) return [];
   return db.prepare(`SELECT id, fields_json FROM assets WHERE ${SERIAL} = ? AND id != ?`).all(k, excludeId || '')
     .map((r) => { const f = JSON.parse(r.fields_json || '{}'); return { id: r.id, assetTag: f.asset_tag || '', customer: f.customer || '', status: f.status || '' }; });
 }
@@ -413,7 +418,7 @@ router.post('/serial-search', (req, res) => {
   serials.forEach((s) => {
     const hits = bySerial.get(s.toUpperCase()) || [];
     if (!hits.length) notFound.push(s);
-    if (hits.length > 1) duplicates.push({ serial: s, count: hits.length });
+    if (hits.length > 1 && !isNoSerial(s)) duplicates.push({ serial: s, count: hits.length });
     hits.forEach((r) => assets.push(withParsedFields(r)));
   });
   res.json({ assets, searched: serials.length, found: serials.length - notFound.length, notFound, duplicates });
@@ -766,7 +771,7 @@ router.post('/import', upload.single('file'), (req, res) => {
 
     if (Object.keys(fields).length === 0) continue;
 
-    const serialKey = String(fields.serial_number ?? '').trim().toUpperCase();
+    const serialKey = isNoSerial(fields.serial_number) ? '' : String(fields.serial_number ?? '').trim().toUpperCase();
     if (serialKey && knownSerials.has(serialKey) && !onlyRows) {
       duplicateSerials.push(String(fields.serial_number).trim());
       if (!allowDuplicates) { skippedRows.push(i); continue; }
