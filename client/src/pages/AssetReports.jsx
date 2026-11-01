@@ -110,13 +110,16 @@ export default function AssetReports() {
       .map((c) => ({ ...c, to: link({ category: c.label === 'Unspecified' ? NONE : c.label }) }));
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Customers: top 10 bars, the rest folded into "Other customers".
-  const customerBars = useMemo(() => {
+  // Customers: the top 40 as bars; the rest are totalled in a line underneath
+  // (not as a bar, so their large total doesn't squash the top 40's bars).
+  const TOP_CUSTOMERS = 40;
+  const { customerBars, otherCustomers } = useMemo(() => {
     const list = (customers || []).filter((c) => c.count > 0);
-    const top = list.slice(0, 10).map((c) => ({ label: c.company, value: c.count, customer: c.company }));
-    const rest = list.slice(10);
-    if (rest.length) top.push({ label: `Other customers (${rest.length})`, value: rest.reduce((t, c) => t + c.count, 0) });
-    return top;
+    const rest = list.slice(TOP_CUSTOMERS);
+    return {
+      customerBars: list.slice(0, TOP_CUSTOMERS).map((c) => ({ label: c.company, value: c.count, customer: c.company })),
+      otherCustomers: rest.length ? { n: rest.length, total: rest.reduce((t, c) => t + c.count, 0) } : null,
+    };
   }, [customers]);
 
   const months = data ? lastTwelveMonths(data.byMonth) : [];
@@ -171,9 +174,15 @@ export default function AssetReports() {
               <BarList data={classData} navigate={navigate}
                 segments={[{ key: 'Available', label: 'Available', color: C.blue }, { key: 'Sold', label: 'Sold', color: C.orange }, { key: 'other', label: 'No status', color: C.neutral }]} />
             </Card>
-            <Card title="By customer" subtitle={customer ? 'click a customer to switch' : 'click a customer to see just them'}>
+            <Card title={customerBars.length >= TOP_CUSTOMERS ? `Top ${TOP_CUSTOMERS} customers` : 'By customer'} subtitle={customer ? 'click a customer to switch' : 'click a customer to see just them'}>
               <BarList data={customerBars} color={C.aqua} labelWidth={170}
                 onSelect={(d) => d.customer && pickCustomer(d.customer === customer ? '' : d.customer)} />
+              {otherCustomers && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line)', fontSize: 13, color: 'var(--muted)' }}>
+                  <span>Other customers ({otherCustomers.n.toLocaleString('en-AU')})</span>
+                  <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{otherCustomers.total.toLocaleString('en-AU')}</span>
+                </div>
+              )}
             </Card>
 
             <Card title="Assets added per month" subtitle={`last 12 months · ${monthsTotal.toLocaleString('en-AU')} in total`} span={2}>
