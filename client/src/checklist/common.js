@@ -88,7 +88,7 @@ li.y:before{content:"\\2611";position:absolute;left:0} li.n:before{content:"\\26
 .notes{white-space:pre-wrap;border:1px solid #dde3ea;border-radius:6px;padding:8px 10px;min-height:30px}
 .photos{display:flex;flex-wrap:wrap;gap:10px} .photos img{width:150px;height:150px;object-fit:cover;border:1px solid #dde3ea;border-radius:8px}
 table{border-collapse:collapse;width:100%} th,td{border-bottom:1px solid #dde3ea;padding:6px 8px;text-align:left;font-size:12px} th{background:#eef4fb}
-.page{page-break-after:always} .page:last-child{page-break-after:auto}`;
+.page+.page{page-break-before:always;break-before:page}`;
 function openPrint(title, body) {
   const w = window.open('', '_blank');
   if (!w) { alert('Please allow pop-ups for this site to print.'); return; }

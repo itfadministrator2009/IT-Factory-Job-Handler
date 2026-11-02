@@ -93,8 +93,10 @@ function labelHtml(job, sizeKey, copies, sets = [[]]) {
   @page { size: ${s.w}mm ${s.h}mm; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; color: #000; }
-  .label { width: ${s.w}mm; height: ${s.h}mm; padding: ${mm(s.pad)}; display: flex; flex-direction: column; overflow: hidden; page-break-after: always; break-after: page; }
-  .label:last-child { page-break-after: auto; break-after: auto; }
+  .label { width: ${s.w}mm; height: ${s.h}mm; padding: ${mm(s.pad)}; display: flex; flex-direction: column; overflow: hidden; }
+  /* A new page before each label after the first — so no blank label at the end
+     (":last-child" never matched: the page ends with a <script>). */
+  .label + .label { page-break-before: always; break-before: page; }
   .top { display: flex; justify-content: space-between; align-items: center; gap: ${mm(s.row * 0.6)}; border-bottom: ${mm(s.row * 0.12)} solid #000; padding-bottom: ${mm(s.row * 0.5)}; margin-bottom: ${mm(s.row * 0.4)}; }
   .cap { font-size: ${mm(s.cap)}; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
   .num { font-size: ${mm(s.num)}; font-weight: 800; line-height: 1; margin-top: ${mm(s.cap * 0.25)}; }

@@ -350,10 +350,14 @@ function qrSvg(text) {
   return `<svg viewBox="0 0 ${m} ${m}" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect width="${m}" height="${m}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 // The old app's DYMO label: 89 × 36 mm, details on the left, QR code of the serial on the right.
+// One label per page: a new page starts before each label after the first (a
+// "no break after the last one" rule never matched — the page ends with a
+// <script>), and each label is a touch under 36 mm so rounding can't spill onto
+// a second, blank label.
 export function printLabels(items) {
   const css = `@page{size:89mm 36mm;margin:0;} *{box-sizing:border-box;} body{margin:0;font-family:Arial,sans-serif;color:#000;}
-.l{width:89mm;height:36mm;padding:2.5mm 5mm;overflow:hidden;display:flex;align-items:center;gap:4mm;page-break-after:always;break-after:page;}
-.l:last-child{page-break-after:auto;break-after:auto;} .i{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:0.4mm;}
+.l{width:89mm;height:35.6mm;padding:2.5mm 5mm;overflow:hidden;display:flex;align-items:center;gap:4mm;}
+.l+.l{page-break-before:always;break-before:page;} .i{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:0.4mm;}
 .sku{font-size:8.5pt;font-weight:700;} .pl{font-size:7pt;font-weight:600;} .mo{font-size:9pt;font-weight:700;line-height:1.25;}
 .sp{font-size:6.5pt;line-height:1.15;} .sb{font-size:6.8pt;line-height:1.15;word-break:break-word;}
 .q{flex-shrink:0;display:flex;flex-direction:column;align-items:center;} .q svg{width:21mm;height:21mm;display:block;}
