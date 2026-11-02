@@ -25,8 +25,11 @@ const FILTERS = [
   { param: 'location', label: 'Location' },
   { param: 'sent_to', label: 'Sent to' },
   { param: 'customer', label: 'Customer' },
+  { param: 'buyer', label: 'Buyer' },
 ];
-const FILTER_PARAMS = ['month', 'category', 'status', 'location', 'sent_to', 'customer', 'dupes', 'batch'];
+const FILTER_PARAMS = ['month', 'category', 'status', 'location', 'sent_to', 'customer', 'buyer', 'dupes', 'batch'];
+// Filters listed with how many assets each value has.
+const COUNTED_FILTERS = ['customer', 'buyer'];
 // month=YYYY-MM: assets created in that month (Sydney time).
 const monthLabel = (v) => { const [y, m] = String(v).split('-').map(Number); return y && m ? new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }) : v; };
 const NONE = '__none__';
@@ -568,13 +571,13 @@ export default function AssetTracker() {
           </select>
         </label>
         {FILTERS.map(({ param, label }) => {
-          const opts = param === 'customer'
-            ? (filterOptions?.customer || []).map((c) => ({ value: c.value, text: `${c.value} (${c.count})` }))
+          const opts = COUNTED_FILTERS.includes(param)
+            ? (filterOptions?.[param] || []).map((c) => ({ value: c.value, text: `${c.value} (${c.count})` }))
             : (filterOptions?.[param] || []).map((v) => ({ value: v, text: v }));
           const current = filters[param];
           const known = !current || current === NONE || opts.some((o) => o.value.toLowerCase() === current.toLowerCase());
           return (
-            <label key={param} className={`filter-field${current ? ' active' : ''}${param === 'customer' ? ' wide' : ''}`}>
+            <label key={param} className={`filter-field${current ? ' active' : ''}${COUNTED_FILTERS.includes(param) ? ' wide' : ''}`}>
               <span className="filter-field-label">{label}</span>
               <select aria-label={label} value={opts.find((o) => o.value.toLowerCase() === current.toLowerCase())?.value ?? current}
                 onChange={(e) => setFilter(param, e.target.value)}>

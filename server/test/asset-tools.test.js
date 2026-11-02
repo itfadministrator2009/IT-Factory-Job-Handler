@@ -395,3 +395,15 @@ test('period report: assets added between two Sydney dates, broken down', async 
   assert.equal((await client.get('/api/assets/period-report?from=2026-10-31&to=2026-10-01', { token: admin.token })).status, 400);
   assert.equal((await client.get('/api/assets/period-report?from=2026-02-30&to=2026-03-01', { token: admin.token })).status, 400);
 });
+
+test('Buyer filter, with the buyers listed and counted', async () => {
+  add('by1', { asset_tag: 'BY1', buyer: 'Bob Reseller', status: 'Sold' });
+  add('by2', { asset_tag: 'BY2', buyer: 'bob  reseller ', status: 'Sold' });
+  add('by3', { asset_tag: 'BY3', buyer: 'Zed Traders', status: 'Sold' });
+  const opts = (await client.get('/api/assets/filter-options', { token: staff.token })).data.buyer;
+  const bob = opts.find((o) => o.value.toLowerCase() === 'bob reseller');
+  assert.equal(bob.count >= 2, true);
+  assert.equal(opts.filter((o) => o.value.toLowerCase().replace(/\s+/g, ' ').trim() === 'bob reseller').length, 1, 'one entry per buyer');
+  const ids = (await client.get('/api/assets?buyer=BOB RESELLER&limit=500', { token: staff.token })).data.assets.map((a) => a.id);
+  assert.ok(ids.includes('by1') && ids.includes('by2') && !ids.includes('by3'));
+});
