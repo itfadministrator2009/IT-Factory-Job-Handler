@@ -624,6 +624,23 @@ addColumnIfMissing('users', 'super_admin', 'INTEGER NOT NULL DEFAULT 0');
 // Asset Tracker: a field marked required must be filled in before a new asset can
 // be saved. Every field starts required; admins can untick one on Manage Fields.
 addColumnIfMissing('asset_field_defs', 'required', 'INTEGER NOT NULL DEFAULT 1');
+// Asset Tracker: Invoice Number and Invoice Value for the sale to the buyer, added
+// once, straight after Buyer. Admins only; shown on the form once Status is Sold;
+// optional.
+{
+  const add = (key, label, type) => {
+    if (db.prepare('SELECT 1 FROM asset_field_defs WHERE field_key = ?').get(key)) return;
+    const after = db.prepare("SELECT sort_order FROM asset_field_defs WHERE field_key IN ('invoice_number', 'buyer') ORDER BY sort_order DESC").get();
+    const order = after ? after.sort_order + 1 : (db.prepare('SELECT MAX(sort_order) as m FROM asset_field_defs').get().m || 0) + 1;
+    db.transaction(() => {
+      db.prepare('UPDATE asset_field_defs SET sort_order = sort_order + 1 WHERE sort_order >= ?').run(order);
+      db.prepare('INSERT INTO asset_field_defs (id, field_key, label, type, options_json, is_core, sort_order, required) VALUES (?, ?, ?, ?, NULL, 0, ?, 0)')
+        .run(randomUUID(), key, label, type, order);
+    })();
+  };
+  add('invoice_number', 'Invoice Number', 'text');
+  add('invoice_value', 'Invoice Value', 'number');
+}
 // Asset Tracker: Model Number and Category swap places on the form, so Model Number
 // comes straight after Asset Tag (picking it fills Category, Manufacturer and Model
 // Name). Runs once: after the swap Model Number is already first.
