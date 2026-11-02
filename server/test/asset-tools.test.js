@@ -366,3 +366,32 @@ test('the Status option "Store" becomes "In Storage", on the list and on assets'
   assert.equal(status('st3'), 'Sold');
   db.prepare('UPDATE asset_field_defs SET options_json = ? WHERE id = ?').run(before, def.id);
 });
+
+test('period report: assets added between two Sydney dates, broken down', async () => {
+  const at = (id, f, utc) => db.prepare('INSERT INTO assets (id, fields_json, created_at, created_by) VALUES (?, ?, ?, ?)').run(id, JSON.stringify(f), utc, staff.id);
+  // Sydney is UTC+10 until daylight saving starts on 4 Oct 2026, then UTC+11.
+  at('pr1', { category: 'Laptop', customer: 'Acme', asset_sent_to: 'Wholesale', status: 'Sold', buyer: 'Bob', asset_location: 'ITF Sydney' }, '2026-09-30 14:30:00'); // 1 Oct 00:30 Sydney
+  at('pr2', { category: 'laptop ', customer: 'ACME', asset_sent_to: 'ITF Australia', status: 'Available', asset_location: 'ITF Melbourne' }, '2026-10-15 02:00:00');
+  at('pr3', { category: 'Monitor', customer: 'Beta', status: 'Sold', buyer: 'bob', _imported_creator_name: 'Ian' }, '2026-10-31 12:59:00'); // 31 Oct 23:59 Sydney
+  at('pr4', { category: 'Laptop', customer: 'Acme' }, '2026-10-31 13:00:00'); // 1 Nov 00:00 Sydney — outside
+  at('pr5', { category: 'Laptop', customer: 'Acme' }, '2026-09-30 13:59:00'); // 30 Sep 23:59 Sydney — outside
+
+  const r = (await client.get('/api/assets/period-report?from=2026-10-01&to=2026-10-31', { token: admin.token })).data;
+  assert.equal(r.total, 3);
+  assert.equal(r.sold, 2);
+  assert.deepEqual(r.byClass, [{ label: 'Laptop', count: 2 }, { label: 'Monitor', count: 1 }]);
+  assert.deepEqual(r.byCustomer.map((x) => x.count), [2, 1]);
+  assert.deepEqual(r.bySentTo, [{ label: 'ITF Australia', count: 1 }, { label: 'Not set', count: 1 }, { label: 'Wholesale', count: 1 }]);
+  assert.deepEqual(r.byLocation.find((x) => x.label === 'ITF Sydney'), { label: 'ITF Sydney', count: 1 });
+  assert.deepEqual(r.byStatus, [{ label: 'Sold', count: 2 }, { label: 'Available', count: 1 }]);
+  assert.deepEqual(r.soldByBuyer.map((x) => x.count), [2], 'Bob and bob are one buyer');
+  assert.deepEqual(r.soldByCustomer.map((x) => x.label).sort(), ['Acme', 'Beta']);
+  assert.deepEqual(r.byTechnician.map((x) => [x.label, x.count]), [['Staff Person', 2], ['Ian', 1]]);
+
+  // One day.
+  assert.equal((await client.get('/api/assets/period-report?from=2026-11-01&to=2026-11-01', { token: admin.token })).data.total >= 1, true);
+  // Admins only, and the dates must make sense.
+  assert.equal((await client.get('/api/assets/period-report?from=2026-10-01&to=2026-10-31', { token: staff.token })).status, 403);
+  assert.equal((await client.get('/api/assets/period-report?from=2026-10-31&to=2026-10-01', { token: admin.token })).status, 400);
+  assert.equal((await client.get('/api/assets/period-report?from=2026-02-30&to=2026-03-01', { token: admin.token })).status, 400);
+});

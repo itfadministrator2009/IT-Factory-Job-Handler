@@ -1863,3 +1863,28 @@ a.btn { text-decoration: none; }
 .field.field-missing input:not([type=checkbox]), .field.field-missing select, .field.field-missing textarea,
 .field.field-missing .combo-display, .field.field-missing > div[style*="grid"] { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
 .combo-detail { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+/* Asset Tracker → Reports */
+.report-periods { padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.report-period-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.report-period {
+  border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 999px;
+  padding: 7px 14px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.report-period:hover { border-color: var(--teal); }
+.report-period.active { background: var(--teal); border-color: var(--teal); color: white; font-weight: 600; }
+.report-custom { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--muted); }
+.report-custom label { display: flex; align-items: center; gap: 6px; }
+.report-custom input { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; font: inherit; color: var(--ink); }
+.report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 18px; align-items: start; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.report-table td { padding: 5px 0; vertical-align: middle; }
+.report-table .report-label { width: 42%; padding-right: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.report-table .report-bar span { display: block; height: 12px; border-radius: 0 4px 4px 0; }
+.report-table .num { width: 64px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.report-table .num.muted { width: 56px; font-weight: 400; color: var(--muted); }
+@media print {
+  .report-more { display: none !important; }
+  .report-grid { grid-template-columns: 1fr 1fr; }
+  .report-card { break-inside: avoid; }
+}

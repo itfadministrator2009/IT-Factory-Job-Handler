@@ -20,6 +20,7 @@ import ProjectEntryForm from './pages/ProjectEntryForm';
 import AssetTracker from './pages/AssetTracker';
 import AssetReports from './pages/AssetReports';
 import AssetFields from './pages/AssetFields';
+import AssetPeriodReports from './pages/AssetPeriodReports';
 import StorageManifest from './pages/StorageManifest';
 import SalesDashboard from './pages/SalesDashboard';
 import ChecklistHome from './pages/ChecklistHome';
@@ -138,8 +139,8 @@ function AppRoutes() {
 
       <Route path="/assets" element={<RequireModule module="assets"><AssetTracker /></RequireModule>} />
       <Route path="/assets/dashboard" element={<RequireModule module="assets"><RequireAdmin><AssetReports /></RequireAdmin></RequireModule>} />
-      <Route path="/assets/reports" element={<Navigate to="/assets/dashboard" replace />} />
       <Route path="/assets/fields" element={<RequireModule module="assets"><RequireAdmin><AssetFields /></RequireAdmin></RequireModule>} />
+      <Route path="/assets/reports" element={<RequireModule module="assets"><RequireAdmin><AssetPeriodReports /></RequireAdmin></RequireModule>} />
       <Route path="/assets/batches" element={<RequireModule module="assets"><RequireAdmin><AssetBatches /></RequireAdmin></RequireModule>} />
       <Route path="/assets/batches/:id" element={<RequireModule module="assets"><RequireAdmin><AssetBatches /></RequireAdmin></RequireModule>} />
 

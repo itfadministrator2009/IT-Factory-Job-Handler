@@ -128,6 +128,7 @@ export default function Layout({ children }) {
             <NavLink to="/assets" end className={linkClass}><List size={14} /> All Assets</NavLink>
             {isAdmin && <NavLink to="/assets/batches" className={linkClass}><Layers size={14} /> Batches</NavLink>}
             {isAdmin && <NavLink to="/assets/fields" className={linkClass}><SlidersHorizontal size={14} /> Manage Fields</NavLink>}
+            {isAdmin && <NavLink to="/assets/reports" className={linkClass}><BarChart3 size={14} /> Reports</NavLink>}
           </Section>
           )}
 

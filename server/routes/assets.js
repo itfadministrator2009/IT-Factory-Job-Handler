@@ -83,8 +83,8 @@ function sydneyParts(ms) {
   const get = (t) => parseInt(p.find((x) => x.type === t).value, 10);
   return { y: get('year'), mo: get('month'), d: get('day'), h: get('hour') === 24 ? 0 : get('hour'), mi: get('minute'), s: get('second') };
 }
-function sydneyMidnightUtc(y, mo) {
-  const wanted = Date.UTC(y, mo - 1, 1);
+function sydneyMidnightUtc(y, mo, d = 1) {
+  const wanted = Date.UTC(y, mo - 1, d);
   const shown = sydneyParts(wanted);
   const ms = wanted + (wanted - Date.UTC(shown.y, shown.mo - 1, shown.d, shown.h, shown.mi, shown.s));
   return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
@@ -788,6 +788,63 @@ router.post('/import', upload.single('file'), (req, res) => {
   }
 
   res.json({ ok: true, created, skippedColumns, duplicateSerials, skippedRows, duplicatesImported: allowDuplicates || !!onlyRows });
+});
+
+// Reports for a date range (Sydney dates, both ends included): how many assets
+// were added, and where they went, by asset class, customer, technician, buyer,
+// location and status. Dates follow "Date added" (imported assets keep their
+// original date).
+const REPORT_BREAKDOWNS = {
+  bySentTo: 'asset_sent_to', byClass: 'category', byCustomer: 'customer', byBuyer: 'buyer', byLocation: 'asset_location', byStatus: 'status',
+};
+function parseDay(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+  if (!m) return null;
+  const dt = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return dt.getUTCMonth() === +m[2] - 1 ? dt : null; // rejects 2026-02-30
+}
+router.get('/period-report', (req, res) => {
+  if (!isAdmin(req.user.id)) return res.status(403).json({ error: 'Only admins can view reports' });
+  const from = parseDay(req.query.from);
+  const to = parseDay(req.query.to);
+  if (!from || !to) return res.status(400).json({ error: 'Pick a start and end date' });
+  if (to < from) return res.status(400).json({ error: 'The end date is before the start date' });
+  const after = new Date(to.getTime() + 86400000);
+  const start = sydneyMidnightUtc(from.getUTCFullYear(), from.getUTCMonth() + 1, from.getUTCDate());
+  const end = sydneyMidnightUtc(after.getUTCFullYear(), after.getUTCMonth() + 1, after.getUTCDate());
+
+  const rows = db.prepare(`
+    SELECT a.fields_json, COALESCE(json_extract(a.fields_json, '$._imported_creator_name'), u.name) AS tech
+    FROM assets a LEFT JOIN users u ON u.id = a.created_by
+    WHERE a.created_at >= ? AND a.created_at < ?`).all(start, end);
+
+  // Count by a value; spellings differing only in capitals/spaces are one entry
+  // (the most used spelling is shown). Blank → "Not set".
+  const tally = (list, get) => {
+    const groups = new Map();
+    list.forEach((r) => {
+      const raw = String(get(r) ?? '').trim().replace(/\s+/g, ' ');
+      const k = raw.toLowerCase();
+      const g = groups.get(k) || { count: 0, spellings: new Map() };
+      g.count += 1;
+      g.spellings.set(raw, (g.spellings.get(raw) || 0) + 1);
+      groups.set(k, g);
+    });
+    return [...groups.entries()].map(([k, g]) => ({
+      label: k ? [...g.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0] : 'Not set',
+      count: g.count,
+    })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  };
+  rows.forEach((r) => { r.f = JSON.parse(r.fields_json || '{}'); });
+  const out = { from: req.query.from, to: req.query.to, total: rows.length };
+  Object.entries(REPORT_BREAKDOWNS).forEach(([name, key]) => { out[name] = tally(rows, (r) => r.f[key]); });
+  out.byTechnician = tally(rows, (r) => r.tech || 'Unassigned');
+  // Sold assets, by buyer and by customer.
+  const sold = rows.filter((r) => normText(r.f.status) === 'sold');
+  out.sold = sold.length;
+  out.soldByBuyer = tally(sold, (r) => r.f.buyer);
+  out.soldByCustomer = tally(sold, (r) => r.f.customer);
+  res.json(out);
 });
 
 router.get('/reports/summary', (req, res) => {
