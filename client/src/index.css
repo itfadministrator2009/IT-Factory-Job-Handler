@@ -1888,3 +1888,5 @@ a.btn { text-decoration: none; }
   .report-grid { grid-template-columns: 1fr 1fr; }
   .report-card { break-inside: avoid; }
 }
+.report-table .num.money { width: 104px; }
+.report-table .num.muted.sold-n { width: 84px; white-space: nowrap; }
