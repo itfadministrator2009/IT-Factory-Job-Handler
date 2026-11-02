@@ -23,8 +23,10 @@ function getFieldDefs() {
 }
 
 // Required fields still blank on a new asset (a pick-several field needs at least one ticked).
-function missingRequired(fields) {
-  return getFieldDefs().filter((f) => f.required).filter((f) => {
+// The invoice fields only count for admins, and only once the asset is Sold.
+function missingRequired(fields, admin) {
+  const sold = normText(fields.status) === 'sold';
+  return getFieldDefs().filter((f) => f.required && (!ADMIN_FIELDS.includes(f.field_key) || (admin && sold))).filter((f) => {
     const v = fields[f.field_key];
     return Array.isArray(v) ? !v.length : !String(v ?? '').trim();
   });
@@ -34,6 +36,23 @@ function withParsedFields(asset) {
   const creator = asset.created_by ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(asset.created_by) : null;
   return { ...asset, fields: JSON.parse(asset.fields_json || '{}'), creator };
 }
+
+// Sale invoice details are for admins only: staff never receive them, and can't
+// change them.
+const ADMIN_FIELDS = ['invoice_number', 'invoice_value'];
+function assetFor(admin) {
+  return (row) => {
+    const a = withParsedFields(row);
+    if (admin) return a;
+    ADMIN_FIELDS.forEach((k) => { delete a.fields[k]; });
+    return { ...a, fields_json: JSON.stringify(a.fields) };
+  };
+}
+function dropAdminFields(fields, admin) {
+  if (!admin) ADMIN_FIELDS.forEach((k) => { delete fields[k]; });
+  return fields;
+}
+const adminFieldLabels = () => new Set(getFieldDefs().filter((f) => ADMIN_FIELDS.includes(f.field_key)).map((f) => f.label));
 
 function logAssetAudit(assetId, field, oldValue, newValue, changedBy) {
   db.prepare('INSERT INTO asset_audit (id, asset_id, field, old_value, new_value, changed_by) VALUES (?, ?, ?, ?, ?, ?)')
@@ -111,7 +130,8 @@ function sydneyMonthOfHour(hour) {
 function buildWhere(query = {}, admin = false) {
   const parts = []; const params = [];
   const q = String(query.q || '').trim();
-  if (q) { parts.push('fields_json LIKE ?'); params.push(`%${q}%`); }
+  // Staff search everything except the admin-only invoice details.
+  if (q) { parts.push(admin ? 'fields_json LIKE ?' : `json_remove(fields_json, ${ADMIN_FIELDS.map((k) => `'$.${k}'`).join(', ')}) LIKE ?`); params.push(`%${q}%`); }
   Object.entries(FILTER_KEYS).forEach(([param, key]) => {
     const v = query[param];
     if (v == null || v === '') return;
@@ -168,7 +188,8 @@ function duplicateSerialResponse(res, serial, matches) {
 // ---------------------------------------------------------------------------
 
 router.get('/field-defs', (req, res) => {
-  res.json({ fields: getFieldDefs() });
+  const admin = isAdmin(req.user.id);
+  res.json({ fields: getFieldDefs().filter((f) => admin || !ADMIN_FIELDS.includes(f.field_key)) });
 });
 
 router.post('/field-defs', (req, res) => {
@@ -227,7 +248,7 @@ router.get('/', (req, res) => {
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM assets ${where}`).get(...whereParams).c;
   const rows = db.prepare(`SELECT * FROM assets ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...whereParams, limit, offset);
-  res.json({ assets: rows.map(withParsedFields), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
+  res.json({ assets: rows.map(assetFor(isAdmin(req.user.id))), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
 });
 
 // Lightweight (ids only, no field data) — lets "Select all N matching assets" grab
@@ -351,6 +372,8 @@ router.post('/value-options', (req, res) => {
 router.post('/', (req, res) => {
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
+  const admin = isAdmin(req.user.id);
+  dropAdminFields(fields, admin);
   // The form's filled-in tag (autoTag) was taken meanwhile, e.g. two people adding at
   // once: give this asset the next free number instead.
   if (req.body.autoTag && fields.asset_tag && assetTagTaken(fields.asset_tag)) fields.asset_tag = nextAssetTag();
@@ -358,7 +381,7 @@ router.post('/', (req, res) => {
   // unless one was typed in.
   if (!String(fields.audit_month || '').trim()) fields.audit_month = currentAuditMonth();
   // Every required field must be filled in.
-  const missing = missingRequired(fields);
+  const missing = missingRequired(fields, admin);
   if (missing.length) {
     return res.status(400).json({ error: `Please fill in: ${missing.map((f) => f.label).join(', ')}`, code: 'missing_fields', missing: missing.map((f) => f.field_key) });
   }
@@ -370,7 +393,7 @@ router.post('/', (req, res) => {
   const id = randomUUID();
   db.prepare('INSERT INTO assets (id, fields_json, created_by) VALUES (?, ?, ?)').run(id, JSON.stringify(fields), req.user.id);
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
-  res.status(201).json({ asset: withParsedFields(asset) });
+  res.status(201).json({ asset: assetFor(admin)(asset) });
 });
 
 // ---------------------------------------------------------------------------
@@ -421,7 +444,7 @@ router.post('/serial-search', (req, res) => {
     const hits = bySerial.get(s.toUpperCase()) || [];
     if (!hits.length) notFound.push(s);
     if (hits.length > 1 && !isNoSerial(s)) duplicates.push({ serial: s, count: hits.length });
-    hits.forEach((r) => assets.push(withParsedFields(r)));
+    hits.forEach((r) => assets.push(assetFor(isAdmin(req.user.id))(r)));
   });
   res.json({ assets, searched: serials.length, found: serials.length - notFound.length, notFound, duplicates });
 });
@@ -860,6 +883,32 @@ router.get('/period-report', (req, res) => {
   out.sold = sold.length;
   out.soldByBuyer = tally(sold, (r) => r.f.buyer);
   out.soldByCustomer = tally(sold, (r) => r.f.customer);
+  // Sales value (Invoice Value on sold assets), in total and by buyer / customer.
+  const money = (v) => { const n = parseFloat(String(v ?? '').replace(/[$,\s]/g, '')); return Number.isFinite(n) ? n : null; };
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const valueBy = (get) => {
+    const by = new Map();
+    out[get].forEach((r) => by.set(r.label.toLowerCase() === 'not set' ? '' : r.label.toLowerCase().replace(/\s+/g, ' '), { label: r.label, count: r.count, value: 0, invoiced: 0 }));
+    return by;
+  };
+  const buyerValue = valueBy('soldByBuyer');
+  const customerValue = valueBy('soldByCustomer');
+  let soldValue = 0; let invoiced = 0;
+  sold.forEach((r) => {
+    const v = money(r.f.invoice_value);
+    if (v == null) return;
+    soldValue += v; invoiced += 1;
+    [[buyerValue, r.f.buyer], [customerValue, r.f.customer]].forEach(([map, raw]) => {
+      const g = map.get(String(raw ?? '').trim().replace(/\s+/g, ' ').toLowerCase());
+      if (g) { g.value += v; g.invoiced += 1; }
+    });
+  });
+  const valueList = (map) => [...map.values()].map((g) => ({ ...g, value: round2(g.value) }))
+    .sort((a, b) => b.value - a.value || b.count - a.count || a.label.localeCompare(b.label));
+  out.soldValue = round2(soldValue);
+  out.soldInvoiced = invoiced;
+  out.valueByBuyer = valueList(buyerValue);
+  out.valueByCustomer = valueList(customerValue);
   res.json(out);
 });
 
@@ -934,9 +983,12 @@ router.get('/reports/summary', (req, res) => {
 router.get('/:id', (req, res) => {
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(req.params.id);
   if (!asset) return res.status(404).json({ error: 'Asset not found' });
+  const admin = isAdmin(req.user.id);
+  const hidden = admin ? new Set() : adminFieldLabels();
   const audit = db.prepare('SELECT * FROM asset_audit WHERE asset_id = ? ORDER BY changed_at DESC').all(asset.id)
+    .filter((a) => !hidden.has(a.field))
     .map((a) => ({ ...a, user: a.changed_by ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(a.changed_by) : null }));
-  res.json({ asset: withParsedFields(asset), audit });
+  res.json({ asset: assetFor(admin)(asset), audit });
 });
 
 router.patch('/:id', (req, res) => {
@@ -944,6 +996,8 @@ router.patch('/:id', (req, res) => {
   if (!asset) return res.status(404).json({ error: 'Asset not found' });
   const { fields } = req.body;
   if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields object is required' });
+  const admin = isAdmin(req.user.id);
+  dropAdminFields(fields, admin); // staff can't change them (and existing values are kept)
 
   const oldFields = JSON.parse(asset.fields_json || '{}');
   const serialChanged = 'serial_number' in fields
@@ -965,7 +1019,7 @@ router.patch('/:id', (req, res) => {
   const merged = { ...oldFields, ...fields };
   db.prepare("UPDATE assets SET fields_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(merged), req.params.id);
   const updated = db.prepare('SELECT * FROM assets WHERE id = ?').get(req.params.id);
-  res.json({ asset: withParsedFields(updated) });
+  res.json({ asset: assetFor(admin)(updated) });
 });
 
 router.delete('/:id', (req, res) => {
