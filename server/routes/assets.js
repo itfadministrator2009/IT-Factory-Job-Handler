@@ -67,7 +67,7 @@ const SERIAL = "upper(trim(COALESCE(json_extract(fields_json, '$.serial_number')
 const NO_SERIAL = ['N/A', 'NA'];
 const isNoSerial = (v) => NO_SERIAL.includes(String(v ?? '').trim().toUpperCase());
 const REAL_SERIAL = `${SERIAL} NOT IN (${NO_SERIAL.map((s) => `'${s}'`).join(', ')})`;
-const FILTER_KEYS = { category: 'category', status: 'status', location: 'asset_location', sent_to: 'asset_sent_to', customer: 'customer' };
+const FILTER_KEYS = { category: 'category', status: 'status', location: 'asset_location', sent_to: 'asset_sent_to', customer: 'customer', buyer: 'buyer' };
 const NONE = '__none__'; // "Unspecified" — the field is blank
 
 // Months are Sydney months. created_at is stored in UTC, so a month becomes the
@@ -437,6 +437,18 @@ router.get('/filter-options', (req, res) => {
   const customers = [...canonicalCustomers().values()].filter((g) => g.key)
     .map((g) => ({ value: g.best, count: g.total }))
     .sort((a, b) => a.value.localeCompare(b.value, undefined, { sensitivity: 'base', numeric: true }));
+  // Buyers, with how many assets each; spellings differing only in capitals/spaces are one.
+  const buyerGroups = new Map();
+  db.prepare("SELECT trim(json_extract(fields_json, '$.buyer')) AS v, COUNT(*) AS n FROM assets WHERE trim(COALESCE(json_extract(fields_json, '$.buyer'), '')) != '' GROUP BY v").all()
+    .forEach(({ v, n }) => {
+      const k = normText(v);
+      const g = buyerGroups.get(k) || { value: v, top: 0, count: 0 };
+      g.count += n;
+      if (n > g.top) { g.value = v.replace(/\s+/g, ' '); g.top = n; }
+      buyerGroups.set(k, g);
+    });
+  const buyers = [...buyerGroups.values()].map(({ value, count }) => ({ value, count }))
+    .sort((a, b) => a.value.localeCompare(b.value, undefined, { sensitivity: 'base', numeric: true }));
   // Months that have assets (by date created, Sydney time), newest first, with counts.
   const months = new Map();
   db.prepare("SELECT substr(created_at, 1, 13) as hour, COUNT(*) as c FROM assets GROUP BY hour").all().forEach((r) => {
@@ -444,7 +456,7 @@ router.get('/filter-options', (req, res) => {
     if (m) months.set(m, (months.get(m) || 0) + r.c);
   });
   const month = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([value, count]) => ({ value, count }));
-  res.json({ category: optionList('category'), status: optionList('status'), location: optionList('asset_location'), sent_to: optionList('asset_sent_to'), customer: customers, month });
+  res.json({ category: optionList('category'), status: optionList('status'), location: optionList('asset_location'), sent_to: optionList('asset_sent_to'), customer: customers, buyer: buyers, month });
 });
 
 // ---------------------------------------------------------------------------
