@@ -25,7 +25,7 @@ const FILTERS = [
   { param: 'location', label: 'Location' },
   { param: 'sent_to', label: 'Sent to' },
   { param: 'customer', label: 'Customer' },
-  { param: 'buyer', label: 'Buyer' },
+  { param: 'buyer', label: 'Buyer', adminOnly: true, noBlank: true },
 ];
 const FILTER_PARAMS = ['month', 'category', 'status', 'location', 'sent_to', 'customer', 'buyer', 'dupes', 'batch'];
 // Filters listed with how many assets each value has.
@@ -570,7 +570,7 @@ export default function AssetTracker() {
             {filters.month && !(filterOptions?.month || []).some((o) => o.value === filters.month) && <option value={filters.month}>{monthLabel(filters.month)}</option>}
           </select>
         </label>
-        {FILTERS.map(({ param, label }) => {
+        {FILTERS.filter((f) => !f.adminOnly || isAdmin).map(({ param, label, noBlank }) => {
           const opts = COUNTED_FILTERS.includes(param)
             ? (filterOptions?.[param] || []).map((c) => ({ value: c.value, text: `${c.value} (${c.count})` }))
             : (filterOptions?.[param] || []).map((v) => ({ value: v, text: v }));
@@ -583,7 +583,7 @@ export default function AssetTracker() {
                 onChange={(e) => setFilter(param, e.target.value)}>
                 <option value="">All</option>
                 {opts.map((o) => <option key={o.value} value={o.value}>{o.text}</option>)}
-                <option value={NONE}>(blank)</option>
+                {!noBlank && <option value={NONE}>(blank)</option>}
                 {!known && <option value={current}>{current}</option>}
               </select>
             </label>
