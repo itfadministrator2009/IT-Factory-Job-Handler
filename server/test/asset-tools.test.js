@@ -414,3 +414,43 @@ test('Buyer filter, with the buyers listed and counted', async () => {
   const all = (await client.get('/api/assets?limit=1', { token: staff.token })).data.total;
   assert.equal((await client.get('/api/assets?buyer=Zed Traders&limit=1', { token: staff.token })).data.total, all);
 });
+
+test('Invoice Number / Invoice Value: after Buyer, admins only, and summed in reports', async () => {
+  const defs = (await client.get('/api/assets/field-defs', { token: admin.token })).data.fields;
+  const keys = defs.map((f) => f.field_key);
+  assert.equal(keys.indexOf('invoice_number'), keys.indexOf('buyer') + 1);
+  assert.equal(keys.indexOf('invoice_value'), keys.indexOf('buyer') + 2);
+  assert.equal(defs.find((f) => f.field_key === 'invoice_value').type, 'number');
+  assert.equal(defs.find((f) => f.field_key === 'invoice_number').required, false);
+  const staffKeys = (await client.get('/api/assets/field-defs', { token: staff.token })).data.fields.map((f) => f.field_key);
+  assert.ok(!staffKeys.includes('invoice_number') && !staffKeys.includes('invoice_value'), 'staff never see the fields');
+
+  // An admin records a sale.
+  const at = (id, f, utc) => db.prepare('INSERT INTO assets (id, fields_json, created_at) VALUES (?, ?, ?)').run(id, JSON.stringify(f), utc);
+  at('iv1', { asset_tag: 'IV1', serial_number: 'IV-1', customer: 'Acme', status: 'Sold', buyer: 'Bob', invoice_number: 'INV-100', invoice_value: '150.50' }, '2027-03-02 01:00:00');
+  at('iv2', { asset_tag: 'IV2', serial_number: 'IV-2', customer: 'Beta', status: 'Sold', buyer: 'bob', invoice_number: 'INV-101', invoice_value: '$1,000' }, '2027-03-03 01:00:00');
+  at('iv3', { asset_tag: 'IV3', serial_number: 'IV-3', customer: 'Acme', status: 'Sold', buyer: 'Zed' }, '2027-03-04 01:00:00');
+
+  // Staff: not in the list, the asset, its history, or search; and they can't change them.
+  const staffList = (await client.get('/api/assets?q=IV-1', { token: staff.token })).data.assets;
+  assert.equal(staffList.length, 1);
+  assert.equal(staffList[0].fields.invoice_number, undefined);
+  assert.ok(!staffList[0].fields_json.includes('INV-100'));
+  assert.equal((await client.get('/api/assets?q=INV-100', { token: staff.token })).data.total, 0, 'staff cannot search by invoice number');
+  assert.equal((await client.get('/api/assets?q=INV-100', { token: admin.token })).data.total, 1);
+  await client.patch('/api/assets/iv1', { token: admin.token, body: { fields: { invoice_value: '160.50' } } });
+  const one = (await client.get('/api/assets/iv1', { token: staff.token })).data;
+  assert.equal(one.asset.fields.invoice_value, undefined);
+  assert.ok(!one.audit.some((a) => a.field === 'Invoice Value'), 'history hides invoice changes from staff');
+  await client.patch('/api/assets/iv1', { token: staff.token, body: { fields: { invoice_value: '1', comments: 'checked' } } });
+  const saved = JSON.parse(db.prepare("SELECT fields_json FROM assets WHERE id = 'iv1'").get().fields_json);
+  assert.equal(saved.invoice_value, '160.50', 'staff edit leaves the invoice alone');
+  assert.equal(saved.comments, 'checked');
+  assert.equal((await client.get('/api/assets/iv1', { token: admin.token })).data.asset.fields.invoice_value, '160.50');
+
+  const r = (await client.get('/api/assets/period-report?from=2027-03-01&to=2027-03-31', { token: admin.token })).data;
+  assert.equal(r.soldValue, 1160.5);
+  assert.equal(r.soldInvoiced, 2);
+  assert.deepEqual(r.valueByBuyer.map((x) => [x.label.toLowerCase(), x.value, x.count]), [['bob', 1160.5, 2], ['zed', 0, 1]]);
+  assert.deepEqual(r.valueByCustomer.map((x) => [x.label, x.value]), [['Beta', 1000], ['Acme', 160.5]]);
+});
