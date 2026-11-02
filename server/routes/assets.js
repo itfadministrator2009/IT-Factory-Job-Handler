@@ -69,6 +69,7 @@ const isNoSerial = (v) => NO_SERIAL.includes(String(v ?? '').trim().toUpperCase(
 const REAL_SERIAL = `${SERIAL} NOT IN (${NO_SERIAL.map((s) => `'${s}'`).join(', ')})`;
 const FILTER_KEYS = { category: 'category', status: 'status', location: 'asset_location', sent_to: 'asset_sent_to', customer: 'customer', buyer: 'buyer' };
 const NONE = '__none__'; // "Unspecified" — the field is blank
+const ADMIN_ONLY_FILTERS = ['buyer'];
 
 // Months are Sydney months. created_at is stored in UTC, so a month becomes the
 // UTC range from Sydney midnight on the 1st to Sydney midnight on the 1st of the
@@ -114,6 +115,7 @@ function buildWhere(query = {}, admin = false) {
   Object.entries(FILTER_KEYS).forEach(([param, key]) => {
     const v = query[param];
     if (v == null || v === '') return;
+    if (ADMIN_ONLY_FILTERS.includes(param) && !admin) return; // Buyer is for admins only
     if (v === NONE) parts.push(`${norm(key)} = ''`);
     else { parts.push(`${norm(key)} = ?`); params.push(normText(v)); }
   });
@@ -439,7 +441,9 @@ router.get('/filter-options', (req, res) => {
     .sort((a, b) => a.value.localeCompare(b.value, undefined, { sensitivity: 'base', numeric: true }));
   // Buyers, with how many assets each; spellings differing only in capitals/spaces are one.
   const buyerGroups = new Map();
-  db.prepare("SELECT trim(json_extract(fields_json, '$.buyer')) AS v, COUNT(*) AS n FROM assets WHERE trim(COALESCE(json_extract(fields_json, '$.buyer'), '')) != '' GROUP BY v").all()
+  // Buyers (admins only). "None" isn't a buyer, so it's left off the list.
+  if (isAdmin(req.user.id)) db.prepare("SELECT trim(json_extract(fields_json, '$.buyer')) AS v, COUNT(*) AS n FROM assets WHERE trim(COALESCE(json_extract(fields_json, '$.buyer'), '')) != '' GROUP BY v").all()
+    .filter(({ v }) => normText(v) !== 'none')
     .forEach(({ v, n }) => {
       const k = normText(v);
       const g = buyerGroups.get(k) || { value: v, top: 0, count: 0 };
@@ -456,7 +460,7 @@ router.get('/filter-options', (req, res) => {
     if (m) months.set(m, (months.get(m) || 0) + r.c);
   });
   const month = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([value, count]) => ({ value, count }));
-  res.json({ category: optionList('category'), status: optionList('status'), location: optionList('asset_location'), sent_to: optionList('asset_sent_to'), customer: customers, buyer: buyers, month });
+  res.json({ category: optionList('category'), status: optionList('status'), location: optionList('asset_location'), sent_to: optionList('asset_sent_to'), customer: customers, ...(isAdmin(req.user.id) ? { buyer: buyers } : {}), month });
 });
 
 // ---------------------------------------------------------------------------
