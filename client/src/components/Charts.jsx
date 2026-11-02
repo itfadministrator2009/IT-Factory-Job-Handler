@@ -220,7 +220,7 @@ export function StatTile({ label, value, sub, accent = CHART_COLORS.blue, onClic
     <div onClick={onClick} role={onClick ? 'button' : undefined}
       style={{ background: SURFACE, border: '1px solid #e2e0d8', borderRadius: 12, padding: '14px 16px', borderTop: `4px solid ${accent}`, cursor: onClick ? 'pointer' : 'default', minWidth: 0 }}>
       <div style={{ fontSize: 12, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: INK, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{fmt(value)}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: INK, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{typeof value === 'string' ? value : fmt(value)}</div>
       {sub && <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{sub}</div>}
     </div>
   );
