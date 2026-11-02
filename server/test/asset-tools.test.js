@@ -400,10 +400,17 @@ test('Buyer filter, with the buyers listed and counted', async () => {
   add('by1', { asset_tag: 'BY1', buyer: 'Bob Reseller', status: 'Sold' });
   add('by2', { asset_tag: 'BY2', buyer: 'bob  reseller ', status: 'Sold' });
   add('by3', { asset_tag: 'BY3', buyer: 'Zed Traders', status: 'Sold' });
-  const opts = (await client.get('/api/assets/filter-options', { token: staff.token })).data.buyer;
+  add('by4', { asset_tag: 'BY4', buyer: 'None', status: 'Sold' });
+  add('by5', { asset_tag: 'BY5', buyer: ' none ', status: 'Sold' });
+  const opts = (await client.get('/api/assets/filter-options', { token: admin.token })).data.buyer;
+  assert.ok(!opts.some((o) => o.value.trim().toLowerCase() === 'none'), '"None" is not listed');
   const bob = opts.find((o) => o.value.toLowerCase() === 'bob reseller');
   assert.equal(bob.count >= 2, true);
   assert.equal(opts.filter((o) => o.value.toLowerCase().replace(/\s+/g, ' ').trim() === 'bob reseller').length, 1, 'one entry per buyer');
-  const ids = (await client.get('/api/assets?buyer=BOB RESELLER&limit=500', { token: staff.token })).data.assets.map((a) => a.id);
+  const ids = (await client.get('/api/assets?buyer=BOB RESELLER&limit=500', { token: admin.token })).data.assets.map((a) => a.id);
   assert.ok(ids.includes('by1') && ids.includes('by2') && !ids.includes('by3'));
+  // Admins only: staff get no buyer list, and a buyer filter is ignored for them.
+  assert.equal((await client.get('/api/assets/filter-options', { token: staff.token })).data.buyer, undefined);
+  const all = (await client.get('/api/assets?limit=1', { token: staff.token })).data.total;
+  assert.equal((await client.get('/api/assets?buyer=Zed Traders&limit=1', { token: staff.token })).data.total, all);
 });
