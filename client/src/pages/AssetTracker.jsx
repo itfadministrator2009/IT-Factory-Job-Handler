@@ -35,6 +35,9 @@ const monthLabel = (v) => { const [y, m] = String(v).split('-').map(Number); ret
 const NONE = '__none__';
 // Fields that can be filled in by scanning a barcode.
 const SCAN_KEYS = ['serial_number', 'asset_tag', 'client_asset_tag'];
+// Sale invoice fields (admins only — staff never get them): shown on the form once Status is Sold.
+const SALE_FIELDS = ['invoice_number', 'invoice_value'];
+const isSold = (v) => String(v || '').trim().toLowerCase() === 'sold';
 // Searchable drop-downs of every value used so far, with "+ Add" for new ones.
 const COMBO_KEYS = ['model_name', 'model_number', 'customer'];
 
@@ -250,7 +253,7 @@ export default function AssetTracker() {
   async function handleSaveAsset(e, { allowDuplicateSerial = false } = {}) {
     e?.preventDefault();
     if (!editingAsset) {
-      const missing = fieldDefs.filter((f) => f.required && f.field_key !== 'audit_month' && isBlank(formValues[f.field_key])).map((f) => f.field_key);
+      const missing = fieldDefs.filter((f) => f.required && f.field_key !== 'audit_month' && !(SALE_FIELDS.includes(f.field_key) && !isSold(formValues.status)) && isBlank(formValues[f.field_key])).map((f) => f.field_key);
       if (missing.length) { setDupWarning(null); showMissing(missing); return; }
     }
     setMissingKeys([]);
@@ -511,7 +514,8 @@ export default function AssetTracker() {
       return <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} />;
     }
     if (field.type === 'number') {
-      return <input type="number" value={value ?? ''} onChange={(e) => onChange(e.target.value)} />;
+      return <input type="number" step="any" inputMode="decimal" value={value ?? ''} onChange={(e) => onChange(e.target.value)}
+        {...(field.field_key === 'invoice_value' ? { min: 0, placeholder: '0.00' } : {})} />;
     }
     return <input type="text" value={value || ''} onChange={(e) => onChange(e.target.value)} />;
   }
@@ -848,7 +852,7 @@ export default function AssetTracker() {
             )}
             <form onSubmit={handleSaveAsset} className="sign-off-scroll">
               <div className="form-grid">
-                {fieldDefs.map((f) => (
+                {fieldDefs.filter((f) => !SALE_FIELDS.includes(f.field_key) || isSold(formValues.status)).map((f) => (
                   <div className={'field' + ((f.type === 'multiselect' || f.type === 'textarea') ? ' span-2' : '') + (missingKeys.includes(f.field_key) ? ' field-missing' : '')} key={f.field_key}>
                     <label>{f.label}{!editingAsset && f.required && <span className="required-mark" title="Required"> *</span>}</label>
                     {SCAN_KEYS.includes(f.field_key) && f.type === 'text' ? (

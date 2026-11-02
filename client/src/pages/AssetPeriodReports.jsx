@@ -63,15 +63,20 @@ const SECTIONS = [
   { key: 'byStatus', title: 'By status (sold / available)', color: C.yellow },
   { key: 'soldByCustomer', title: 'Sold — by customer', color: C.orange },
   { key: 'soldByBuyer', title: 'Sold — by buyer', color: C.magenta },
+  { key: 'valueByBuyer', title: 'Sales value — by buyer', color: C.green, money: true },
+  { key: 'valueByCustomer', title: 'Sales value — by customer', color: C.blue, money: true },
 ];
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-AU');
+const aud = (n) => Number(n || 0).toLocaleString('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2 });
 const pct = (n, of) => (of ? `${Math.round((n / of) * 1000) / 10}%` : '—');
 
 // One breakdown: label, a bar, the count and its share. The top 10 show; the rest open with "Show all".
-function Breakdown({ title, rows, total, color }) {
+// money: the bar and figure are the sales value (Invoice Value), with the number sold beside it.
+function Breakdown({ title, rows, total, color, money }) {
   const [all, setAll] = useState(false);
-  const max = Math.max(1, ...rows.map((r) => r.count));
+  const amount = (r) => (money ? r.value : r.count);
+  const max = Math.max(1, ...rows.map(amount));
   const shown = all ? rows : rows.slice(0, 10);
   return (
     <section className="panel report-card" style={{ padding: 18, minWidth: 0 }}>
@@ -85,9 +90,9 @@ function Breakdown({ title, rows, total, color }) {
             {shown.map((r) => (
               <tr key={r.label}>
                 <td className="report-label" title={r.label} style={r.label === 'Not set' ? { color: 'var(--muted)', fontStyle: 'italic' } : undefined}>{r.label}</td>
-                <td className="report-bar"><span style={{ width: `${Math.max((r.count / max) * 100, 1.5)}%`, background: color }} /></td>
-                <td className="num">{fmt(r.count)}</td>
-                <td className="num muted">{pct(r.count, total)}</td>
+                <td className="report-bar"><span style={{ width: `${Math.max((amount(r) / max) * 100, 1.5)}%`, background: color }} /></td>
+                <td className={`num${money ? ' money' : ''}`}>{money ? aud(r.value) : fmt(r.count)}</td>
+                <td className={`num muted${money ? ' sold-n' : ''}`} title={money ? `${fmt(r.count)} sold, ${fmt(r.invoiced)} with an invoice value` : undefined}>{money ? `${fmt(r.count)} sold` : pct(r.count, total)}</td>
               </tr>
             ))}
           </tbody>
@@ -138,10 +143,15 @@ export default function AssetPeriodReports() {
 
   function downloadCsv() {
     if (!data) return;
-    const lines = [['ITF Asset Tracker report', periodText], [], ['Total assets added', data.total], ['Sold', data.sold], []];
+    const lines = [['ITF Asset Tracker report', periodText], [], ['Total assets added', data.total], ['Sold', data.sold], ['Sales value (AUD)', data.soldValue ?? 0], []];
     SECTIONS.forEach((s) => {
-      lines.push([s.title, 'Count', 'Share']);
-      (data[s.key] || []).forEach((r) => lines.push([r.label, r.count, pct(r.count, s.key.startsWith('sold') ? data.sold : data.total)]));
+      if (s.money) {
+        lines.push([s.title, 'Sales value (AUD)', 'Sold', 'With invoice value']);
+        (data[s.key] || []).forEach((r) => lines.push([r.label, r.value, r.count, r.invoiced]));
+      } else {
+        lines.push([s.title, 'Count', 'Share']);
+        (data[s.key] || []).forEach((r) => lines.push([r.label, r.count, pct(r.count, s.key.startsWith('sold') ? data.sold : data.total)]));
+      }
       lines.push([]);
     });
     const blob = new Blob([`﻿${lines.map((l) => l.map(csvCell).join(',')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
@@ -186,13 +196,15 @@ export default function AssetPeriodReports() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, margin: '18px 0' }}>
             <StatTile label="Total assets" value={data.total} accent="#16241f" sub={periodText} />
             <StatTile label="Sold" value={data.sold} accent={C.orange} sub={pct(data.sold, data.total)} />
+            <StatTile label="Sales value" value={aud(data.soldValue)} accent={C.green}
+              sub={data.sold ? `${fmt(data.soldInvoiced)} of ${fmt(data.sold)} sold have an invoice value` : 'no sales'} />
             <StatTile label="Available" value={count('byStatus', 'available')} accent={C.blue} />
             <StatTile label="In Storage" value={count('byStatus', 'in storage')} accent={C.aqua} />
             <StatTile label="Customers" value={(data.byCustomer || []).filter((r) => r.label !== 'Not set').length} accent={C.violet} />
           </div>
           <div className="report-grid">
             {SECTIONS.map((s) => (
-              <Breakdown key={`${s.key}-${range.from}-${range.to}`} title={s.title} rows={data[s.key] || []} color={s.color}
+              <Breakdown key={`${s.key}-${range.from}-${range.to}`} title={s.title} rows={data[s.key] || []} color={s.color} money={s.money}
                 total={s.key.startsWith('sold') ? data.sold : data.total} />
             ))}
           </div>
